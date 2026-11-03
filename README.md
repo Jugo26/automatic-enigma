@@ -2,7 +2,7 @@
 
 Treinamento didático de conferência de documentos de transporte de veículos (NF-e/DANFE, DCE/DACE e CT-e/DACTE).
 
-**Versão publicada:** 34 — dificuldade avançada fixa (até 3 erros) e tema azul.
+**Versão publicada:** 35 — dificuldade avançada fixa (até 3 erros) e 10 rodadas fixas; tema azul mantido.
 
 ## Atualização automática
 - `Index.html` é a **fonte oficial** do jogo; novas versões substituem este arquivo.
