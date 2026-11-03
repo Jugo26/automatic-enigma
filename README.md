@@ -2,7 +2,7 @@
 
 Treinamento didático de conferência de documentos de transporte de veículos (NF-e/DANFE, DCE/DACE e CT-e/DACTE).
 
-**Versão publicada:** 37 — menu minimalista azul e campanha Novembro Azul; avançado e 10 rodadas fixas.
+**Versão publicada:** 38 — menu minimalista azul com imagem Novembro Azul integrada; avançado e 10 rodadas fixas.
 
 ## Atualização automática
 - `Index.html` é a **fonte oficial** do jogo; novas versões substituem este arquivo.
