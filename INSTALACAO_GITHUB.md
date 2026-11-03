@@ -43,3 +43,6 @@ https://github.com/Jugo26/automatic-enigma
 ### GitHub Pages (opcional)
 
 O repositório também inclui `.github/workflows/pages.yml`. Para ativar um site público, acesse **Settings > Pages > Build and deployment > Source: GitHub Actions**. Depois de publicado, o site ficará em `https://jugo26.github.io/automatic-enigma/`. **A versão GitHub Pages não envia e-mails**, pois o envio depende do Apps Script.
+### Testes de integração
+
+Testados: carregamento pelo GitHub, fallback local, preservação do envio de e-mail e dez rodadas com CSV simulado. O pacote para Windows inclui os scripts dos testes. A implantação real do Apps Script e a ativação opcional do GitHub Pages ainda dependem da configuração das contas.
