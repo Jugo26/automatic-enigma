@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Conferência 360 | Verificar atualização</title>
+<style>
+:root{font-family:Segoe UI,Arial,sans-serif;color-scheme:dark}*{box-sizing:border-box}body{background:#0a111a;color:#eef5f9;margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}.shell{max-width:640px;width:100%;border:1px solid #394c5c;border-radius:18px;background:#152331;padding:32px;box-shadow:0 25px 70px #0005}h1{font-size:clamp(26px,5vw,39px);margin:10px 0}p{color:#b7c9d6;line-height:1.7;font-size:16px}small{color:#a8c0d0}.status{background:#0c1825;padding:16px;border-radius:9px;border-left:5px solid #f9c74f;font-size:17px;margin:24px 0}.btn{background:#f9c74f;color:#17212b;display:inline-block;border:0;text-decoration:none;padding:16px 20px;font-size:16px;font-weight:900;border-radius:8px;margin:8px 7px 0 0;cursor:pointer}.btn.alt{background:#203d51;color:#e8f4ff;border:1px solid #4c6b81}input{font-size:16px;width:100%;padding:14px;background:#091722;color:#fff;border:1px solid #638096;border-radius:7px;margin:10px 0}.hidden{display:none}
+</style></head><body><main class="shell" role="main"><small>CONFERÊNCIA 360 • ATUALIZAÇÃO AUTOMÁTICA</small><h1>Verificando a versão mais recente</h1><p>Ao abrir este arquivo, o jogo busca a atualização no GitHub. Não é necessário instalar programas.</p><div class="status" id="status" role="status" aria-live="polite">Consultando o GitHub…</div><section id="options" class="hidden"><p id="details"></p><a class="btn" href="Conferencia_360_v32.html" id="offline">Abrir cópia local</a><button class="btn alt" id="retry">Tentar novamente</button></section><details><summary>Uso com relatórios por Gmail (Google Apps Script)</summary><p>Para enviar relatórios automaticamente, configure aqui o endereço do seu aplicativo web do Google Apps Script. Quando ele estiver configurado, este iniciador abrirá diretamente esse endereço, e o Apps Script buscará a versão atual do GitHub.</p><label for="gasurl">Link do aplicativo web (termina em /exec)</label><input type="url" id="gasurl" placeholder="https://script.google.com/macros/s/.../exec"><button class="btn alt" id="save">Salvar link e abrir</button><button class="btn alt" id="remove">Apagar link salvo</button><p id="configStatus" role="status"></p></details></main>
+<script>
+(function(){
+'use strict';
+const REPO='https://raw.githubusercontent.com/Jugo26/automatic-enigma/main/';
+const KEY='conf360_aplicativo_google_script';
+const status=document.getElementById('status');
+const options=document.getElementById('options');
+const details=document.getElementById('details');
+const gas=document.getElementById('gasurl');
+function validUrl(u){try{const x=new URL(u);return x.protocol==='https:'&&x.hostname==='script.google.com'&&/^\/macros\/s\/[^/]+\/exec$/.test(x.pathname)}catch{return false}}
+const saved=localStorage.getItem(KEY)||'';if(validUrl(saved))gas.value=saved;
+document.getElementById('save').onclick=()=>{let u=gas.value.trim();if(!validUrl(u)){document.getElementById('configStatus').textContent='Use o link HTTPS do aplicativo web terminado em /exec.';return}localStorage.setItem(KEY,u);location.replace(u)};
+document.getElementById('remove').onclick=()=>{localStorage.removeItem(KEY);gas.value='';document.getElementById('configStatus').textContent='Link removido.'};
+document.getElementById('retry').onclick=()=>location.reload();
+async function start(){
+ const current=localStorage.getItem(KEY);
+ if(validUrl(current)){status.textContent='Abrindo a versão mais recente pelo Google Apps Script…';location.replace(current);return}
+ try{
+   const resp=await fetch(REPO+'version.json?t='+Date.now(),{cache:'no-store'});
+   if(!resp.ok)throw Error('Não foi possível verificar o número da versão.');
+   const info=await resp.json();
+   if(!Number.isInteger(info.version)||info.version<32||info.source!=='Index.html')throw Error('Manifesto de versão inválido.');
+   status.textContent='Versão '+info.version+' encontrada; carregando o jogo atualizado…';
+   const r=await fetch(REPO+'Index.html?t='+Date.now(),{cache:'no-store'});
+   if(!r.ok)throw Error('Falha ao baixar a versão mais recente.');
+   const html=await r.text();
+   if(html.length<100000||!/^\s*<!doctype html>/i.test(html)||!html.includes('id="game"')||!/<\/html>\s*$/i.test(html))throw Error('Conteúdo recebido não é o jogo válido.');
+   document.open(); document.write(html); document.close();
+ }catch(e){status.textContent='Não foi possível atualizar automaticamente.';details.textContent='Confira a conexão com a internet ou abra a cópia local (v32). Detalhe: '+e.message;options.classList.remove('hidden')}
+}
+start();
+})();
+</script></body></html>
