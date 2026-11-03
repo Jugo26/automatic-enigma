@@ -1,7 +1,7 @@
 {
-  "version": 35,
+  "version": 36,
   "source": "Index.html",
   "updated_at": "2026-11-03",
   "repository": "Jugo26/automatic-enigma",
-  "notes": "Modo avançado fixo e sessão obrigatória de 10 rodadas; seletor removido. Tema azul mantido."
+  "notes": "Menu futurista azul com painel de progresso, gráfico e atalhos. Avançado e 10 rodadas fixas."
 }
