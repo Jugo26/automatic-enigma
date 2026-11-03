@@ -1,7 +1,7 @@
 {
-  "version": 37,
+  "version": 38,
   "source": "Index.html",
   "updated_at": "2026-11-03",
   "repository": "Jugo26/automatic-enigma",
-  "notes": "Menu minimalista azul, painel de desempenho e campanha Novembro Azul. Avançado e 10 rodadas fixas."
+  "notes": "Menu minimalista azul com imagem Novembro Azul incorporada diretamente ao HTML. Avançado e 10 rodadas fixas."
 }
