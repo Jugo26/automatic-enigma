@@ -8,17 +8,18 @@
 'use strict';
 const REPO='https://raw.githubusercontent.com/Jugo26/automatic-enigma/main/';
 const KEY='conf360_aplicativo_google_script';
+const storage={getItem(k){try{return localStorage.getItem(k)}catch{return null}},setItem(k,v){try{localStorage.setItem(k,v);return true}catch{return false}},removeItem(k){try{localStorage.removeItem(k)}catch{}}};
 const status=document.getElementById('status');
 const options=document.getElementById('options');
 const details=document.getElementById('details');
 const gas=document.getElementById('gasurl');
 function validUrl(u){try{const x=new URL(u);return x.protocol==='https:'&&x.hostname==='script.google.com'&&/^\/macros\/s\/[^/]+\/exec$/.test(x.pathname)}catch{return false}}
-const saved=localStorage.getItem(KEY)||'';if(validUrl(saved))gas.value=saved;
-document.getElementById('save').onclick=()=>{let u=gas.value.trim();if(!validUrl(u)){document.getElementById('configStatus').textContent='Use o link HTTPS do aplicativo web terminado em /exec.';return}localStorage.setItem(KEY,u);location.replace(u)};
-document.getElementById('remove').onclick=()=>{localStorage.removeItem(KEY);gas.value='';document.getElementById('configStatus').textContent='Link removido.'};
+const saved=storage.getItem(KEY)||'';if(validUrl(saved))gas.value=saved;
+document.getElementById('save').onclick=()=>{let u=gas.value.trim();if(!validUrl(u)){document.getElementById('configStatus').textContent='Use o link HTTPS do aplicativo web terminado em /exec.';return}storage.setItem(KEY,u);location.replace(u)};
+document.getElementById('remove').onclick=()=>{storage.removeItem(KEY);gas.value='';document.getElementById('configStatus').textContent='Link removido.'};
 document.getElementById('retry').onclick=()=>location.reload();
 async function start(){
- const current=localStorage.getItem(KEY);
+ const current=storage.getItem(KEY);
  if(validUrl(current)){status.textContent='Abrindo a versão mais recente pelo Google Apps Script…';location.replace(current);return}
  try{
    const resp=await fetch(REPO+'version.json?t='+Date.now(),{cache:'no-store'});
