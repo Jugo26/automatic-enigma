@@ -1,7 +1,7 @@
 {
-  "version": 33,
+  "version": 34,
   "source": "Index.html",
   "updated_at": "2026-11-03",
   "repository": "Jugo26/automatic-enigma",
-  "notes": "Tema azul para teste de atualização automática; regras e relatórios preservados"
+  "notes": "Dificuldade avançada fixa: até 3 divergências por rodada. Seletor removido. Tema azul preservado."
 }
