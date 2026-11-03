@@ -1,7 +1,7 @@
 {
-  "version": 39,
+  "version": 40,
   "source": "Index.html",
   "updated_at": "2026-11-03",
   "repository": "Jugo26/automatic-enigma",
-  "notes": "Novos modelos NF-e Toyota/Sorocaba PG I4500001 e Honda/Itirapina PG I0100001; DCE preservada. 10 rodadas fixas."
+  "notes": "Obrigatório classificar todos os campos do DACTE com M1/M2 antes de liberar CT-e correto/com divergência. 10 ou 11 campos conforme PG."
 }
