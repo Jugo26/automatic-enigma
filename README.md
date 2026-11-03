@@ -2,7 +2,7 @@
 
 Treinamento didático de conferência de documentos de transporte de veículos (NF-e/DANFE, DCE/DACE e CT-e/DACTE).
 
-**Versão publicada:** 38 — menu minimalista azul com imagem Novembro Azul integrada; avançado e 10 rodadas fixas.
+**Versão publicada:** 39 — NF-e Toyota (Sorocaba, PG I4500001) e NF-e Honda (Itirapina, PG I0100001); layout dos DANFEs inspirado no PDF enviado, menu Novembro Azul preservado.
 
 ## Atualização automática
 - `Index.html` é a **fonte oficial** do jogo; novas versões substituem este arquivo.
