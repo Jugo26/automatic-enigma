@@ -1,7 +1,7 @@
 {
-  "version": 40,
+  "version": 41,
   "source": "Index.html",
-  "updated_at": "2026-11-03",
+  "updated_at": "2026-11-04",
   "repository": "Jugo26/automatic-enigma",
-  "notes": "Obrigatório classificar todos os campos do DACTE com M1/M2 antes de liberar CT-e correto/com divergência. 10 ou 11 campos conforme PG."
+  "notes": "M1/clique esquerdo marca CORRETO; M2/clique direito marca INCORRETO. Tutoriais, relatórios e marcadores atualizados. Todas as 10/11 áreas continuam obrigatórias."
 }
