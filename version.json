@@ -1,7 +1,7 @@
 {
-  "version": 45,
+  "version": 46,
   "source": "Index.html",
   "updated_at": "2026-11-06",
   "repository": "Jugo26/automatic-enigma",
-  "notes": "Corrige geometria da curva superior do laço do Novembro Azul. Substitui sprites de 8 quadros por 30 quadros exibidos a 30 FPS (1 s); formação ao entrar no menu e movimento ao hover/toque/teclado. Mantém 10 rodadas e lógica de conferência."
+  "notes": "Efeitos sonoros leves de hover, foco e clique em opções interativas por Web Audio, com mute persistente no menu. Observa restrições de autoplay do navegador; simulação e 10 rodadas preservadas."
 }
