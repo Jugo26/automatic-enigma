@@ -2,7 +2,12 @@
 
 Treinamento didático de conferência de documentos de transporte de veículos (NF-e/DANFE, DCE/DACE e CT-e/DACTE).
 
-**Versão publicada:** 46 — sons discretos ao passar o mouse/focar opções e ao clicar/selecionar controles; botão para ligar/desligar o áudio, preferência salva no navegador. Laço do Novembro Azul a 30 FPS, M1 correto/M2 incorreto e 10 rodadas fixas.
+**Versão publicada:** 47 — partículas azuis inteligentes em segundo plano no menu, com movimento suave e afastamento/retorno ao aproximar o mouse. Mantém sons configuráveis, laço do Novembro Azul a 30 FPS, M1 correto/M2 incorreto e 10 rodadas fixas.
+
+## Fundo animado do menu
+- Partículas leves desenhadas diretamente no canvas, sem bibliotecas ou imagens externas.
+- Reagem ao mouse e retornam suavemente à posição; ficam atrás dos cartões sem bloquear cliques.
+- Pausam fora do menu ou com a aba oculta; respeitam a preferência do sistema por movimento reduzido e adaptam a quantidade à tela.
 
 ## Efeitos sonoros de interface
 - Os sons de hover e clique são sintetizados com Web Audio, sem arquivos de áudio externos.
