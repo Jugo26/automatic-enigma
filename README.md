@@ -2,7 +2,7 @@
 
 Treinamento didático de conferência de documentos de transporte de veículos (NF-e/DANFE, DCE/DACE e CT-e/DACTE).
 
-**Versão publicada:** 44 — Novembro Azul redesenhado sem bordas pretas; dois spritesheets transparentes de 8 quadros (formação do laço ao abrir o menu e movimento ao passar o mouse ou tocar). M1 correto/M2 incorreto e 10 rodadas fixas.
+**Versão publicada:** 45 — laço do Novembro Azul com curva superior corrigida e duas animações em sprites de 30 quadros a 30 FPS (formação ao abrir o menu e movimento ao passar o mouse, tocar ou focar). M1 correto/M2 incorreto e 10 rodadas fixas.
 
 ## Atualização automática
 - `Index.html` é a **fonte oficial** do jogo; novas versões substituem este arquivo.
