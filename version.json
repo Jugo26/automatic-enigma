@@ -1,7 +1,7 @@
 {
-  "version": 51,
+  "version": 52,
   "source": "Index.html",
   "updated_at": "2026-11-06",
   "repository": "Jugo26/automatic-enigma",
-  "notes": "Adicionados DANFEs didáticos Ford (PG 70001 SBC / 70004 Camaçari, endereços verificados) e Polaris (PG 4682, destinatário como tomador/pagador do CT-e), com seleção individual e sorteio misto. Mantidas 10 rodadas, M1/M2, sons e fundo dinâmico."
+  "notes": "Polaris: código do destinatário com 4 dígitos gerado por rodada, exibido no DANFE e no topo direito do quadro Destinatário do DACTE; PG correto igual ao código e tomador igual ao destinatário. Funcionalidades anteriores preservadas."
 }
