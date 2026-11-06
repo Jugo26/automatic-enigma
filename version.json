@@ -1,7 +1,7 @@
 {
-  "version": 46,
+  "version": 47,
   "source": "Index.html",
   "updated_at": "2026-11-06",
   "repository": "Jugo26/automatic-enigma",
-  "notes": "Efeitos sonoros leves de hover, foco e clique em opções interativas por Web Audio, com mute persistente no menu. Observa restrições de autoplay do navegador; simulação e 10 rodadas preservadas."
+  "notes": "Partículas inteligentes no fundo do menu: pontos azuis que flutuam e se afastam do cursor, com retorno gradual. Canvas atrás do conteúdo, responsivo, pausado fora do menu/aba oculta e compatível com movimento reduzido; sons, sprites do Novembro Azul e regras preservados."
 }
