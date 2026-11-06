@@ -2,7 +2,14 @@
 
 Treinamento didático de conferência de documentos de transporte de veículos (NF-e/DANFE, DCE/DACE e CT-e/DACTE).
 
-**Versão publicada:** 50 — ondas e partículas 100% procedurais e animadas em canvas, com reação ao mouse. Mantém sons configuráveis, laço do Novembro Azul a 30 FPS, M1 correto/M2 incorreto e 10 rodadas fixas.
+**Versão publicada:** 51 — adicionados modelos de DANFE Ford (SBC PG 70001, Camaçari/BA PG 70004) e Polaris (Indaiatuba, PG 4682; tomador do CT-e = destinatário). As 10 rodadas, o fundo procedural e os sons permanecem.
+
+## Modelos NF-e Ford e Polaris (didáticos)
+- Ford (página 1 do PDF recebido): DANFE horizontal, remessa de veículo, duas origens sorteáveis: São Bernardo do Campo/SP (PG **70001**) e Camaçari/BA (PG **70004**).
+- Endereço de referência Ford SBC: **Av. Maria Servidei Demarchi, 1420 - Sala 1 - Demarchi, São Bernardo do Campo/SP, CEP 09820-000**. Cadastro: https://portaldatransparencia.gov.br/busca/pessoa-juridica/03470727000120
+- Endereço de referência Ford Camaçari: **Av. Henry Ford, 2000 - COPEC, Camaçari/BA, CEP 42810-000**. Cadastro histórico industrial: https://sei.ba.gov.br/cadex/empresa-detalhes.php?id=22679. O uso no treino não implica fábrica atualmente em operação.
+- Polaris (página 2 do PDF recebido): DANFE vertical de Indaiatuba/SP, modelo UTV off-road. O **destinatário da nota é também o tomador do serviço e pagador do frete**. PG didático criado: **4682**, exibido à direita no DACTE.
+- Ambos disponíveis na configuração específica e no sorteio misto. Dados de documentos, notas, pessoas e chaves gerados como **simulação**, sem reproduzir os identificadores fiscais reais do PDF.
 
 ## Fundo animado do menu
 - Ondas digitais em movimento constante, formadas por linhas, malhas e pontos de luz desenhados em tempo real no canvas, sem wallpaper estático.
