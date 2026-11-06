@@ -1,7 +1,7 @@
 {
-  "version": 50,
+  "version": 51,
   "source": "Index.html",
   "updated_at": "2026-11-06",
   "repository": "Jugo26/automatic-enigma",
-  "notes": "Remove a imagem WebP fixa da V49. Fundo procedural com ondas, malhas e partículas geradas continuamente no navegador; resposta ao mouse, pausa fora do menu e suporte a movimento reduzido. Preserva sons, laço 30 FPS e lógica das 10 rodadas."
+  "notes": "Adicionados DANFEs didáticos Ford (PG 70001 SBC / 70004 Camaçari, endereços verificados) e Polaris (PG 4682, destinatário como tomador/pagador do CT-e), com seleção individual e sorteio misto. Mantidas 10 rodadas, M1/M2, sons e fundo dinâmico."
 }
