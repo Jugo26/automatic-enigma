@@ -1,7 +1,7 @@
 {
-  "version": 42,
+  "version": 43,
   "source": "Index.html",
   "updated_at": "2026-11-06",
   "repository": "Jugo26/automatic-enigma",
-  "notes": "Animações suaves no menu: entrada progressiva, efeitos nos botões, brilho leve no início e evolução do gráfico. Suporte a movimento reduzido; regras intactas."
+  "notes": "Imagem original do Novembro Azul com fundo branco removido por transparência SVG; fita e bigode animados ao passar o mouse, focar ou tocar. Suporte a movimento reduzido; regras do jogo intactas."
 }
