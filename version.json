@@ -1,7 +1,7 @@
 {
-  "version": 43,
+  "version": 44,
   "source": "Index.html",
   "updated_at": "2026-11-06",
   "repository": "Jugo26/automatic-enigma",
-  "notes": "Imagem original do Novembro Azul com fundo branco removido por transparência SVG; fita e bigode animados ao passar o mouse, focar ou tocar. Suporte a movimento reduzido; regras do jogo intactas."
+  "notes": "Arte do Novembro Azul redesenhada sem bordas pretas; dois spritesheets SVG transparentes de 8 quadros: formação do laço ao abrir o menu e movimento ao passar o mouse, tocar ou focar. Sem alterações nas regras das 10 rodadas."
 }
