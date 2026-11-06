@@ -1,7 +1,7 @@
 {
-  "version": 41,
+  "version": 42,
   "source": "Index.html",
-  "updated_at": "2026-11-04",
+  "updated_at": "2026-11-06",
   "repository": "Jugo26/automatic-enigma",
-  "notes": "M1/clique esquerdo marca CORRETO; M2/clique direito marca INCORRETO. Tutoriais, relatórios e marcadores atualizados. Todas as 10/11 áreas continuam obrigatórias."
+  "notes": "Animações suaves no menu: entrada progressiva, efeitos nos botões, brilho leve no início e evolução do gráfico. Suporte a movimento reduzido; regras intactas."
 }
