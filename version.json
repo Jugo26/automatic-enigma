@@ -1,7 +1,7 @@
 {
-  "version": 47,
+  "version": 48,
   "source": "Index.html",
   "updated_at": "2026-11-06",
   "repository": "Jugo26/automatic-enigma",
-  "notes": "Partículas inteligentes no fundo do menu: pontos azuis que flutuam e se afastam do cursor, com retorno gradual. Canvas atrás do conteúdo, responsivo, pausado fora do menu/aba oculta e compatível com movimento reduzido; sons, sprites do Novembro Azul e regras preservados."
+  "notes": "Substitui partículas do menu por ondas digitais azuis minimalistas, com movimento suave e resposta discreta ao mouse. Fundo permanece atrás dos controles, reduz movimento quando solicitado e pausa fora do menu/aba oculta; recursos e regras existentes preservados."
 }
