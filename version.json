@@ -1,7 +1,7 @@
 {
-  "version": 48,
+  "version": 49,
   "source": "Index.html",
   "updated_at": "2026-11-06",
   "repository": "Jugo26/automatic-enigma",
-  "notes": "Substitui partículas do menu por ondas digitais azuis minimalistas, com movimento suave e resposta discreta ao mouse. Fundo permanece atrás dos controles, reduz movimento quando solicitado e pausa fora do menu/aba oculta; recursos e regras existentes preservados."
+  "notes": "Usa a arte de ondas com partículas escolhida pelo usuário, incorporada em WebP ao HTML. Camada Canvas dinâmica com resposta ao mouse e parallax suave; legibilidade e sons, laço 30fps e 10 rodadas preservados."
 }
