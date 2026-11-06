@@ -2,13 +2,13 @@
 
 Treinamento didático de conferência de documentos de transporte de veículos (NF-e/DANFE, DCE/DACE e CT-e/DACTE).
 
-**Versão publicada:** 51 — adicionados modelos de DANFE Ford (SBC PG 70001, Camaçari/BA PG 70004) e Polaris (Indaiatuba, PG 4682; tomador do CT-e = destinatário). As 10 rodadas, o fundo procedural e os sons permanecem.
+**Versão publicada:** 52 — Polaris: código do destinatário numérico de quatro dígitos por rodada, exibido no canto superior direito do destinatário no DACTE e no DANFE; PG correto igual ao código e destinatário como tomador. Ford e 10 rodadas preservados.
 
 ## Modelos NF-e Ford e Polaris (didáticos)
 - Ford (página 1 do PDF recebido): DANFE horizontal, remessa de veículo, duas origens sorteáveis: São Bernardo do Campo/SP (PG **70001**) e Camaçari/BA (PG **70004**).
 - Endereço de referência Ford SBC: **Av. Maria Servidei Demarchi, 1420 - Sala 1 - Demarchi, São Bernardo do Campo/SP, CEP 09820-000**. Cadastro: https://portaldatransparencia.gov.br/busca/pessoa-juridica/03470727000120
 - Endereço de referência Ford Camaçari: **Av. Henry Ford, 2000 - COPEC, Camaçari/BA, CEP 42810-000**. Cadastro histórico industrial: https://sei.ba.gov.br/cadex/empresa-detalhes.php?id=22679. O uso no treino não implica fábrica atualmente em operação.
-- Polaris (página 2 do PDF recebido): DANFE vertical de Indaiatuba/SP, modelo UTV off-road. O **destinatário da nota é também o tomador do serviço e pagador do frete**. PG didático criado: **4682**, exibido à direita no DACTE.
+- Polaris (página 2 do PDF recebido): DANFE vertical de Indaiatuba/SP, modelo UTV off-road. O **destinatário da nota é também o tomador do serviço e pagador do frete**. Cada destinatário Polaris possui **código didático de 4 dígitos**, mostrado no DANFE e na parte superior direita do quadro Destinatário do DACTE; o **PG correto é o mesmo código**. O jogo pode gerar PG incorreto como divergência intencional para treinamento.
 - Ambos disponíveis na configuração específica e no sorteio misto. Dados de documentos, notas, pessoas e chaves gerados como **simulação**, sem reproduzir os identificadores fiscais reais do PDF.
 
 ## Fundo animado do menu
