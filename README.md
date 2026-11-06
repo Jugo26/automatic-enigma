@@ -2,7 +2,7 @@
 
 Treinamento didático de conferência de documentos de transporte de veículos (NF-e/DANFE, DCE/DACE e CT-e/DACTE).
 
-**Versão publicada:** 41 — M1/clique esquerdo marca correto e M2/clique direito marca incorreto; exige classificar todos os campos antes de responder; 10 rodadas fixas.
+**Versão publicada:** 42 — menu minimalista azul com animações suaves e acessíveis; M1 correto/M2 incorreto e 10 rodadas fixas.
 
 ## Atualização automática
 - `Index.html` é a **fonte oficial** do jogo; novas versões substituem este arquivo.
