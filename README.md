@@ -2,7 +2,12 @@
 
 Treinamento didático de conferência de documentos de transporte de veículos (NF-e/DANFE, DCE/DACE e CT-e/DACTE).
 
-**Versão publicada:** 45 — laço do Novembro Azul com curva superior corrigida e duas animações em sprites de 30 quadros a 30 FPS (formação ao abrir o menu e movimento ao passar o mouse, tocar ou focar). M1 correto/M2 incorreto e 10 rodadas fixas.
+**Versão publicada:** 46 — sons discretos ao passar o mouse/focar opções e ao clicar/selecionar controles; botão para ligar/desligar o áudio, preferência salva no navegador. Laço do Novembro Azul a 30 FPS, M1 correto/M2 incorreto e 10 rodadas fixas.
+
+## Efeitos sonoros de interface
+- Os sons de hover e clique são sintetizados com Web Audio, sem arquivos de áudio externos.
+- O botão **Som ligado / Som desligado** no menu ativa ou desativa todos os efeitos, e a preferência fica salva no navegador.
+- Navegadores podem impedir o som ao passar o mouse até que a pessoa clique ou interaja com o aplicativo pela primeira vez.
 
 ## Atualização automática
 - `Index.html` é a **fonte oficial** do jogo; novas versões substituem este arquivo.
