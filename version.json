@@ -1,7 +1,7 @@
 {
-  "version": 49,
+  "version": 50,
   "source": "Index.html",
   "updated_at": "2026-11-06",
   "repository": "Jugo26/automatic-enigma",
-  "notes": "Usa a arte de ondas com partículas escolhida pelo usuário, incorporada em WebP ao HTML. Camada Canvas dinâmica com resposta ao mouse e parallax suave; legibilidade e sons, laço 30fps e 10 rodadas preservados."
+  "notes": "Remove a imagem WebP fixa da V49. Fundo procedural com ondas, malhas e partículas geradas continuamente no navegador; resposta ao mouse, pausa fora do menu e suporte a movimento reduzido. Preserva sons, laço 30 FPS e lógica das 10 rodadas."
 }
