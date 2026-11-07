@@ -417,10 +417,15 @@ function policyForUnit(key,def){
       const same=orders.filter(o=>String(o.attributes?.building_type)===j.key);
       const planned=current+same.reduce((sum,o)=>sum+(o.attributes?.tear_down?-1:1),0);
       if(current>=target)return out('done',`Nível ${current} alcançado`);
+      const cap=num(W.GameData?.buildings?.[j.key]?.max_level,0);
+      if(cap>0&&current>=cap)return out('blocked',`Nível máximo ${cap} atingido`);
       if(planned>=target || same.length)return out('wait','Construção deste edifício em andamento');
       const capacity=W.GameDataPremium?.isAdvisorActivated?.('curator')?7:2;
       if(orders.length>=capacity)return out('wait','Fila de obras do jogo cheia');
       const data=W.MM?.getModels?.()?.BuildingBuildData?.[t.id]?.attributes?.building_data?.[j.key];
+      for(const [name,required] of [...queueLevelDependencies(W.GameData?.buildings?.[j.key]?.requirements),...queueLevelDependencies(data?.requirements)]){
+        if(num(currentBuildings[name])<required)return out('wait',`Requer ${name} nível ${required}`);
+      }
       const cost=queueCost(data?.resources_for);
       if(!cost)return out('blocked','Custo da próxima obra não encontrado');
       if(num(t.getAvailablePopulation?.())<num(data.population_for))return out('wait','População insuficiente',cost);
@@ -431,6 +436,10 @@ function policyForUnit(key,def){
       const def=W.GameData?.units?.[j.key];
       if(!def)return out('blocked','Unidade não disponível neste mundo');
       if(!!def.is_naval!==(j.kind==='ship'))return out('blocked','Tipo de unidade incompatível');
+      const current=t.buildings?.()?.attributes||{};
+      for(const [name,required] of [...queueLevelDependencies(def.requirements),...queueLevelDependencies(def.required_buildings)]){
+        if(num(current[name])<required)return out('wait',`Requer ${name} nível ${required}`);
+      }
       const plan=planRecruitBatch(t,j.key,target,num(config.smartQueue.maxBatch,35));
       return out(plan.state,plan.reason,plan.cost,plan.amount);
     }
@@ -443,6 +452,10 @@ function policyForUnit(key,def){
       if(orders.length)return out('wait','Outra pesquisa em andamento');
       const academyReq=num(def.academy_level??def.building_level??def.building_lvl,0);
       if(academyReq && num(t.buildings?.()?.attributes?.academy)<academyReq)return out('wait',`Academia precisa do nível ${academyReq}`);
+      const current=t.buildings?.()?.attributes||{};
+      for(const [name,required] of [...queueLevelDependencies(def.requirements),...queueLevelDependencies(def.required_buildings)]){
+        if(num(current[name])<required)return out('wait',`Requer ${name} nível ${required}`);
+      }
       const pointsReq=num(def.research_points,0);
       if(pointsReq && typeof t.getAvailableResearchPoints==='function' && num(t.getAvailableResearchPoints())<pointsReq)return out('wait','Pontos de pesquisa insuficientes');
       const cost=queueCost(def.resources||def.costs);
