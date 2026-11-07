@@ -1500,45 +1500,57 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
   };
 let queueKindSelected='building';
   const queueContent=()=>{
-    const town=getSelected();
-    const kind=queueKindSelected;
-    const buildingTypes=BUILDINGS.filter(k=>W.GameData?.buildings?.[k]);
-    const unitTypes=Object.entries(W.GameData?.units||{}).filter(([k,def])=>def&&typeof def==='object'&&Boolean(def.is_naval)===(kind==='ship')).map(([k])=>k);
-    const researchTypes=Object.keys(W.GameData?.researches||{});
-    const choices=kind==='building'?buildingTypes:kind==='research'?researchTypes:unitTypes;
-    const own=queueJobs().map((j,index)=>({...queueAnalyze(j),index})).sort((a,b)=>(a.state==='ready'?0:1)-(b.state==='ready'?0:1)||(a.state==='ready'?a.score-b.score:a.index-b.index));
-    const statusName={ready:'✅ Executável',wait:'⏳ Aguardando',done:'✔ Concluído',blocked:'⚠ Verificar'};
-    const ready=own.filter(x=>x.state==='ready');
-    const best=ready[0];
-    const rows=own.map(x=>{
-      const j=x.job;
-      return `<div class="city compact">
-        <div style="flex:1;min-width:180px"><b>${cleanStr(queueName(j))}</b>
-          <div class="smallnote">${statusName[x.state]||''}: ${cleanStr(x.why)}</div>
-          <div class="smallnote">${x.cost?`${cleanStr(queueMoney(x.cost))} · total ${x.score}`:'Custo ainda não disponível'}</div>
-        </div>
-        <button title="Excluir da fila" data-remove-queue="${x.index}">Excluir</button>
-      </div>`;
-    }).join('');
-    return `${moduleNames()}
-      ${section('Prioridade: sempre o menor custo')}
-      <div class="helpbox">A fila escolhe a ordem <b>mais barata que já pode ser iniciada</b>, comparando madeira + pedra + ferro. Se a obra, pesquisa ou treino estiver bloqueado, ela tenta o próximo item. Cada meta é controlada por cidade.</div>
-      <div class="stats"><div><b>${queueJobs().length}</b>Metas cadastradas</div><div><b>${ready.length}</b>Prontas agora</div></div>
-      <p class="smallnote">${best?`Próxima ordem: ${cleanStr(queueName(best.job))} · custo total ${best.score}`:'Nenhuma ordem executável agora. O bot aguardará recursos, pré-requisitos ou espaço nas filas do jogo.'}</p>
-      ${section('Adicionar uma meta')}
-      <div class="formrow"><span>Cidade</span>${selectTown('queueCitySelect',town?.id)}</div>
-      <div class="formrow"><span>Categoria</span><select id="queueKind">${optionList([['building','Construção'],['troop','Tropas terrestres'],['ship','Navios'],['research','Pesquisa']],kind)}</select></div>
-      <div class="formrow"><span>${kind==='building'?'Edifício':kind==='research'?'Pesquisa':'Unidade'}</span><select id="queueKey">${optionList(choices.map(k=>[k,k]))}</select></div>
-      ${kind==='research'?'<p class="smallnote">A pesquisa é feita uma vez e fica marcada como concluída.</p>':`<div class="formrow"><span>${kind==='building'?'Nível desejado':'Total de unidades desejadas'}</span><input type="number" id="queueTarget" min="1" step="1" value="${kind==='building'?'10':'100'}"></div>`}
-      <div class="tools"><button class="primary" data-action="queueAdd">Adicionar à fila</button><button data-action="queueImport">Importar metas da cidade</button></div>
-      <p class="smallnote">Importar metas traz edifícios, tropas, navios e pesquisas dos modelos já aplicados na aba Cidades/Tropas. Quando a fila inteligente está ativa, ela assume essas tarefas nas cidades cadastradas e evita duplicação pelos módulos antigos.</p>
+  const town=getSelected(),kind=queueKindSelected;
+  const buildings=BUILDINGS.filter(k=>W.GameData?.buildings?.[k]);
+  const units=Object.entries(W.GameData?.units||{}).filter(([k,v])=>v&&typeof v==='object'&&Boolean(v.is_naval)===(kind==='ship')).map(([k])=>k);
+  const researches=Object.keys(W.GameData?.researches||{});
+  const options=kind==='building'?buildings:kind==='research'?researches:units;
+  const plan=queueCandidates();
+  const normal=plan.rows.filter(x=>!x.automatic);
+  const generated=plan.rows.filter(x=>x.automatic);
+  const names={ready:'✅ Pronta',wait:'⏳ Esperando',blocked:'⚠ Verificar',done:'✔ Concluída'};
+  const mode=queueMode();
+  const addKinds=[['building','Construção'],['troop','Tropa terrestre'],['ship','Navio'],['research','Pesquisa']];
+  const priorities=[['normal','Normal'],['high','Alta'],['urgent','Urgente']];
+  const rows=normal.map(x=>{
+    const j=x.job;
+    const cost=x.cost?`${queueMoney(x.cost)} · total ${x.score}`:'Custo indisponível';
+    return `<div class="city compact">
+      <div style="flex:1;min-width:170px"><b>${cleanStr(queueName(j))}</b>
+      <div class="smallnote">${names[x.state]||''}: ${cleanStr(x.why)}</div>
+      <div class="smallnote">${cleanStr(cost)}${mode==='intelligent'&&x.state==='ready'?' · índice '+Number(x.rank).toFixed(1):''}</div></div>
+      <select data-queue-urgency="${x.index}" title="Urgência desta meta" style="max-width:106px">${optionList(priorities,queueUrgency(j))}</select>
+      <button data-remove-queue="${x.index}">Excluir</button></div>`;
+  }).join('');
+  const blockers=generated.map(x=>`<div class="city">
+    <b>${cleanStr(queueName(x.job))}</b> · ${names[x.state]||''}
+    <div class="smallnote">${cleanStr((x.reasons||[]).join('; '))}</div>
+    <div class="smallnote">${x.cost?cleanStr(queueMoney(x.cost)):'Custo ainda indisponível'}</div>
+  </div>`).join('');
+  const best=plan.best;
+  return `${moduleNames()}
+    ${section('Seleção econômica inteligente')}
+    <div class="formrow"><span>Estratégia</span><select data-setting="smartQueue.mode">${optionList([['intelligent','Inteligente · custo e benefício'],['cheapest','Clássico · menor custo']],mode)}</select></div>
+    <div class="checks"><label><input type="checkbox" data-setting="smartQueue.autoPrereqs" ${config.smartQueue.autoPrereqs!==false?'checked':''}> Completar pré-requisitos necessários (modo inteligente)</label></div>
+    <div class="helpbox">${mode==='cheapest'?'O modo clássico sempre escolhe a tarefa executável mais barata. Ignora urgências e melhorias automáticas.':'O modo inteligente considera o custo, urgência, dependências, população e capacidade de armazenamento. Pode antecipar academia, quartel, porto, fazenda e armazém para destravar tarefas da sua lista.'}</div>
+    <div class="stats"><div><b>${queueJobs().length}</b>Metas cadastradas</div><div><b>${plan.ready.length}</b>Prontas para executar</div></div>
+    <p class="smallnote">${best?'Próxima: '+cleanStr(queueName(best.job))+(best.automatic?' (pré-requisito)':'')+' · custo '+best.score+(mode==='intelligent'?' · índice '+Number(best.rank).toFixed(1):''):'Nenhuma ordem executável. Aguardando recursos, fila ou requisitos.'}</p>
+    ${section('Adicionar meta à cidade')}
+    <div class="formrow"><span>Cidade</span>${selectTown('queueCitySelect',town?.id)}</div>
+    <div class="formrow"><span>Tipo</span><select id="queueKind">${optionList(addKinds,kind)}</select></div>
+    <div class="formrow"><span>Item</span><select id="queueKey">${optionList(options.map(k=>[k,k]))}</select></div>
+    ${kind==='research'?'<p class="smallnote">A pesquisa é feita uma vez.</p>':`<div class="formrow"><span>${kind==='building'?'Nível-alvo':'Quantidade-alvo'}</span><input type="number" id="queueTarget" min="1" step="1" value="${kind==='building'?'10':'100'}"></div>`}
+    <div class="formrow"><span>Urgência</span><select id="queueAddUrgency">${optionList(priorities,'normal')}</select></div>
+    <div class="tools"><button class="primary" data-action="queueAdd">Adicionar à fila</button><button data-action="queueImport">Importar metas da cidade</button></div>
+    <p class="smallnote">Importe construções, tropas, navios e pesquisas dos modelos já configurados. A urgência pode ser alterada em cada tarefa abaixo.</p>
+    <div class="formrow"><span>Teto adicional por lote de tropas/navios</span><input type="number" min="1" max="999" data-setting="smartQueue.maxBatch" value="${config.smartQueue.maxBatch}"></div>
+    <p class="smallnote">Lotes: terrestre até ${config.recruit.maxBatch} (mín. ${config.recruit.minBatch}), naval até ${config.recruit.shipBatch} (mín. ${config.recruit.minShipBatch}). Máximo ${config.recruit.maxQueueSlots} espaços por tipo. Ajuste em TROPAS.</p>
+    ${generated.length?`${section('Melhorias para liberar metas')}${blockers}`:''}
+    ${section('Metas cadastradas')}
+    <div class="tools"><button data-action="queueClearDone">Remover concluídas</button><button data-action="queueClearAll">Esvaziar lista</button></div>
+    <div class="cityscroll" style="max-height:330px">${rows||'<p class="smallnote">Adicione uma meta acima.</p>'}</div>
+    <p class="smallnote">Índice = custo ponderado por benefício e urgência; menor índice primeiro. O bot reavalia as condições antes de cada nova ordem. Modo simulação não envia comandos.</p>`;
 
-      <div class="formrow"><span>Teto adicional de unidades por ordem nesta fila</span><input type="number" min="1" max="999" data-setting="smartQueue.maxBatch" value="${config.smartQueue.maxBatch}"></div>
-      <p class="smallnote">Lotes: terrestre até ${config.recruit.maxBatch} (mínimo ${config.recruit.minBatch}), naval até ${config.recruit.shipBatch} (mínimo ${config.recruit.minShipBatch}), mítico até ${config.recruit.mythicalBatch} (mínimo ${config.recruit.minMythicalBatch}). Até ${config.recruit.maxQueueSlots} espaços por tipo; altere na aba TROPAS.</p>
-      ${section('Fila ordenada por custo')}
-      <div class="tools"><button data-action="queueClearDone">Limpar concluídos</button><button data-action="queueClearAll">Limpar toda a fila</button></div>
-      <div class="cityscroll" style="max-height:320px">${rows||'<p class="smallnote">A fila está vazia. Adicione uma meta acima.</p>'}</div>
-      <p class="smallnote">As ações aparecem no histórico (Log). A prioridade é econômica, não por tempo de conclusão. Em modo simulação, apenas registra o que seria executado.</p>`;
   };
   const combatContent=()=>{
     const t=getSelected(),unitNames=Object.keys(W.GameData?.units||{}).filter(k=>typeof W.GameData.units[k]==='object');
@@ -1641,8 +1653,9 @@ let queueKindSelected='building';
           if(goal<1)throw Error('A meta deve ser maior que zero');
           if(queueJobs().length>=120)throw Error('Limite de 120 metas; exclua uma antes de adicionar');
           const existing=queueJobs().find(j=>String(j.townId)===String(t.id)&&j.kind===kind&&j.key===key);
-          if(existing) existing.target=goal;
-          else config.smartQueue.items.push({id:'GQ-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,7),townId:Number(t.id),kind,key,target:goal});
+          const urgency=el('queueAddUrgency')?.value||'normal';
+          if(existing){existing.target=goal;existing.urgency=urgency;}
+          else config.smartQueue.items.push({id:'GQ-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,7),townId:Number(t.id),kind,key,target:goal,urgency});
           config.modules.smartQueue=true;
           nextRun.smartQueue=0;save();log('Fila: meta adicionada ou atualizada');break;
         }
@@ -1751,7 +1764,14 @@ let queueKindSelected='building';
     if(t.dataset.module){config.modules[t.dataset.module]=t.checked;nextRun[t.dataset.module]=0;save();render();return;}
     if(t.dataset.culture){config.culture[t.dataset.culture]=t.checked;save();render();return;}
     if(t.dataset.global){config[t.dataset.global]=t.checked;save();render();return;}
-    if(t.dataset.setting){setPath(t.dataset.setting,t.type==='checkbox'?t.checked:t.type==='number'?num(t.value):t.value);render();return;}
+    if(t.dataset.queueUrgency!==undefined){
+      const index=Number(t.dataset.queueUrgency);
+      if(Number.isSafeInteger(index)&&queueJobs()[index]&&['normal','high','urgent'].includes(t.value)){
+        config.smartQueue.items[index].urgency=t.value;nextRun.smartQueue=0;save();
+      }
+      render();return;
+    }
+    if(t.dataset.setting){setPath(t.dataset.setting,t.type==='checkbox'?t.checked:t.type==='number'?num(t.value):t.value);if(t.dataset.setting.startsWith('smartQueue.'))nextRun.smartQueue=0;render();return;}
     if(t.dataset.interval){config.intervals[t.dataset.interval]=Math.max(2,num(t.value,60));save();render();return;}
     if(t.id==='citySelect'||t.id==='queueCitySelect'||t.id==='dodgeSource'||t.id==='testCity'){selectedCity=t.value;render();}
     if(t.id==='queueKind'){queueKindSelected=t.value;render();}
