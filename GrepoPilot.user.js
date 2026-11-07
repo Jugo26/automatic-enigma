@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GrepoPilot - Painel de Automacao
 // @namespace    https://grepolis.com/
-// @version      0.3.1
+// @version      0.3.2
 // @updateURL    https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.meta.js
 // @downloadURL  https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.user.js
 // @homepageURL  https://github.com/Jugo26/automatic-enigma/tree/grepopilot-updates
@@ -110,7 +110,7 @@
     quests: {rewardAction:'stash',onlySatisfied:true},
     banditRewards: {stashIfPossible:true},
     culture: {festival:false,triumph:false,theater:false},
-    bootcamp: {homeTownId:0,offenseOnly:true,allowMythical:false,minUnits:10,keepUnits:{sword:30,archer:30,hoplite:30},stashRewards:true},
+    bootcamp: {homeTownId:0,stashRewards:true},
     cave: {minIron:15000,keepIron:5000},
     commands: {jobs:[]},
     alerts: {desktop:true,checkAll:true},
@@ -553,12 +553,12 @@
     const units={};let total=0;
     for(const [k,v] of Object.entries(home.units?.()||{})){
       const def=W.GameData?.units?.[k];if(!def||def.is_naval||k==='militia')continue;
-      if(config.bootcamp.offenseOnly && ['sword','archer'].includes(k))continue;
-      if(!config.bootcamp.allowMythical && isMythical(k,def))continue;
-      const send=Math.max(0,Math.floor(num(v)-Math.max(0,num(config.bootcamp.keepUnits?.[k]))));
+      // Use toda a guarnição terrestre disponível, inclusive unidades defensivas e míticas.
+      // Navios e milícia não são aceitos em ataques terrestres ao acampamento.
+      const send=Math.max(0,Math.floor(num(v)));
       if(send>0){units[k]=send;total+=send;}
     }
-    if(total<Math.max(1,num(config.bootcamp.minUnits,10)))return false;
+    if(total===0){log(`Bandidos: ${tName(home)} sem tropas terrestres disponíveis`,'WARN');return false;}
     if(!config.dryRun){
       runtime.lastBanditAttackAt=now;
       runtime.lastBanditStage=stage;
@@ -757,13 +757,10 @@
     <div class="formrow"><span>Cidade da ilha inicial</span>${selectTown('bootcampHome',num(config.bootcamp.homeTownId)||t?.id)}</div>
     <button data-action="setBootcampHome">Definir cidade do acampamento</button>
     <div class="smallnote">Origem: ${cleanStr(config.bootcamp.homeTownId?tName(townBy(config.bootcamp.homeTownId)):'cidade atual (até definir)')} · O bot respeita a espera do acampamento e não repete ataques em trânsito.</div>
-    <div class="checks"><label><input type="checkbox" data-setting="bootcamp.offenseOnly" ${config.bootcamp.offenseOnly?'checked':''}> Não usar espadachins/arqueiros</label>
-    <label><input type="checkbox" data-setting="bootcamp.allowMythical" ${config.bootcamp.allowMythical?'checked':''}> Permitir criaturas míticas</label></div>
-    <div class="formrow"><span>Mínimo de tropas</span><input type="number" min="1" max="100000" data-setting="bootcamp.minUnits" value="${config.bootcamp.minUnits}"></div>
+    <p class="smallnote"><b>Enviar todas as tropas:</b> o próximo ataque ao acampamento utilizará 100% das unidades terrestres presentes nesta cidade (inclusive espadachins, arqueiros e criaturas míticas disponíveis), sem reservar tropas. Navios e milícia não entram nesta batalha.</p>
     ${section('Acampamento e alertas')}
     <div class="checks"><label><input type="checkbox" data-setting="bootcamp.stashRewards" ${config.bootcamp.stashRewards?'checked':''}> Guardar recompensas permitidas</label>
     <label><input type="checkbox" data-setting="alerts.desktop" ${config.alerts.desktop?'checked':''}> Notificações desktop</label></div>
-    <div class="formrow"><span>Reserva no acampamento (JSON)</span><input id="bootReserve" value="${cleanStr(JSON.stringify(config.bootcamp.keepUnits))}"><button data-action="saveReserve">Salvar</button></div>
     <button data-action="askNotif">Permitir notificações</button>`;
   };
   const rewardsContent=()=>{
@@ -899,7 +896,6 @@
           if(!from||!to||!Date.parse(sendAt)||qty<1)throw Error('Preencha cidade-alvo, horário e tropas');
           config.commands.jobs.push({id:`GP-${Date.now()}-${Math.floor(Math.random()*9999)}`,type:el('commandType').value,from,to,sendAt:new Date(sendAt).toISOString(),units:{[unit]:qty},enabled:true});save();break;
         }
-        case 'saveReserve':config.bootcamp.keepUnits=JSON.parse(el('bootReserve').value);save();break;
         case 'askNotif':{if('Notification'in window)await Notification.requestPermission();break;}
         case 'applyJson':{
           const v=JSON.parse(el('jsonEdit').value);config=migrate(merge(clone(BASE),v),v);save();nextRun={};log('JSON aplicado');break;
