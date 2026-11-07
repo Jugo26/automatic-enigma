@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GrepoPilot - Painel de Automacao
 // @namespace    https://grepolis.com/
-// @version      0.5.1
+// @version      0.6.0
 // @updateURL    https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.meta.js
 // @downloadURL  https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.user.js
 // @homepageURL  https://github.com/Jugo26/automatic-enigma/tree/grepopilot-updates
@@ -118,6 +118,7 @@
     commands: {jobs:[]},
     alerts: {desktop:true,checkAll:true},
     dodge: {leadSeconds:5,returnAfterSeconds:1,waveGapSeconds:12,land:true,naval:true,targets:{}},
+    attackTest: {delay:20,wave:0,mode:'preview'},
     ui: {x:null,y:90,tab:'INÍCIO',collapsed:false}
   };
   const clone = v => JSON.parse(JSON.stringify(v));
@@ -137,6 +138,7 @@
   let RUNTIME = `grepopilot:runtime:${scope}`;
   let DODGE_STORE = `grepopilot:dodge:${scope}`;
   let DODGE_LOCK = `grepopilot:dodge-lock:${scope}`;
+  let TEST_STORE = `grepopilot:attacktest:${scope}`;
   const old = (() => {try {return JSON.parse(localStorage.getItem(STORE)||'{}')}catch{return {}}})();
   const migrate = (cfg,raw={}) => {
     if(raw?.modules?.ruralUpgrade && raw?.ruralUpgrade?.unlock && raw?.modules?.ruralUnlock===undefined) cfg.modules.ruralUnlock=true;
@@ -155,7 +157,7 @@
   function rescope(){
     const newScope = `${location.host}:${W.Game?.player_id || 'unknown'}`;
     if(newScope===scope)return;
-    scope=newScope;STORE=`grepopilot:config:${scope}`;LOCK=`grepopilot:lock:${scope}`;FIRED=`grepopilot:fired:${scope}`;RUNTIME=`grepopilot:runtime:${scope}`;DODGE_STORE=`grepopilot:dodge:${scope}`;DODGE_LOCK=`grepopilot:dodge-lock:${scope}`;
+    scope=newScope;STORE=`grepopilot:config:${scope}`;LOCK=`grepopilot:lock:${scope}`;FIRED=`grepopilot:fired:${scope}`;RUNTIME=`grepopilot:runtime:${scope}`;DODGE_STORE=`grepopilot:dodge:${scope}`;DODGE_LOCK=`grepopilot:dodge-lock:${scope}`;TEST_STORE=`grepopilot:attacktest:${scope}`;
     try{const raw=JSON.parse(localStorage.getItem(STORE)||'{}');config=migrate(merge(clone(BASE),raw),raw);}catch{config=clone(BASE);}
     nextRun={};seenAttacks=new Set();
     log(`Conta/mundo detectado: ${scope}`);render();
@@ -799,7 +801,123 @@ function policyForUnit(key,def){
     if(seenAttacks.size>200)seenAttacks=new Set([...seenAttacks].slice(-100));
     return false;
   }
-const dodgeRead=()=>{try{return JSON.parse(localStorage.getItem(DODGE_STORE)||'{}')}catch{return {}}};
+function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}')}catch{return {}}}
+  function testWrite(v){localStorage.setItem(TEST_STORE,JSON.stringify(v));}
+  function testActive(){const a=testRead().active;return !!(a?.state==='active'&&a.mode==='live'&&a.impactMs>dodgeNow()-1000);}
+  function testAttacks(){
+  const a=testRead().active;
+  if(!a||a.state!=='active'||a.mode!=='live')return [];
+  return [a.impactMs,...(a.secondMs?[a.secondMs]:[])].map((arrivalMs,i)=>({
+    id:'GPTEST-'+a.id+'-'+i,townId:Number(a.townId),arrivalMs,type:'attack_test',
+    simulated:true,testId:a.id
+  }));
+}
+  function testStart(id,mode,delay,wave){
+  const town=townBy(id);
+  if(!town)throw Error('Cidade inválida');
+  if(!['preview','live'].includes(mode))throw Error('Modo inválido');
+  delay=Math.floor(Number(delay));wave=Math.floor(Number(wave)||0);
+  if(!Number.isSafeInteger(delay)||delay<8||delay>180)throw Error('Prazo deve estar entre 8 e 180 segundos');
+  if(!Number.isSafeInteger(wave)||wave<0||wave>30)throw Error('O intervalo da segunda onda deve ser de 0 a 30 segundos');
+  if(testRead().active?.state==='active')throw Error('Interrompa o teste atual antes de iniciar outro');
+  const now=dodgeNow();
+  const targetId=dodgeDestination(Number(id),dodgeIncoming());
+  if(mode==='live'){
+    if(!dodgeCanOperate())throw Error('Grepolis não está disponível');
+    if(!targetId)throw Error('Teste prático precisa de outra cidade própria na mesma ilha');
+    if(dodgeTracked(dodgeRead()).some(j=>Number(j.townId)===Number(id)))throw Error('Há esquiva real pendente nesta cidade');
+    if(!Object.values(dodgeUnits(town)).some(group=>Object.keys(group).length))throw Error('A cidade não tem tropas disponíveis');
+    if(dodgeIncoming().some(a=>!a.simulated&&a.townId===Number(id)&&a.arrivalMs>now&&a.arrivalMs<now+delay*1000+30000))throw Error('Ataque verdadeiro próximo: teste prático bloqueado nesta cidade');
+  }
+  const a={id:'T-'+now+'-'+Math.random().toString(36).slice(2,7),townId:Number(id),targetId,
+    mode,state:'active',stage:'waiting',createdMs:now,impactMs:now+delay*1000,
+    secondMs:wave?now+(delay+wave)*1000:0,leadSeconds:Math.min(5,Math.max(1,num(config.dodge.leadSeconds,5))),
+    returnDelay:Math.max(1,num(config.dodge.returnAfterSeconds,1)),sentMs:0,cancelledMs:0,returnMs:0,reason:''};
+  testWrite({active:a});
+  log(`Teste ${mode==='live'?'PRÁTICO':'SIMULADO'} iniciado em ${tName(town)}: impacto fictício em ${delay}s`);
+  return a;
+}
+  function testStop(){
+  const state=testRead(),a=state.active;
+  if(!a||a.state!=='active')return;
+  a.state='stopped';a.stage='stopped';a.reason='Teste interrompido';
+  testWrite(state);
+  if(a.mode==='live'){
+    const d=dodgeRead();
+    for(const job of Object.values(d.jobs||{}))if(job.testId===a.id&&dodgeActive(job))job.forceCancel=true;
+    dodgeWrite(d);
+    log('Teste interrompido: cancelamento solicitado para todos os apoios do teste','WARN');
+  }else log('Teste simulado interrompido');
+}
+  function testTick(){
+  const st=testRead(),a=st.active;
+  if(!a||a.state!=='active')return;
+  const now=dodgeNow(),last=Math.max(a.impactMs,a.secondMs||0),after=last+a.returnDelay*1000;
+  let changed=false;
+  if(a.mode==='preview'){
+    const sendAt=a.impactMs-a.leadSeconds*1000;
+    if(a.stage==='waiting'&&now>=sendAt){
+      a.stage='sent';a.sentMs=sendAt;
+      a.cancelDue=Math.round((sendAt+after)/2);a.returnDue=after;changed=true;
+      log('SIMULAÇÃO: apoio virtual enviado; cancelamento programado');
+    }
+    if(a.stage==='sent'&&now>=a.cancelDue){
+      a.stage='cancelled';a.cancelledMs=a.cancelDue;changed=true;
+      log('SIMULAÇÃO: apoio virtual cancelado');
+    }
+    if(a.stage==='cancelled'&&now>=after){
+      a.stage='completed';a.state='completed';a.returnMs=after;changed=true;
+      log('SIMULAÇÃO: retorno previsto após o último impacto');
+    }
+  }else{
+    const jobs=Object.values(dodgeRead().jobs||{}).filter(j=>j.testId===a.id);
+    if(jobs.some(j=>j.state==='needs_attention')&&now>last+2000){
+      a.stage='attention';a.state='attention';a.reason='Verifique o apoio: falta confirmação de cancelamento';changed=true;
+    }else if(jobs.length&&jobs.every(j=>j.state==='cancelled')&&now>after+3000){
+      a.stage='completed';a.state='completed';a.sentMs=Math.min(...jobs.map(j=>j.sentAtMs));
+      a.cancelledMs=Math.max(...jobs.map(j=>j.cancelledAtMs||0));
+      a.returnMs=Math.max(...jobs.map(j=>j.estimatedArrivalMs||0));changed=true;
+      log('TESTE PRÁTICO: apoios cancelados; retorno calculado. Confira a chegada no jogo');
+    }else if(!jobs.length&&now>last+15000){
+      a.stage='failed';a.state='failed';a.reason='A esquiva não enviou apoio antes do impacto fictício';changed=true;
+    }else{
+      const newStage=jobs.length?'sent':'waiting';
+      if(a.stage!==newStage){a.stage=newStage;changed=true;}
+      if(jobs.length&&!a.sentMs){a.sentMs=Math.min(...jobs.map(j=>j.sentAtMs));changed=true;}
+      if(jobs.some(j=>j.state==='cancelled')){
+        const cancel=Math.max(...jobs.map(j=>j.cancelledAtMs||0));
+        if(a.cancelledMs!==cancel){a.cancelledMs=cancel;changed=true;}
+      }
+    }
+  }
+  if(changed){st.active=a;testWrite(st);if(config.ui.tab==='TESTE')render();}
+}
+  function testContent(){
+  const a=testRead().active,now=dodgeNow(),t=getSelected(),mode=config.attackTest?.mode||'preview';
+  const destination=t?dodgeDestination(Number(t.id),dodgeIncoming()):0;
+  const group=t?dodgeUnits(t):{land:{},naval:{}};
+  const count=Object.values(group).reduce((n,g)=>n+Object.values(g).reduce((sum,v)=>sum+num(v),0),0);
+  const status=a?`<div class="city"><b>${a.mode==='live'?'🟠 Teste prático':'🔵 Teste virtual'}</b>
+    <div>Cidade: ${cleanStr(tName(townBy(a.townId)))} · destino: ${cleanStr(tName(townBy(a.targetId)))}</div>
+    <div>Estado: ${cleanStr(a.stage)} (${cleanStr(a.state)})</div>
+    <div>Impacto fictício: ${new Date(a.impactMs).toLocaleTimeString('pt-BR',{hour12:false})}${a.secondMs?' · 2ª onda '+new Date(a.secondMs).toLocaleTimeString('pt-BR',{hour12:false}):''}</div>
+    <div>Contagem regressiva: <b id="testCountdown">${Math.max(0,(a.impactMs-now)/1000).toFixed(1)}s</b></div>
+    <div class="smallnote">Saída: ${a.sentMs?new Date(a.sentMs).toLocaleTimeString('pt-BR',{hour12:false}):'aguardando'} · Cancelamento: ${a.cancelledMs?new Date(a.cancelledMs).toLocaleTimeString('pt-BR',{hour12:false}):'aguardando'} · Retorno: ${a.returnMs?new Date(a.returnMs).toLocaleTimeString('pt-BR',{hour12:false}):a.returnDue?new Date(a.returnDue).toLocaleTimeString('pt-BR',{hour12:false}):'calculando'}</div>
+    ${a.reason?'<div class="smallnote">'+cleanStr(a.reason)+'</div>':''}</div>`:'<p class="smallnote">Nenhum teste executado.</p>';
+  return `${section('Simular ataque à cidade')}
+    <div class="helpbox">Cria um <b>ataque fictício</b> só no GrepoPilot. O modo virtual não move tropas; o modo prático usa apoio real para testar a saída e o cancelamento cronometrado, sem realizar ataque inimigo.</div>
+    <div class="formrow"><span>Cidade testada</span>${selectTown('testCity',t?.id)}</div>
+    <div class="formrow"><span>Chegada do ataque em (seg.)</span><input type="number" min="8" max="180" data-setting="attackTest.delay" value="${config.attackTest.delay}"></div>
+    <div class="formrow"><span>Segunda onda</span><select data-setting="attackTest.wave">${optionList([[0,'Desativada'],[3,'3 segundos depois'],[5,'5 segundos depois'],[10,'10 segundos depois']],config.attackTest.wave)}</select></div>
+    <div class="formrow"><span>Modo</span><select data-setting="attackTest.mode">${optionList([['preview','Só cálculo — sem mover tropas'],['live','Teste real: enviar e cancelar apoio']],mode)}</select></div>
+    <div class="smallnote">Tropas disponíveis: ${count} · apoio para: ${destination?cleanStr(tName(townBy(destination))):'nenhuma cidade da mesma ilha'}</div>
+    <div class="checks"><label><input id="testConfirm" type="checkbox"> Confirmo envio e cancelamento de tropas reais no modo prático.</label></div>
+    <div class="tools"><button class="primary" data-action="testStart" ${a?.state==='active'?'disabled':''}>▶ Iniciar simulação</button><button data-action="testStop" ${a?.state==='active'?'':'disabled'}>■ Interromper teste</button></div>
+    ${section('Relatório do teste')}
+    ${status}
+    <p class="smallnote">O ataque fictício não aparece como ataque real no Grepolis. O teste prático executa somente o apoio e o cancelamento, mesmo se os demais módulos do bot estiverem pausados. Ao interromper depois do envio, o cancelamento das tropas continua pendente até confirmação.</p>`;
+}
+  const dodgeRead=()=>{try{return JSON.parse(localStorage.getItem(DODGE_STORE)||'{}')}catch{return {}}};
   const dodgeWrite=v=>localStorage.setItem(DODGE_STORE,JSON.stringify(v));
   const dodgeClock={sampleAt:0,deltaMs:0,source:'local'};
   function dodgeNow(){
@@ -836,7 +954,7 @@ const dodgeRead=()=>{try{return JSON.parse(localStorage.getItem(DODGE_STORE)||'{
   const dodgeArrival=a=>dodgeEpochMs(a?.arrival_at??a?.time_of_arrival??a?.arrival_time);
   function dodgeIncoming(){
     const owned=new Set(towns().map(t=>Number(t.id)));
-    return dodgeMovements().flatMap(({model,data:a})=>{
+    const real=dodgeMovements().flatMap(({model,data:a})=>{
       const type=String(a.type??a.command_type??a.movement_type??'').toLowerCase();
       const townId=dodgeDstId(a);
       if(!owned.has(townId)||!(type==='attack'||type==='attack_with_spy'||type.startsWith('attack_')))return [];
@@ -847,6 +965,7 @@ const dodgeRead=()=>{try{return JSON.parse(localStorage.getItem(DODGE_STORE)||'{
       const id=String(a.command_id||a.id||model?.id||`${townId}:${arrivalMs}`);
       return [{townId,arrivalMs,id,type}];
     }).sort((a,b)=>a.arrivalMs-b.arrivalMs);
+    return real.concat(testAttacks()).sort((a,b)=>a.arrivalMs-b.arrivalMs);
   }
   function dodgeOutgoing(from,to){
     return dodgeMovements().filter(m=>{
@@ -949,11 +1068,11 @@ const dodgeRead=()=>{try{return JSON.parse(localStorage.getItem(DODGE_STORE)||'{
       return false;
     }
   }
-  async function dodgeDispatch(store,townId,targetId,group,units,wave){
+  async function dodgeDispatch(store,townId,targetId,group,units,wave,testId=null){
     const now=dodgeNow();
     const job={
       id:`ED-${townId}-${group}-${Date.now().toString(36)}`,
-      townId,targetId,group,units,
+      townId,targetId,group,units,testId,
       state:'dispatching',sentAtMs:now,
       firstImpactMs:wave.firstImpactMs,lastImpactMs:wave.lastImpactMs,
       existingIds:dodgeOutgoing(townId,targetId).map(dodgeMoveId),
@@ -961,7 +1080,7 @@ const dodgeRead=()=>{try{return JSON.parse(localStorage.getItem(DODGE_STORE)||'{
     };
     dodgeSaveRecord(store,job);
     try{
-      await action('town_info','send_units',{id:Number(targetId),town_id:Number(townId),type:'support',nl_init:true,...units});
+      await action('town_info','send_units',{id:Number(targetId),town_id:Number(townId),type:'support',nl_init:true,...units},Boolean(testId));
       job.state='identifying';
       job.ackAtMs=dodgeNow();
       dodgeSaveRecord(store,job);
@@ -994,7 +1113,7 @@ const dodgeRead=()=>{try{return JSON.parse(localStorage.getItem(DODGE_STORE)||'{
   }
   async function dodgePulse(){
     if(dodgeBusy||!dodgeCanOperate())return;
-    if((!config.enabled||!config.modules.dodge)&&!dodgeTracked(dodgeRead()).length)return;
+    if((!config.enabled||!config.modules.dodge)&&!dodgeTracked(dodgeRead()).length&&!testActive())return;
     if(!dodgeLeader())return;
     dodgeBusy=true;
     try{
@@ -1026,6 +1145,7 @@ const dodgeRead=()=>{try{return JSON.parse(localStorage.getItem(DODGE_STORE)||'{
           }else continue;
         }
         if(job.state!=='sent'||Number(job.retryAfterMs)>now)continue;
+        if(job.forceCancel){await dodgeCancel(store,job,now);return;}
         job.lastImpactMs=dodgeLateAttacks(job,attacks);
         const s=Number(job.startedAtMs)||Number(job.sentAtMs);
         const plan=dodgeTiming(s,job.lastImpactMs);
@@ -1050,12 +1170,13 @@ const dodgeRead=()=>{try{return JSON.parse(localStorage.getItem(DODGE_STORE)||'{
           return;
         }
       }
-      if(!config.enabled||!config.modules.dodge)return;
+      if((!config.enabled||!config.modules.dodge)&&!testActive())return;
       const minLead=1000,lead=Math.min(5000,Math.max(1000,Number(config.dodge.leadSeconds||5)*1000));
       const own=new Map(towns().map(t=>[Number(t.id),t]));
+      const normalDodge=Boolean(config.enabled&&config.modules.dodge);
       for(const [townId,town] of own){
         if(dodgeTracked(store).some(j=>Number(j.townId)===townId))continue;
-        const waveEvents=attacks.filter(a=>a.townId===townId&&a.arrivalMs>now);
+        const waveEvents=attacks.filter(a=>a.townId===townId&&a.arrivalMs>now&&(normalDodge||a.simulated));
         const first=waveEvents[0];
         if(!first)continue;
         const before=first.arrivalMs-now;
@@ -1074,7 +1195,7 @@ const dodgeRead=()=>{try{return JSON.parse(localStorage.getItem(DODGE_STORE)||'{
         const active=Object.entries(groups).filter(([,u])=>Object.keys(u).length>0);
         if(!active.length){store.handled[first.id]=now;dodgeWrite(store);continue;}
         const wave={firstImpactMs:first.arrivalMs,lastImpactMs:lastImpact};
-        if(config.dryRun){
+        if(config.dryRun && !first.simulated){
           if(!dodgePreviewed.has(first.id)){
             dodgePreviewed.add(first.id);
             log(`SIMULAÇÃO ESQUIVA ${tName(town)} → ${tName(townBy(targetId))}: impacto em ${(before/1000).toFixed(2)} s, retorno-alvo ${new Date(lastImpact+1000).toLocaleTimeString('pt-BR',{hour12:false})}`);
@@ -1086,7 +1207,7 @@ const dodgeRead=()=>{try{return JSON.parse(localStorage.getItem(DODGE_STORE)||'{
           if(dodgeNow()>=first.arrivalMs-350){
             log(`Esquiva: ${kind} não enviada: impacto muito próximo`,'WARN');break;
           }
-          await dodgeDispatch(store,townId,targetId,kind,units,wave);
+          await dodgeDispatch(store,townId,targetId,kind,units,wave,first.simulated?first.testId:null);
         }
         return;
       }
@@ -1339,11 +1460,11 @@ let queueKindSelected='building';
     host.style.left=config.ui.x===null?'auto':Math.max(0,num(config.ui.x))+'px';
     host.style.right=config.ui.x===null?'20px':'auto';
     host.style.top=Math.max(0,num(config.ui.y))+'px';
-    const body=({'INÍCIO':dashboard,CIDADES:cityContent,FILA:queueContent,ESQUIVA:dodgeContent,ALDEIAS:villagesContent,TROPAS:troopsContent,COMBATE:combatContent,ECONOMIA:economyContent,'MISSÕES':rewardsContent,AJUSTES:configContent,LOG:logContent}[config.ui.tab]||dashboard)();
+    const body=({'INÍCIO':dashboard,CIDADES:cityContent,FILA:queueContent,ESQUIVA:dodgeContent,TESTE:testContent,ALDEIAS:villagesContent,TROPAS:troopsContent,COMBATE:combatContent,ECONOMIA:economyContent,'MISSÕES':rewardsContent,AJUSTES:configContent,LOG:logContent}[config.ui.tab]||dashboard)();
     shadow.querySelector('#gp-app').innerHTML=`
-      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.5.1</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
+      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.6.0</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
       ${config.ui.collapsed?'':`<div class="status"><i class="dot ${config.enabled?(config.dryRun?'sim':'live'):''}"></i>${cleanStr(STATUS())}</div>
-      <div class="tabs">${['INÍCIO','CIDADES','FILA','ALDEIAS','TROPAS','COMBATE','ESQUIVA','ECONOMIA','MISSÕES','AJUSTES','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
+      <div class="tabs">${['INÍCIO','CIDADES','FILA','ALDEIAS','TROPAS','COMBATE','ESQUIVA','TESTE','ECONOMIA','MISSÕES','AJUSTES','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
       <div class="body">${body}</div><div class="foot"><button class="${config.enabled?'stop':'go'}" data-action="toggle">${config.enabled?'■ PARAR TUDO':'▶ INICIAR'}</button><span>${Object.values(config.modules).filter(Boolean).length} módulos ativos</span></div>`}`;
   };
   const CSS=`
@@ -1416,6 +1537,12 @@ let queueKindSelected='building';
           config.smartQueue.items=queueJobs().filter(j=>queueAnalyze(j).state!=='done');save();break;
         case 'queueClearAll':
           config.smartQueue.items=[];save();break;
+        case 'testStart': {
+          const id=Number(el('testCity')?.value||getSelected()?.id);
+          if(config.attackTest.mode==='live'&&!el('testConfirm')?.checked)throw Error('Confirme a movimentação real de tropas para testar');
+          testStart(id,config.attackTest.mode,config.attackTest.delay,config.attackTest.wave);break;
+        }
+        case 'testStop':testStop();break;
         case 'dodgeSaveTarget': { const src=getSelected(); if(!src)throw Error('Cidade inválida'); const dest=Number(el('dodgeTarget')?.value||0); if(dest&&!dodgeSameIsland(src,townBy(dest)))throw Error('Escolha outra cidade própria da mesma ilha');config.dodge.targets[src.id]=dest;save();log(`Esquiva: destino de ${tName(src)} definido`);break; }
         case 'setBootcampHome': {
           const id=num(el('bootcampHome').value);
@@ -1497,7 +1624,7 @@ let queueKindSelected='building';
     if(t.dataset.global){config[t.dataset.global]=t.checked;save();render();return;}
     if(t.dataset.setting){setPath(t.dataset.setting,t.type==='checkbox'?t.checked:t.type==='number'?num(t.value):t.value);render();return;}
     if(t.dataset.interval){config.intervals[t.dataset.interval]=Math.max(2,num(t.value,60));save();render();return;}
-    if(t.id==='citySelect'||t.id==='queueCitySelect'||t.id==='dodgeSource'){selectedCity=t.value;render();}
+    if(t.id==='citySelect'||t.id==='queueCitySelect'||t.id==='dodgeSource'||t.id==='testCity'){selectedCity=t.value;render();}
     if(t.id==='queueKind'){queueKindSelected=t.value;render();}
   };
   const mount=()=>{
@@ -1530,6 +1657,7 @@ let queueKindSelected='building';
     save(); // Persiste migração dos controles de aldeia da v0.2.
     setInterval(()=>{try{tick()}catch(e){log(e.message,'ERROR')}},1500);
     setInterval(()=>{dodgePulse().catch(e=>log(`Esquiva: ${e.message}`,'ERROR'))},125);
+    setInterval(()=>{try{testTick();if(config.ui.tab==='TESTE'&&shadow){const a=testRead().active;const el=shadow.getElementById('testCountdown');if(a&&el)el.textContent=Math.max(0,(a.impactMs-dodgeNow())/1000).toFixed(1)+'s';}}catch(e){log(`Teste: ${e.message}`,'ERROR')}},250);
     setInterval(()=>{if(dodgeBusy){try{const active=JSON.parse(localStorage.getItem(DODGE_LOCK)||'{}');if(active.owner===instanceId)localStorage.setItem(DODGE_LOCK,JSON.stringify({owner:instanceId,until:Date.now()+2500}));}catch{}}},500);
     window.addEventListener('pagehide',()=>{try{const active=JSON.parse(localStorage.getItem(DODGE_LOCK)||'{}');if(active.owner===instanceId)localStorage.removeItem(DODGE_LOCK);}catch{}});
     setInterval(()=>{
