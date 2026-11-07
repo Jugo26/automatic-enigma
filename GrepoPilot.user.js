@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GrepoPilot - Painel de Automacao
 // @namespace    https://grepolis.com/
-// @version      0.6.0
+// @version      0.7.0
 // @updateURL    https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.meta.js
 // @downloadURL  https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.user.js
 // @homepageURL  https://github.com/Jugo26/automatic-enigma/tree/grepopilot-updates
@@ -105,7 +105,7 @@
     cityProfiles: {},
     recruit: {targets:{},maxBatch:35,minBatch:10,shipBatch:8,minShipBatch:3,mythicalBatch:2,minMythicalBatch:2,maxQueueSlots:2},
     research: {queue:{}},
-    smartQueue: {items:[],maxBatch:35},
+    smartQueue: {items:[],maxBatch:35,mode:'intelligent',autoPrereqs:true},
     trade: {routes:[],minReserve:2500,maxFill:0.90},
     ruralTrade: {wanted:'wood',minRatio:1,maxAmount:3000},
     ruralUpgrade: {unlock:false,upgrade:false,targetLevel:3},
@@ -450,14 +450,140 @@ function policyForUnit(key,def){
     }
     return out('blocked','Tipo inválido');
   }
+
+  const queueMode=()=>config.smartQueue.mode==='cheapest'?'cheapest':'intelligent';
+  const queueUrgency=j=>['normal','high','urgent'].includes(j?.urgency)?j.urgency:'normal';
+  const queueBuildingLevel=(t,key)=>Math.max(0,Math.floor(num(t.buildings?.()?.attributes?.[key])));
+  const queuePlannedBuildingLevel=(t,key)=>{
+    const orders=t.buildingOrders?.()?.models||[];
+    return queueBuildingLevel(t,key)+orders.filter(o=>o.attributes?.building_type===key).reduce((n,o)=>n+(o.attributes?.tear_down?-1:1),0);
+  };
+  const queueLevelDependencies=raw=>{
+    if(!raw||typeof raw!=='object'||Array.isArray(raw))return [];
+    return Object.entries(raw).filter(([key,value])=>BUILDINGS.includes(key)&&Number.isFinite(Number(value))&&Number(value)>0)
+      .map(([key,value])=>[key,Math.floor(Number(value))]);
+  };
+  function queueStructuralNeed(job,assessment){
+    if(assessment.state==='done'||assessment.state==='ready'||!assessment.town)return null;
+    const t=assessment.town;
+    const snapshot=t.buildings?.()?.attributes||{};
+    const needed=[];
+    const requireLevel=(key,level,reason)=>{
+      if(!BUILDINGS.includes(key)||!Number.isFinite(level)||level<=num(snapshot[key]))return;
+      // Do not queue the next level while an order for this building is still pending.
+      if(queuePlannedBuildingLevel(t,key)>num(snapshot[key]))return;
+      needed.push({key,target:num(snapshot[key])+1,reason});
+    };
+    const unit=W.GameData?.units?.[job.key],research=W.GameData?.researches?.[job.key];
+    const def=job.kind==='building'?W.GameData?.buildings?.[job.key]:job.kind==='research'?research:unit;
+    if(job.kind==='research'){
+      const min=num(research?.academy_level??research?.building_level??research?.building_lvl,0);
+      if(min>0)requireLevel('academy',min,'academia necessária para pesquisa');
+      const points=num(research?.research_points,0);
+      if(points>0&&typeof t.getAvailableResearchPoints==='function'&&num(t.getAvailableResearchPoints())<points){
+        requireLevel('academy',Math.max(1,num(snapshot.academy)+1),'pontos de pesquisa insuficientes');
+      }
+    }
+    if(job.kind==='ship'||job.kind==='troop'){
+      if(!unit)return null;
+      requireLevel(job.kind==='ship'?'docks':'barracks',1,'edifício militar necessário');
+    }
+    for(const entry of queueLevelDependencies(def?.requirements)){
+      requireLevel(entry[0],entry[1],'pré-requisito conhecido do jogo');
+    }
+    for(const entry of queueLevelDependencies(def?.required_buildings)){
+      requireLevel(entry[0],entry[1],'pré-requisito conhecido do jogo');
+    }
+    if(job.kind==='building'){
+      const data=W.MM?.getModels?.()?.BuildingBuildData?.[t.id]?.attributes?.building_data?.[job.key];
+      for(const entry of queueLevelDependencies(data?.requirements))requireLevel(entry[0],entry[1],'pré-requisito de construção');
+    }
+    const res=resource(t),cap=num(res.storage,0);
+    const requireStorage=(cost)=>{
+      if(cap<=0||!cost)return;
+      if(['wood','stone','iron'].some(k=>num(cost[k])>cap)){
+        requireLevel('storage',num(snapshot.storage)+1,'armazém não comporta o custo');
+      }
+    };
+    if(job.kind==='building'){
+      const d=W.MM?.getModels?.()?.BuildingBuildData?.[t.id]?.attributes?.building_data?.[job.key];
+      requireStorage(queueCost(d?.resources_for));
+      if(num(d?.population_for,0)>num(t.getAvailablePopulation?.()??res.population,0)){
+        requireLevel('farm',num(snapshot.farm)+1,'população insuficiente para a obra');
+      }
+    }else if(job.kind==='research'){
+      requireStorage(queueCost(research?.resources||research?.costs));
+    }else if(unit){
+      const policy=policyForUnit(job.key,unit);
+      const min=Math.min(policy.minimum,Math.max(1,num(job.target)));
+      const unitCost=queueCost(unit.resources);
+      const modifier=Number(W.GeneralModifications?.getUnitBuildResourcesModification?.(Number(t.id),unit)??1);
+      if(unitCost&&Number.isFinite(modifier)&&modifier>0){
+        requireStorage(queueCost(Object.fromEntries(['wood','stone','iron'].map(k=>[k,unitCost[k]*modifier*min]))));
+      }
+      const free=num(t.getAvailablePopulation?.()??res.population,0);
+      if(free<Math.max(1,num(unit.population,1))*min){
+        requireLevel('farm',num(snapshot.farm)+1,'população insuficiente para recrutamento');
+      }
+    }
+    return needed[0]||null;
+  }
+  function queueCandidates(){
+    const rows=queueJobs().map((job,index)=>({...queueAnalyze(job),index,automatic:false,unlocks:0}));
+    if(queueMode()==='intelligent'&&config.smartQueue.autoPrereqs!==false){
+      const auto=new Map();
+      for(const row of rows){
+        const need=queueStructuralNeed(row.job,row);
+        if(!need)continue;
+        const key=String(row.job.townId)+':'+need.key;
+        const existing=rows.find(other=>other.job.kind==='building'&&String(other.job.townId)===String(row.job.townId)
+          &&other.job.key===need.key&&other.state==='ready');
+        if(existing){
+          existing.unlocks=(existing.unlocks||0)+1;
+          continue;
+        }
+        if(!auto.has(key)){
+          const job={id:'AUTO-'+key,townId:Number(row.job.townId),kind:'building',key:need.key,
+            target:need.target,urgency:queueUrgency(row.job),automatic:true};
+          const analysis=queueAnalyze(job);
+          auto.set(key,{...analysis,index:rows.length+auto.size,automatic:true,unlocks:0,reasons:[]});
+        }
+        const candidate=auto.get(key);
+        candidate.unlocks++;
+        candidate.reasons.push(need.reason+' → '+queueName(row.job));
+        const rank={normal:0,high:1,urgent:2};
+        if(rank[queueUrgency(row.job)]>rank[queueUrgency(candidate.job)])candidate.job.urgency=queueUrgency(row.job);
+      }
+      rows.push(...auto.values());
+    }
+    const relevant=rows.filter(x=>x.state==='ready');
+    for(const row of relevant){
+      const cost=queueSum(row.cost);
+      if(queueMode()==='cheapest'){row.rank=cost;row.benefit='menor custo';continue;}
+      const j=row.job,t=row.town,r=resource(t);
+      const importance={normal:0,high:2,urgent:5}[queueUrgency(j)];
+      let bonus=importance+Math.min(12,(row.unlocks||0)*4);
+      const used=Math.max(num(r.wood),num(r.stone),num(r.iron)),cap=num(r.storage,0);
+      if(j.kind==='building'){
+        if(j.key==='storage'&&cap>0&&used/cap>=0.85)bonus+=1.5;
+        if(j.key==='farm'&&num(t.getAvailablePopulation?.()??r.population,0)<=10)bonus+=1.5;
+        if(j.key==='main'&&queueJobs().some(k=>String(k.townId)===String(j.townId)&&k.kind==='building'))bonus+=0.4;
+        if(['lumber','stoner','ironer'].includes(j.key)&&queueJobs().some(k=>String(k.townId)===String(j.townId)&&k.kind==='building'))bonus+=0.65;
+      }
+      row.rank=cost/(1+bonus);
+      row.benefit=(row.unlocks?'desbloqueia '+row.unlocks+' meta(s) · ':'')+
+         (importance?'urgência '+queueUrgency(j)+' · ':'')+'valor/custo';
+    }
+    relevant.sort((a,b)=>a.rank-b.rank||a.score-b.score||a.index-b.index);
+    return {rows,ready:relevant,best:relevant[0]||null};
+  }
   async function smartQueue(){
     const jobs=queueJobs();
     if(!jobs.length)return false;
     const rt=readRuntime();
     const now=Date.now();
-    const options=jobs.map((j,i)=>({...queueAnalyze(j),index:i})).filter(x=>x.state==='ready' && now-num(rt.smartQueueAttempts?.[x.job.id])>=30000);
-    options.sort((a,b)=>a.score-b.score||a.index-b.index);
-    const next=options[0];
+    const plan=queueCandidates();
+    const next=plan.ready.find(x=>now-num(rt.smartQueueAttempts?.[x.job.id])>=30000);
     if(!next)return false;
     const j=next.job, id=Number(j.townId), key=j.key;
     try{
@@ -470,7 +596,7 @@ function policyForUnit(key,def){
         rt.smartQueueAttempts=Object.fromEntries(Object.entries(rt.smartQueueAttempts).filter(([,time])=>Date.now()-num(time)<3600000));
         writeRuntime(rt);
       }
-      log(`Fila econômica: ${queueName(j)} · ${next.why} · ${queueMoney(next.cost)} (total ${next.score})`);
+      log(`Fila ${queueMode()==='cheapest'?'menor custo':'inteligente'}: ${next.automatic?'PRÉ-REQUISITO · ':''}${queueName(j)} · ${next.why} · ${queueMoney(next.cost)} (total ${next.score}, prioridade ${Number(next.rank).toFixed(1)})`);
       return true;
     }catch(e){
       rt.smartQueueAttempts=rt.smartQueueAttempts||{};
@@ -1465,7 +1591,7 @@ let queueKindSelected='building';
     host.style.top=Math.max(0,num(config.ui.y))+'px';
     const body=({'INÍCIO':dashboard,CIDADES:cityContent,FILA:queueContent,ESQUIVA:dodgeContent,TESTE:testContent,ALDEIAS:villagesContent,TROPAS:troopsContent,COMBATE:combatContent,ECONOMIA:economyContent,'MISSÕES':rewardsContent,AJUSTES:configContent,LOG:logContent}[config.ui.tab]||dashboard)();
     shadow.querySelector('#gp-app').innerHTML=`
-      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.6.0</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
+      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.7.0</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
       ${config.ui.collapsed?'':`<div class="status"><i class="dot ${config.enabled?(config.dryRun?'sim':'live'):''}"></i>${cleanStr(STATUS())}</div>
       <div class="tabs">${['INÍCIO','CIDADES','FILA','ALDEIAS','TROPAS','COMBATE','ESQUIVA','TESTE','ECONOMIA','MISSÕES','AJUSTES','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
       <div class="body">${body}</div><div class="foot"><button class="${config.enabled?'stop':'go'}" data-action="toggle">${config.enabled?'■ PARAR TUDO':'▶ INICIAR'}</button><span>${Object.values(config.modules).filter(Boolean).length} módulos ativos</span></div>`}`;
