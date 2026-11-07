@@ -103,3 +103,24 @@ A simulação não cria ataques reais no Grepolis nem altera as coleções `Move
 Testes locais executados: preview sem chamadas de rede; envio/cancelamento terrestre e naval com bot global em pausa; segunda onda; interrupção com recolhimento de apoio; validação da cidade de destino. O servidor real ainda não foi testado.
 
 O arquivo `GrepoPilot.meta.js` deve avançar de versão apenas depois da publicação do script completo.
+
+## GrepoPilot 0.7.0 — Fila econômica inteligente
+
+A aba **FILA** agora oferece dois modos:
+
+- **Inteligente · custo e benefício (padrão)**: compara o custo em madeira/pedra/ferro com a **urgência por tarefa** (normal, alta ou urgente), benefício para a cidade e quantidade de metas desbloqueadas. O sistema calcula um índice heurístico; **menor índice executa primeiro**.
+- **Clássico · menor custo**: mantém o comportamento anterior de escolher exclusivamente a ordem mais barata entre as executáveis. Ignora pesos de urgência e pré-requisitos automáticos.
+
+Quando o modo inteligente está ativo e a opção **Completar pré-requisitos necessários** está marcada, o bot pode criar ordens *temporárias e não persistidas na lista* de **armazém, fazenda, academia, quartel ou porto** para desbloquear metas existentes. Exemplos: aumentar a capacidade de armazenamento quando uma meta não cabe no armazém; elevar a academia para permitir uma pesquisa; elevar a fazenda por falta de população; construir quartel/porto necessário. Também lê dependências de nível explicitamente expostas pelo cliente em `requirements` ou `required_buildings`, sem presumir tecnologias ocultas. Uma melhoria já em andamento não é duplicada. Limites conhecidos de nível máximo são respeitados.
+
+O recrutamento compartilhado com a aba TROPAS não reduz o lote mínimo apenas porque o armazém não suporta o lote: ele aguarda recursos/capacidade e deixa a fila escolher outra atividade. Uma sobra final abaixo do mínimo pode ser concluída quando a fila estiver vazia.
+
+**Configuração por meta:** ao adicionar uma construção, tropa, navio ou pesquisa, escolha urgência Normal, Alta ou Urgente. Depois, altere a urgência diretamente na lista. Alterações são salvas por mundo/jogador, junto com as metas antigas. Uma meta importada preserva a urgência existente.
+
+**Critérios do índice (heurísticos, não números do Grepolis):** custo total dividido por um fator de prioridade baseado em urgência, quantidade de metas liberadas e valor contextual de armazém/fazenda/produção. Se uma tarefa não tiver custo confiável ou estiver bloqueada, fica em espera. Se uma ação falhar, mantém o controle anterior de tentativas e registro de erro.
+
+**Limitações:** o cliente pode não expor todos os pré-requisitos, pontos de pesquisa e modificadores de custo; o bot não adivinha dados ausentes. A prioridade inteligente não garante a rota matematicamente ótima de crescimento. Confirmação com dados de um mundo real do Grepolis ainda pendente.
+
+Testes locais aprovados: urgência estratégica, modo clássico, pesquisa e construção com academia insuficiente, disparo de melhoria, proteção contra edifícios no limite máximo, armazenamento insuficiente para lote mínimo, controles da interface e inibição de pré-requisitos automáticos quando desativados.
+
+O arquivo `GrepoPilot.meta.js` será atualizado somente após a publicação do script completo.
