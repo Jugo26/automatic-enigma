@@ -1523,7 +1523,7 @@ let queueKindSelected='building';
   const researches=Object.keys(W.GameData?.researches||{});
   const options=kind==='building'?buildings:kind==='research'?researches:units;
   const plan=queueCandidates();
-  const normal=plan.rows.filter(x=>!x.automatic);
+  const normal=plan.rows.filter(x=>!x.automatic).sort((a,b)=>(a.state==='ready'?0:1)-(b.state==='ready'?0:1)||(a.state==='ready'?a.rank-b.rank:a.index-b.index));
   const generated=plan.rows.filter(x=>x.automatic);
   const names={ready:'✅ Pronta',wait:'⏳ Esperando',blocked:'⚠ Verificar',done:'✔ Concluída'};
   const mode=queueMode();
