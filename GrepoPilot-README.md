@@ -83,3 +83,23 @@ Na aba **TROPAS** é possível ajustar lote ideal e mínimo terrestre, naval e m
 Os testes locais confirmaram que o módulo não recruta unidades isoladas repetidamente quando faltam recursos e não ultrapassa o limite de espaços configurado. Ainda é necessária a confirmação em mundo real do Grepolis para o tratamento dos pedidos do servidor.
 
 Para liberar a atualização no Tampermonkey, atualizar `GrepoPilot.meta.js` **depois** do arquivo `GrepoPilot.user.js`.
+
+## GrepoPilot 0.6.0 — Aba TESTE: ataque simulado
+
+Use a aba **TESTE** para verificar o funcionamento da esquiva sem esperar um ataque de outro jogador.
+
+1. Selecione a **cidade atacada**.
+2. Defina a chegada fictícia entre **8 e 180 segundos** no futuro (padrão: 20 segundos).
+3. Opcionalmente simule uma segunda onda 3, 5 ou 10 segundos depois da primeira.
+4. Selecione o modo e clique **Iniciar simulação**:
+   - **Só cálculo**: nenhum ataque nem apoio é enviado para o jogo; o painel mostra a saída, cancelamento, retorno simulado e o desvio em relação à meta.
+   - **Teste real**: cria apenas a chegada virtual, mas **envia apoio real** para uma segunda cidade própria da mesma ilha e usa o cancelamento real do Grepolis. Exige uma confirmação específica no painel. Este modo é independente dos outros módulos e do modo global de simulação.
+5. Acompanhe o resultado no próprio painel e no log. O relatório indica quando as tropas teriam sido enviadas/canceladas e a diferença entre o retorno **estimado** e a meta de 1 segundo após o último impacto (ou outro valor escolhido na aba ESQUIVA).
+
+O botão **Interromper teste** interrompe a chegada fictícia. Se houver apoio real enviado pelo teste, o cancelamento continua sendo tratado pelo sistema mesmo depois de pausar outros módulos ou recarregar a página. Para testes reais, é necessário ter duas cidades próprias na mesma ilha e tropas disponíveis; testes são bloqueados quando há um ataque verdadeiro próximo ou esquiva pendente na cidade selecionada.
+
+A simulação não cria ataques reais no Grepolis nem altera as coleções `MovementsUnits` do jogo; os eventos artificiais são adicionados apenas à leitura interna do GrepoPilot. No teste real, os movimentos de apoio e cancelamento aparecem normalmente no jogo. Um retorno exato de 1 segundo não é garantido por conta da latência de rede, precisão do relógio e temporizadores de segundo plano.
+
+Testes locais executados: preview sem chamadas de rede; envio/cancelamento terrestre e naval com bot global em pausa; segunda onda; interrupção com recolhimento de apoio; validação da cidade de destino. O servidor real ainda não foi testado.
+
+O arquivo `GrepoPilot.meta.js` deve avançar de versão apenas depois da publicação do script completo.
