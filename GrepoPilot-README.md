@@ -61,3 +61,25 @@ Fontes:
 - https://github.com/NotXina/MultBot/blob/main/Modules/auto_dodge.js
 
 O arquivo de atualização automática (GrepoPilot.meta.js) é publicado **depois** do script completo.
+
+## GrepoPilot 0.5.1 — recrutamento por lotes padronizados
+
+Os módulos **Recrutamento** (aba TROPAS) e **Fila Inteligente** (aba FILA) usam a mesma política de lotes.
+
+| Tipo | Lote ideal (padrão) | Lote mínimo (padrão) |
+| --- | ---: | ---: |
+| Tropas terrestres | 35 | 10 |
+| Navios | 8 | 3 |
+| Criaturas míticas | 2 | 2 |
+
+Máximo padrão: **2 espaços simultâneos por tipo de fila e cidade**. O bot considera tropas já na cidade, fora dela, e unidades já enfileiradas; só recruta o que falta para as metas.
+
+A quantidade efetiva é calculada pelos recursos, pela população disponível, pelo custo modificado da unidade e, para criaturas míticas, pelo favor divino conhecido. Exemplo: recursos para 22 soldados permitem lote de 20, sem encher o slot com uma ordem de 1.
+
+**Quando não há recursos para o lote mínimo, o bot aguarda.** Quando faltam menos unidades do que o mínimo para terminar a meta, só conclui a sobra após a fila correspondente ficar livre. Se o armazém não comportar fisicamente o lote padrão, o limite é adaptado ao armazenamento. Cada envio bem-sucedido aplica um intervalo de 25 segundos na mesma cidade/tipo para aguardar a atualização do jogo e evitar pedidos duplicados.
+
+Na aba **TROPAS** é possível ajustar lote ideal e mínimo terrestre, naval e mítico, além do número máximo de espaços. Na aba **FILA** o campo `smartQueue.maxBatch` funciona como teto adicional por ordem; as demais regras permanecem as mesmas.
+
+Os testes locais confirmaram que o módulo não recruta unidades isoladas repetidamente quando faltam recursos e não ultrapassa o limite de espaços configurado. Ainda é necessária a confirmação em mundo real do Grepolis para o tratamento dos pedidos do servidor.
+
+Para liberar a atualização no Tampermonkey, atualizar `GrepoPilot.meta.js` **depois** do arquivo `GrepoPilot.user.js`.
