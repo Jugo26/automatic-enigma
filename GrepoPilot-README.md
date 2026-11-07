@@ -15,3 +15,7 @@ O Tampermonkey verifica [GrepoPilot.meta.js](./GrepoPilot.meta.js) e instala uma
 - Script automatizado não está na lista oficial de scripts aprovados do Grepolis.
 
 Documentação: https://www.tampermonkey.net/documentation.php?locale=pt_BR
+
+## GrepoPilot 0.3.2
+
+Ataques automáticos ao acampamento de bandidos usam **todas as tropas terrestres presentes na cidade de origem**, inclusive defesa e unidades míticas disponíveis. Navios e milícia ficam fora. As antigas opções de reserva e limite mínimo não afetam mais essa ação. Mantenha a aba COMBATE configurada com a cidade de origem.
