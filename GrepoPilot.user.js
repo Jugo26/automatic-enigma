@@ -376,8 +376,10 @@ function policyForUnit(key,def){
    canBuy=Math.min(canBuy,Math.floor(num(favor)/num(def.favor)));
  }
  const extraLimit=extraMax>0?Math.max(1,Math.floor(extraMax)):Infinity;
+ const minimum=Math.max(1,Math.min(policy.minimum,extraLimit));
+ if(storageFit<Math.min(minimum,missing))return result('wait','Armazém não comporta o lote mínimo de '+Math.min(minimum,missing));
  const ideal=Math.max(1,Math.min(policy.full,extraLimit,storageFit));
- const minimum=Math.max(1,Math.min(policy.minimum,ideal)),wanted=Math.min(missing,ideal);
+ const wanted=Math.min(missing,ideal);
  let amount=0;
  if(missing<minimum){
    if(laneOrders.length)return result('wait','Aguardando esvaziar fila para o lote final de '+missing);
@@ -470,6 +472,8 @@ function policyForUnit(key,def){
     const needed=[];
     const requireLevel=(key,level,reason)=>{
       if(!BUILDINGS.includes(key)||!Number.isFinite(level)||level<=num(snapshot[key]))return;
+      const cap=num(W.GameData?.buildings?.[key]?.max_level,0);
+      if(cap>0&&num(snapshot[key])>=cap)return;
       // Do not queue the next level while an order for this building is still pending.
       if(queuePlannedBuildingLevel(t,key)>num(snapshot[key]))return;
       needed.push({key,target:num(snapshot[key])+1,reason});
