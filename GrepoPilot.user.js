@@ -103,7 +103,7 @@
     build: {targets:{},priority:BUILDINGS.slice(),allowDemolition:false},
     finishFree: {maxRemainingSeconds:285},
     cityProfiles: {},
-    recruit: {targets:{},maxBatch:35,minBatch:10,shipBatch:8,minShipBatch:3,mythicalBatch:2,minMythicalBatch:1,maxQueueSlots:2},
+    recruit: {targets:{},maxBatch:35,minBatch:10,shipBatch:8,minShipBatch:3,mythicalBatch:2,minMythicalBatch:2,maxQueueSlots:2},
     research: {queue:{}},
     smartQueue: {items:[],maxBatch:35},
     trade: {routes:[],minReserve:2500,maxFill:0.90},
@@ -1238,6 +1238,14 @@ const dodgeRead=()=>{try{return JSON.parse(localStorage.getItem(DODGE_STORE)||'{
     <div class="formrow"><span>Cidade</span>${selectTown('citySelect',selectedCity)}</div>
     <div class="formrow"><span>Unidade</span><select id="recruitUnit">${optionList(unitNames.map(k=>[k,k]))}</select><span>Total</span><input type="number" id="recruitQty" min="0" value="100"><button data-action="setRecruit">Salvar</button></div>
     <div class="smallnote">${cleanStr(JSON.stringify(config.recruit.targets[selectedCity]||{}))}</div>
+
+    ${section('Recrutamento inteligente por lotes')}
+    <p class="smallnote">O bot junta recursos antes de recrutar: não preenche várias vagas com ordens de 1 unidade. A última sobra pequena só é enviada quando a fila correspondente está vazia.</p>
+    <div class="formrow"><span>Lote terrestre</span><input type="number" min="1" max="999" data-setting="recruit.maxBatch" value="${config.recruit.maxBatch}"><span>Mínimo</span><input type="number" min="1" max="999" data-setting="recruit.minBatch" value="${config.recruit.minBatch}"></div>
+    <div class="formrow"><span>Lote naval</span><input type="number" min="1" max="999" data-setting="recruit.shipBatch" value="${config.recruit.shipBatch}"><span>Mínimo</span><input type="number" min="1" max="999" data-setting="recruit.minShipBatch" value="${config.recruit.minShipBatch}"></div>
+    <div class="formrow"><span>Lote mítico</span><input type="number" min="1" max="999" data-setting="recruit.mythicalBatch" value="${config.recruit.mythicalBatch}"><span>Mínimo</span><input type="number" min="1" max="999" data-setting="recruit.minMythicalBatch" value="${config.recruit.minMythicalBatch}"></div>
+    <div class="formrow"><span>Máx. espaços ocupados por tipo de fila</span><input type="number" min="1" max="6" data-setting="recruit.maxQueueSlots" value="${config.recruit.maxQueueSlots}"></div>
+    <p class="smallnote">Padrão: terrestres em lotes de até 35 (mín. 10), navios até 8 (mín. 3) e míticos até 2. Se faltar recurso para o lote mínimo, o bot aguarda.</p>
     <p class="smallnote">Unidade inexistente neste mundo é ignorada no modelo. As metas são por cidade e podem ser alteradas abaixo.</p>`;
   };
 let queueKindSelected='building';
@@ -1274,7 +1282,9 @@ let queueKindSelected='building';
       ${kind==='research'?'<p class="smallnote">A pesquisa é feita uma vez e fica marcada como concluída.</p>':`<div class="formrow"><span>${kind==='building'?'Nível desejado':'Total de unidades desejadas'}</span><input type="number" id="queueTarget" min="1" step="1" value="${kind==='building'?'10':'100'}"></div>`}
       <div class="tools"><button class="primary" data-action="queueAdd">Adicionar à fila</button><button data-action="queueImport">Importar metas da cidade</button></div>
       <p class="smallnote">Importar metas traz edifícios, tropas, navios e pesquisas dos modelos já aplicados na aba Cidades/Tropas. Quando a fila inteligente está ativa, ela assume essas tarefas nas cidades cadastradas e evita duplicação pelos módulos antigos.</p>
-      <div class="formrow"><span>Máximo por ordem de tropas/navios</span><input type="number" min="1" max="999" data-setting="smartQueue.maxBatch" value="${config.smartQueue.maxBatch}"></div>
+
+      <div class="formrow"><span>Teto adicional de unidades por ordem nesta fila</span><input type="number" min="1" max="999" data-setting="smartQueue.maxBatch" value="${config.smartQueue.maxBatch}"></div>
+      <p class="smallnote">Lotes: terrestre até ${config.recruit.maxBatch} (mínimo ${config.recruit.minBatch}), naval até ${config.recruit.shipBatch} (mínimo ${config.recruit.minShipBatch}), mítico até ${config.recruit.mythicalBatch} (mínimo ${config.recruit.minMythicalBatch}). Até ${config.recruit.maxQueueSlots} espaços por tipo; altere na aba TROPAS.</p>
       ${section('Fila ordenada por custo')}
       <div class="tools"><button data-action="queueClearDone">Limpar concluídos</button><button data-action="queueClearAll">Limpar toda a fila</button></div>
       <div class="cityscroll" style="max-height:320px">${rows||'<p class="smallnote">A fila está vazia. Adicione uma meta acima.</p>'}</div>
