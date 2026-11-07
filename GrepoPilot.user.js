@@ -900,7 +900,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
   const difference=a?.returnMs?(a.returnMs-Math.max(a.impactMs,a.secondMs||0))/1000:null;
   const accuracy=difference!==null?Math.abs(difference-a.returnDelay):null;
   const status=a?`<div class="city"><b>${a.mode==='live'?'🟠 Teste prático':'🔵 Teste virtual'}</b>
-    <div>Cidade: ${cleanStr(tName(townBy(a.townId)))} · destino: ${cleanStr(tName(townBy(a.targetId)))}</div>
+    <div>Cidade: ${cleanStr(tName(townBy(a.townId)))} · destino: ${a.targetId?cleanStr(tName(townBy(a.targetId))):'sem cidade de apoio'}</div>
     <div>Estado: ${cleanStr(a.stage)} (${cleanStr(a.state)})</div>
     <div>Impacto fictício: ${new Date(a.impactMs).toLocaleTimeString('pt-BR',{hour12:false})}${a.secondMs?' · 2ª onda '+new Date(a.secondMs).toLocaleTimeString('pt-BR',{hour12:false}):''}</div>
     <div>Contagem regressiva: <b id="testCountdown">${Math.max(0,(a.impactMs-now)/1000).toFixed(1)}s</b></div>
