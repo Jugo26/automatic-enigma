@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GrepoPilot - Painel de Automacao
 // @namespace    https://grepolis.com/
-// @version      0.5.0
+// @version      0.5.1
 // @updateURL    https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.meta.js
 // @downloadURL  https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.user.js
 // @homepageURL  https://github.com/Jugo26/automatic-enigma/tree/grepopilot-updates
@@ -103,7 +103,7 @@
     build: {targets:{},priority:BUILDINGS.slice(),allowDemolition:false},
     finishFree: {maxRemainingSeconds:285},
     cityProfiles: {},
-    recruit: {targets:{},maxBatch:35},
+    recruit: {targets:{},maxBatch:35,minBatch:10,shipBatch:8,minShipBatch:3,mythicalBatch:2,minMythicalBatch:1,maxQueueSlots:2},
     research: {queue:{}},
     smartQueue: {items:[],maxBatch:35},
     trade: {routes:[],minReserve:2500,maxFill:0.90},
@@ -328,6 +328,77 @@ const queueManagesTown=id=>Boolean(config.modules.smartQueue && config.smartQueu
     const kind={building:'Construção',troop:'Tropa',ship:'Navio',research:'Pesquisa'}[j.kind]||j.kind;
     return `${kind} · ${j.key}${j.kind==='research'?'':` → ${j.target}`} · ${tName(town)}`;
   };
+function policyForUnit(key,def){
+ const rc=config.recruit||{}, naval=!!def.is_naval, mythical=isMythical(key,def);
+ const full=Math.max(1,Math.floor(num(mythical?rc.mythicalBatch:naval?rc.shipBatch:rc.maxBatch,mythical?2:naval?8:35)));
+ const minimum=Math.max(1,Math.floor(num(mythical?rc.minMythicalBatch:naval?rc.minShipBatch:rc.minBatch,mythical?1:naval?3:10)));
+ const maxSlots=Math.max(1,Math.min(6,Math.floor(num(rc.maxQueueSlots,2))));
+ return {full,minimum:Math.min(minimum,full),maxSlots,naval,mythical};
+}
+  function planRecruitBatch(t,key,goal,extraMax=0){
+ const result=(state,reason,cost=null,amount=0)=>({state,reason,cost,amount});
+ const def=W.GameData?.units?.[key];
+ if(!def)return result('blocked','Unidade indisponível');
+ const policy=policyForUnit(key,def);
+ const building=t.buildings?.()?.attributes?.[policy.naval?'docks':'barracks'];
+ if(num(building)<1)return result('wait',policy.naval?'Aguardando porto':'Aguardando quartel');
+ if(policy.mythical){
+   const expectedGod=String(def.god_id||def.god||MYTH_GODS[key]||'').toLowerCase();
+   if(expectedGod&&godOf(t)&&expectedGod!==godOf(t))return result('blocked','Unidade de outra divindade');
+ }
+ const orders=t.getUnitOrdersCollection?.()?.models||[];
+ const laneOrders=orders.filter(o=>{
+   const item=W.GameData?.units?.[o.attributes?.unit_type];
+   return !item||!!item.is_naval===policy.naval;
+ });
+ const owned=Math.max(0,num(t.units?.()?.[key]))+Math.max(0,num(t.unitsOuter?.()?.[key]));
+ const queued=orders.reduce((sum,o)=>sum+(o.attributes?.unit_type===key?Math.max(0,num(o.attributes?.units_left??o.attributes?.count??o.attributes?.amount)):0),0);
+ const missing=Math.max(0,Math.floor(num(goal))-owned-queued);
+ if(!missing)return result(owned>=num(goal)?'done':'wait',owned>=num(goal)?'Meta atingida':'Tropas em treinamento');
+ if(orders.length>=6||laneOrders.length>=policy.maxSlots)return result('wait','Limite de fila: '+laneOrders.length+'/'+policy.maxSlots+' espaços usados');
+ const raw=queueCost(def.resources);
+ if(!raw)return result('blocked','Custo por unidade indisponível');
+ const multiplier=Number(W.GeneralModifications?.getUnitBuildResourcesModification?.(Number(t.id),def)??1);
+ if(!Number.isFinite(multiplier)||multiplier<=0)return result('blocked','Modificador de custo inválido');
+ const per=queueCost(Object.fromEntries(['wood','stone','iron'].map(k=>[k,raw[k]*multiplier])));
+ if(!per)return result('blocked','Custo calculado indisponível');
+ const res=resource(t),popCost=Math.max(1,num(def.population,1));
+ const freePop=Math.max(0,num(t.getAvailablePopulation?.()??res.population,0));
+ let canBuy=Math.floor(freePop/popCost),storageFit=Infinity;
+ const storage=num(res.storage,0);
+ if(storage>0)for(const k of ['wood','stone','iron'])if(per[k]>0)storageFit=Math.min(storageFit,Math.floor(storage/per[k]));
+ for(const k of ['wood','stone','iron'])if(per[k]>0)canBuy=Math.min(canBuy,Math.floor(Math.max(0,num(res[k]))/per[k]));
+ if(policy.mythical&&num(def.favor)>0){
+   const favor=t.getCurrentFavor?.()??t.getFavor?.();
+   if(favor===undefined||favor===null)return result('wait','Favor divino indisponível');
+   canBuy=Math.min(canBuy,Math.floor(num(favor)/num(def.favor)));
+ }
+ const extraLimit=extraMax>0?Math.max(1,Math.floor(extraMax)):Infinity;
+ const ideal=Math.max(1,Math.min(policy.full,extraLimit,storageFit));
+ const minimum=Math.max(1,Math.min(policy.minimum,ideal)),wanted=Math.min(missing,ideal);
+ let amount=0;
+ if(missing<minimum){
+   if(laneOrders.length)return result('wait','Aguardando esvaziar fila para o lote final de '+missing);
+   if(canBuy<missing)return result('wait','Aguardando recursos para lote final de '+missing);
+   amount=missing;
+ }else if(canBuy>=wanted){
+   amount=wanted;
+ }else if(canBuy>=minimum){
+   amount=Math.floor(Math.min(canBuy,wanted)/minimum)*minimum;
+ }else return result('wait','Aguardando lote mínimo de '+minimum+' unidade(s)');
+ if(amount<1)return result('wait','Aguardando recursos suficientes');
+ const cost=queueCost(Object.fromEntries(['wood','stone','iron'].map(k=>[k,per[k]*amount])));
+ const rt=readRuntime(),lane=t.id+':'+(policy.naval?'mar':'terra');
+ if(Date.now()-num(rt.recruitLanes?.[lane])<25000)return result('wait','Aguardando atualização da fila',cost);
+ return result('ready','Lote '+amount+' '+key+' ('+laneOrders.length+'/'+policy.maxSlots+' espaços)',cost,amount);
+}
+  function markRecruitLane(t,def){
+ if(config.dryRun)return;
+ const r=readRuntime();r.recruitLanes??={};
+ r.recruitLanes[t.id+':'+(def.is_naval?'mar':'terra')]=Date.now();
+ r.recruitLanes=Object.fromEntries(Object.entries(r.recruitLanes).filter(([,time])=>Date.now()-num(time)<300000));
+ writeRuntime(r);
+}
   function queueAnalyze(j){
     const t=townBy(j.townId);
     const out=(state,why,cost=null,amount=0)=>({state,why,cost,amount,score:queueSum(cost),job:j,town:t});
@@ -355,39 +426,9 @@ const queueManagesTown=id=>Boolean(config.modules.smartQueue && config.smartQueu
     if(j.kind==='troop'||j.kind==='ship'){
       const def=W.GameData?.units?.[j.key];
       if(!def)return out('blocked','Unidade não disponível neste mundo');
-      if(Boolean(def.is_naval)!==(j.kind==='ship'))return out('blocked','Tipo de unidade incompatível');
-      const buildings=t.buildings?.()?.attributes||{};
-      if(num(buildings[def.is_naval?'docks':'barracks'])<1)return out('wait',def.is_naval?'Porto indisponível':'Quartel indisponível');
-      if(isMythical(j.key,def) && godOf(t) && String(def.god_id||def.god||MYTH_GODS[j.key]||'').toLowerCase()!==godOf(t))return out('blocked','Criatura de outro deus');
-      const orders=t.getUnitOrdersCollection?.()?.models||[];
-      const owned=num(t.units?.()?.[j.key])+num(t.unitsOuter?.()?.[j.key]);
-      const pending=orders.reduce((sum,o)=>sum+(o.attributes?.unit_type===j.key?num(o.attributes?.units_left,o.attributes?.count):0),0);
-      const missing=Math.max(0,target-owned-pending);
-      if(!missing)return out(owned>=target?'done':'wait',owned>=target?`Meta ${target} alcançada`:'Tropas em treinamento');
-      if(orders.length>=6)return out('wait','Fila de unidades do jogo cheia');
-      const per=queueCost(def.resources);
-      if(!per)return out('blocked','Custo da unidade indisponível');
-      const discount=num(W.GeneralModifications?.getUnitBuildResourcesModification?.(Number(t.id),def),1);
-      if(discount<=0)return out('blocked','Modificador de custo inválido');
-      const perUnit=queueCost(Object.fromEntries(['wood','stone','iron'].map(k=>[k,per[k]*discount])));
-      const res=resource(t);
-      const populationCost=Math.max(1,num(def.population,1));
-      const popAvailable=num(t.getAvailablePopulation?.(),num(res.population));
-      let count=Math.min(missing,Math.max(1,Math.floor(num(config.smartQueue.maxBatch,35))),Math.floor(popAvailable/populationCost));
-      for(const k of ['wood','stone','iron'])if(perUnit[k]>0)count=Math.min(count,Math.floor(num(res[k])/perUnit[k]));
-      count=Math.floor(count);
-      const estimated=queueCost(Object.fromEntries(['wood','stone','iron'].map(k=>[k,perUnit[k]*Math.max(1,count)])));
-      if(count<1)return out('wait','Aguardando recursos ou população',estimated);
-      if(isMythical(j.key,def)&&num(def.favor)>0){
-        const favor=t.getCurrentFavor?.()??t.getFavor?.();
-        if(favor===undefined)return out('wait','Favor divino não confirmado',estimated);
-        if(num(favor)<num(def.favor)*count){
-          count=Math.min(count,Math.floor(num(favor)/num(def.favor)));
-          if(count<1)return out('wait','Favor divino insuficiente',estimated);
-        }
-      }
-      const cost=queueCost(Object.fromEntries(['wood','stone','iron'].map(k=>[k,perUnit[k]*count])));
-      return out('ready',`Recrutar ${count} ${j.key}`,cost,count);
+      if(!!def.is_naval!==(j.kind==='ship'))return out('blocked','Tipo de unidade incompatível');
+      const plan=planRecruitBatch(t,j.key,target,num(config.smartQueue.maxBatch,35));
+      return out(plan.state,plan.reason,plan.cost,plan.amount);
     }
     if(j.kind==='research'){
       const def=W.GameData?.researches?.[j.key];
@@ -420,7 +461,7 @@ const queueManagesTown=id=>Boolean(config.modules.smartQueue && config.smartQueu
     try{
       if(j.kind==='building')await bridge(id,'BuildingOrder','buildUp',{building_id:key});
       else if(j.kind==='research')await bridge(id,'ResearchOrder','research',{id:key});
-      else await action(j.kind==='ship'?'building_docks':'building_barracks','build',{unit_id:key,amount:next.amount,town_id:id});
+      else {await action(j.kind==='ship'?'building_docks':'building_barracks','build',{unit_id:key,amount:next.amount,town_id:id});markRecruitLane(next.town,W.GameData.units[key]);}
       if(!config.dryRun){
         rt.smartQueueAttempts=rt.smartQueueAttempts||{};
         rt.smartQueueAttempts[j.id]=Date.now();
@@ -463,26 +504,23 @@ const queueManagesTown=id=>Boolean(config.modules.smartQueue && config.smartQueu
     return false;
   }
   async function recruit(){
-    for(const [id,target] of Object.entries(config.recruit.targets)){
-      const t=townBy(id); if(!t || !target || queueManagesTown(id))continue;
-      const current=t.units?.()||{},outside=t.unitsOuter?.()||{};
-      const queued=t.getUnitOrdersCollection?.()?.models||[];
-      if(queued.length>=6)continue;
-      for(const [unit,wanted] of Object.entries(target)){
-        const def=W.GameData?.units?.[unit];if(!def)continue;
-        const inflight=queued.reduce((s,o)=>s+(o.attributes?.unit_type===unit?num(o.attributes?.units_left,o.attributes?.count):0),0);
-        const pending=Math.max(0,num(wanted)-num(current[unit])-num(outside[unit])-inflight);
-        if(!pending)continue;
-        const disc=num(W.GeneralModifications?.getUnitBuildResourcesModification?.(Number(id),def),1);
-        const cost=def.resources||{};const r=resource(t);
-        const cap=Math.min(pending,num(config.recruit.maxBatch,35),Math.floor(num(r.population)/Math.max(1,num(def.population))));
-        const byRes=['wood','stone','iron'].reduce((m,k)=>Math.min(m,Math.floor(num(r[k]) / Math.max(1,Math.ceil(num(cost[k])*disc)))),cap);
-        if(byRes<=0)continue;
-        await action(def.is_naval?'building_docks':'building_barracks','build',{unit_id:unit,amount:byRes,town_id:Number(id)});
-        log(`${tName(t)}: recrutar ${byRes} ${unit}`);return true;
+    const candidates=[];
+    for(const [id,goals] of Object.entries(config.recruit.targets)){
+      const t=townBy(id);if(!t||!goals||queueManagesTown(id))continue;
+      for(const [unit,wanted] of Object.entries(goals)){
+        const plan=planRecruitBatch(t,unit,wanted);
+        if(plan.state==='ready')candidates.push({t,unit,plan});
       }
     }
-    return false;
+    candidates.sort((a,b)=>queueSum(a.plan.cost)-queueSum(b.plan.cost));
+    const best=candidates[0];if(!best)return false;
+    const def=W.GameData.units[best.unit];
+    await action(def.is_naval?'building_docks':'building_barracks','build',{
+      unit_id:best.unit,amount:best.plan.amount,town_id:Number(best.t.id)
+    });
+    markRecruitLane(best.t,def);
+    log(tName(best.t)+': recrutar '+best.plan.amount+' '+best.unit+' · '+best.plan.reason);
+    return true;
   }
   async function research(){
     for(const [id,list] of Object.entries(config.research.queue)){
@@ -1293,7 +1331,7 @@ let queueKindSelected='building';
     host.style.top=Math.max(0,num(config.ui.y))+'px';
     const body=({'INÍCIO':dashboard,CIDADES:cityContent,FILA:queueContent,ESQUIVA:dodgeContent,ALDEIAS:villagesContent,TROPAS:troopsContent,COMBATE:combatContent,ECONOMIA:economyContent,'MISSÕES':rewardsContent,AJUSTES:configContent,LOG:logContent}[config.ui.tab]||dashboard)();
     shadow.querySelector('#gp-app').innerHTML=`
-      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.5.0</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
+      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.5.1</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
       ${config.ui.collapsed?'':`<div class="status"><i class="dot ${config.enabled?(config.dryRun?'sim':'live'):''}"></i>${cleanStr(STATUS())}</div>
       <div class="tabs">${['INÍCIO','CIDADES','FILA','ALDEIAS','TROPAS','COMBATE','ESQUIVA','ECONOMIA','MISSÕES','AJUSTES','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
       <div class="body">${body}</div><div class="foot"><button class="${config.enabled?'stop':'go'}" data-action="toggle">${config.enabled?'■ PARAR TUDO':'▶ INICIAR'}</button><span>${Object.values(config.modules).filter(Boolean).length} módulos ativos</span></div>`}`;
