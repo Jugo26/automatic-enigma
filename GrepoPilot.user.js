@@ -897,12 +897,15 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
   const destination=t?dodgeDestination(Number(t.id),dodgeIncoming()):0;
   const group=t?dodgeUnits(t):{land:{},naval:{}};
   const count=Object.values(group).reduce((n,g)=>n+Object.values(g).reduce((sum,v)=>sum+num(v),0),0);
+  const difference=a?.returnMs?(a.returnMs-Math.max(a.impactMs,a.secondMs||0))/1000:null;
+  const accuracy=difference!==null?Math.abs(difference-a.returnDelay):null;
   const status=a?`<div class="city"><b>${a.mode==='live'?'🟠 Teste prático':'🔵 Teste virtual'}</b>
     <div>Cidade: ${cleanStr(tName(townBy(a.townId)))} · destino: ${cleanStr(tName(townBy(a.targetId)))}</div>
     <div>Estado: ${cleanStr(a.stage)} (${cleanStr(a.state)})</div>
     <div>Impacto fictício: ${new Date(a.impactMs).toLocaleTimeString('pt-BR',{hour12:false})}${a.secondMs?' · 2ª onda '+new Date(a.secondMs).toLocaleTimeString('pt-BR',{hour12:false}):''}</div>
     <div>Contagem regressiva: <b id="testCountdown">${Math.max(0,(a.impactMs-now)/1000).toFixed(1)}s</b></div>
     <div class="smallnote">Saída: ${a.sentMs?new Date(a.sentMs).toLocaleTimeString('pt-BR',{hour12:false}):'aguardando'} · Cancelamento: ${a.cancelledMs?new Date(a.cancelledMs).toLocaleTimeString('pt-BR',{hour12:false}):'aguardando'} · Retorno: ${a.returnMs?new Date(a.returnMs).toLocaleTimeString('pt-BR',{hour12:false}):a.returnDue?new Date(a.returnDue).toLocaleTimeString('pt-BR',{hour12:false}):'calculando'}</div>
+    ${difference!==null?`<div class="smallnote"><b>Resultado calculado:</b> retorno ${difference.toFixed(2)}s após o último impacto · alvo ${Number(a.returnDelay).toFixed(2)}s · diferença ${accuracy.toFixed(2)}s. ${a.mode==='live'?'Retorno estimado, não confirmado pelo servidor.':'Cálculo virtual.'}</div>`:''}
     ${a.reason?'<div class="smallnote">'+cleanStr(a.reason)+'</div>':''}</div>`:'<p class="smallnote">Nenhum teste executado.</p>';
   return `${section('Simular ataque à cidade')}
     <div class="helpbox">Cria um <b>ataque fictício</b> só no GrepoPilot. O modo virtual não move tropas; o modo prático usa apoio real para testar a saída e o cancelamento cronometrado, sem realizar ataque inimigo.</div>
