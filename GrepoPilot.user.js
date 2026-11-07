@@ -863,7 +863,7 @@ const dodgeRead=()=>{try{return JSON.parse(localStorage.getItem(DODGE_STORE)||'{
       const lock=JSON.parse(localStorage.getItem(DODGE_LOCK)||'{}');
       if(lock.owner&&lock.owner!==instanceId&&Number(lock.until)>now)return false;
     }catch{}
-    localStorage.setItem(DODGE_LOCK,JSON.stringify({owner:instanceId,until:now+35000}));
+    localStorage.setItem(DODGE_LOCK,JSON.stringify({owner:instanceId,until:now+2500}));
     return true;
   }
   const dodgeWaveGap=()=>Math.min(60,Math.max(0,Number(config.dodge.waveGapSeconds)||12))*1000;
@@ -955,7 +955,9 @@ const dodgeRead=()=>{try{return JSON.parse(localStorage.getItem(DODGE_STORE)||'{
     if(dirty)dodgeWrite(store);
   }
   async function dodgePulse(){
-    if(dodgeBusy||!dodgeCanOperate()||!dodgeLeader())return;
+    if(dodgeBusy||!dodgeCanOperate())return;
+    if((!config.enabled||!config.modules.dodge)&&!dodgeTracked(dodgeRead()).length)return;
+    if(!dodgeLeader())return;
     dodgeBusy=true;
     try{
       const now=dodgeNow(),store=dodgeRead();
@@ -1480,6 +1482,8 @@ let queueKindSelected='building';
     save(); // Persiste migração dos controles de aldeia da v0.2.
     setInterval(()=>{try{tick()}catch(e){log(e.message,'ERROR')}},1500);
     setInterval(()=>{dodgePulse().catch(e=>log(`Esquiva: ${e.message}`,'ERROR'))},125);
+    setInterval(()=>{if(dodgeBusy){try{const active=JSON.parse(localStorage.getItem(DODGE_LOCK)||'{}');if(active.owner===instanceId)localStorage.setItem(DODGE_LOCK,JSON.stringify({owner:instanceId,until:Date.now()+2500}));}catch{}}},500);
+    window.addEventListener('pagehide',()=>{try{const active=JSON.parse(localStorage.getItem(DODGE_LOCK)||'{}');if(active.owner===instanceId)localStorage.removeItem(DODGE_LOCK);}catch{}});
     setInterval(()=>{
       if(config.ui.tab==='LOG'||config.ui.collapsed)return;
       const el=shadow.querySelector('.status');if(el)el.lastChild.textContent=STATUS();
