@@ -181,8 +181,8 @@
     try {return W.MM.getOnlyCollectionByName(key)?.models || []} catch {return []}
   };
   const resource = t => t?.resources?.() || {};
-  const action = async (controller,method,data) => {
-    if (config.dryRun) {log(`SIMULACAO ${controller}/${method} ${JSON.stringify(data).slice(0,160)}`);return {dryRun:true};}
+  const action = async (controller,method,data,forceLive=false) => {
+    if (config.dryRun && !forceLive) {log(`SIMULACAO ${controller}/${method} ${JSON.stringify(data).slice(0,160)}`);return {dryRun:true};}
     if (!connected()) throw new Error('Cliente Grepolis indisponível.');
     return new Promise((resolve,reject) => {
       let done=false;
@@ -863,7 +863,7 @@ const dodgeRead=()=>{try{return JSON.parse(localStorage.getItem(DODGE_STORE)||'{
       const lock=JSON.parse(localStorage.getItem(DODGE_LOCK)||'{}');
       if(lock.owner&&lock.owner!==instanceId&&Number(lock.until)>now)return false;
     }catch{}
-    localStorage.setItem(DODGE_LOCK,JSON.stringify({owner:instanceId,until:now+18000}));
+    localStorage.setItem(DODGE_LOCK,JSON.stringify({owner:instanceId,until:now+35000}));
     return true;
   }
   const dodgeWaveGap=()=>Math.min(60,Math.max(0,Number(config.dodge.waveGapSeconds)||12))*1000;
@@ -898,7 +898,7 @@ const dodgeRead=()=>{try{return JSON.parse(localStorage.getItem(DODGE_STORE)||'{
     if(!job.commandId||job.state==='canceling')return false;
     job.state='canceling';job.cancelRequestedAtMs=now;dodgeSaveRecord(store,job);
     try{
-      await action('command_info','cancel_command',{id:Number(job.commandId),town_id:Number(job.townId),nl_init:true});
+      await action('command_info','cancel_command',{id:Number(job.commandId),town_id:Number(job.townId),nl_init:true},true);
       job.state='cancelled';job.cancelledAtMs=dodgeNow();
       job.estimatedArrivalMs=2*job.cancelledAtMs-(Number(job.startedAtMs)||Number(job.sentAtMs));
       dodgeSaveRecord(store,job);
@@ -1023,7 +1023,7 @@ const dodgeRead=()=>{try{return JSON.parse(localStorage.getItem(DODGE_STORE)||'{
         if(store.handled[first.id])continue;
         const targetId=dodgeDestination(townId,attacks);
         if(!targetId){
-          if(!store.lastWarning||now-Number(store.lastWarning[townId])>10000){
+          if(!store.lastWarning?.[townId]||now-Number(store.lastWarning[townId])>10000){
             store.lastWarning??={};store.lastWarning[townId]=now;dodgeWrite(store);
             log(`Esquiva ${tName(town)}: não existe outra cidade própria na mesma ilha para receber apoio`,'WARN');
           }
@@ -1037,7 +1037,7 @@ const dodgeRead=()=>{try{return JSON.parse(localStorage.getItem(DODGE_STORE)||'{
         if(config.dryRun){
           if(!dodgePreviewed.has(first.id)){
             dodgePreviewed.add(first.id);
-            log(`SIMULAÇÃO ESQUIVA ${tName(town)} → ${tName(townBy(targetId))}: saída em ${Math.ceil(before)} ms, retorno-alvo ${new Date(lastImpact+1000).toLocaleTimeString('pt-BR',{hour12:false})}`);
+            log(`SIMULAÇÃO ESQUIVA ${tName(town)} → ${tName(townBy(targetId))}: impacto em ${(before/1000).toFixed(2)} s, retorno-alvo ${new Date(lastImpact+1000).toLocaleTimeString('pt-BR',{hour12:false})}`);
           }
           continue;
         }
