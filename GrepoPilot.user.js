@@ -307,7 +307,7 @@
   }
 const queueManagesTown=id=>Boolean(config.modules.smartQueue && config.smartQueue.items?.some(j=>String(j.townId)===String(id)));
   const queueCost = raw=>{
-    if(!raw || typeof raw!=='object')return null;
+    if(!raw || typeof raw!=='object' || !['wood','stone','iron'].some(k=>Object.prototype.hasOwnProperty.call(raw,k)))return null;
     const out={};
     for(const k of ['wood','stone','iron']){
       const n=Number(raw[k]??0);
@@ -774,7 +774,7 @@ const queueManagesTown=id=>Boolean(config.modules.smartQueue && config.smartQueu
     running=true;
     try {
       const now=Date.now();
-      const order=['commands','alerts','finishFree','banditRewards','quests','bootcamp','ruralUnlock','ruralUpgrade','farm','smartQueue','build','recruit','research','trade','ruralTrade','culture','cave'];
+      const order=['commands','alerts','finishFree','smartQueue','banditRewards','quests','bootcamp','ruralUnlock','ruralUpgrade','farm','build','recruit','research','trade','ruralTrade','culture','cave'];
       for(const id of order){
         if(!config.modules[id] || num(nextRun[id])>now)continue;
         nextRun[id]=now+Math.max(2,num(config.intervals[id],MODULES[id][2]))*1000;
