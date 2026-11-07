@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GrepoPilot - Painel de Automacao
 // @namespace    https://grepolis.com/
-// @version      0.3.2
+// @version      0.4.0
 // @updateURL    https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.meta.js
 // @downloadURL  https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.user.js
 // @homepageURL  https://github.com/Jugo26/automatic-enigma/tree/grepopilot-updates
@@ -20,6 +20,7 @@
   const MODULES = {
     farm: ['🌾 Coleta de aldeias','ECONOMIA',60],
     build: ['🏗️ Construção automática','CIDADES',55],
+    smartQueue: ['💰 Fila inteligente: menor custo','FILA',25],
     finishFree: ['⏱️ Conclusão grátis (5 min)','CIDADES',5],
     recruit: ['⚔️ Recrutamento','TROPAS',40],
     research: ['🎓 Pesquisas','CIDADES',130],
@@ -103,6 +104,7 @@
     cityProfiles: {},
     recruit: {targets:{},maxBatch:35},
     research: {queue:{}},
+    smartQueue: {items:[],maxBatch:35},
     trade: {routes:[],minReserve:2500,maxFill:0.90},
     ruralTrade: {wanted:'wood',minRatio:1,maxAmount:3000},
     ruralUpgrade: {unlock:false,upgrade:false,targetLevel:3},
@@ -303,9 +305,137 @@
     }
     return false;
   }
+const queueManagesTown=id=>Boolean(config.modules.smartQueue && config.smartQueue.items?.some(j=>String(j.townId)===String(id)));
+  const queueCost = raw=>{
+    if(!raw || typeof raw!=='object')return null;
+    const out={};
+    for(const k of ['wood','stone','iron']){
+      const n=Number(raw[k]??0);
+      if(!Number.isFinite(n)||n<0)return null;
+      out[k]=Math.ceil(n);
+    }
+    return out;
+  };
+  const queueSum = cost=>cost?cost.wood+cost.stone+cost.iron:Infinity;
+  const queueMoney = cost=>cost?`${Math.floor(cost.wood)} madeira · ${Math.floor(cost.stone)} pedra · ${Math.floor(cost.iron)} ferro`:'Custo indisponível';
+  const queueJobs=()=>Array.isArray(config.smartQueue.items)?config.smartQueue.items:[];
+  const queueName = j=>{
+    const town=townBy(j.townId);
+    const kind={building:'Construção',troop:'Tropa',ship:'Navio',research:'Pesquisa'}[j.kind]||j.kind;
+    return `${kind} · ${j.key}${j.kind==='research'?'':` → ${j.target}`} · ${tName(town)}`;
+  };
+  function queueAnalyze(j){
+    const t=townBy(j.townId);
+    const out=(state,why,cost=null,amount=0)=>({state,why,cost,amount,score:queueSum(cost),job:j,town:t});
+    if(!t)return out('blocked','Cidade não encontrada');
+    if(!j.key)return out('blocked','Selecione um item');
+    const target=Math.max(1,Math.floor(num(j.target,1)));
+    if(j.kind==='building'){
+      const currentBuildings=t.buildings?.()?.attributes||{};
+      if(!(j.key in currentBuildings))return out('blocked','Edifício não identificado');
+      const orders=t.buildingOrders?.()?.models||[];
+      const current=num(currentBuildings[j.key]);
+      const same=orders.filter(o=>String(o.attributes?.building_type)===j.key);
+      const planned=current+same.reduce((sum,o)=>sum+(o.attributes?.tear_down?-1:1),0);
+      if(current>=target)return out('done',`Nível ${current} alcançado`);
+      if(planned>=target || same.length)return out('wait','Construção deste edifício em andamento');
+      const capacity=W.GameDataPremium?.isAdvisorActivated?.('curator')?7:2;
+      if(orders.length>=capacity)return out('wait','Fila de obras do jogo cheia');
+      const data=W.MM?.getModels?.()?.BuildingBuildData?.[t.id]?.attributes?.building_data?.[j.key];
+      const cost=queueCost(data?.resources_for);
+      if(!cost)return out('blocked','Custo da próxima obra não encontrado');
+      if(num(t.getAvailablePopulation?.())<num(data.population_for))return out('wait','População insuficiente',cost);
+      if(!availableRes(t,cost))return out('wait','Aguardando recursos',cost);
+      return out('ready',`Construir nível ${current+1}`,cost,1);
+    }
+    if(j.kind==='troop'||j.kind==='ship'){
+      const def=W.GameData?.units?.[j.key];
+      if(!def)return out('blocked','Unidade não disponível neste mundo');
+      if(Boolean(def.is_naval)!==(j.kind==='ship'))return out('blocked','Tipo de unidade incompatível');
+      const buildings=t.buildings?.()?.attributes||{};
+      if(num(buildings[def.is_naval?'docks':'barracks'])<1)return out('wait',def.is_naval?'Porto indisponível':'Quartel indisponível');
+      if(isMythical(j.key,def) && godOf(t) && String(def.god_id||def.god||MYTH_GODS[j.key]||'').toLowerCase()!==godOf(t))return out('blocked','Criatura de outro deus');
+      const orders=t.getUnitOrdersCollection?.()?.models||[];
+      const owned=num(t.units?.()?.[j.key])+num(t.unitsOuter?.()?.[j.key]);
+      const pending=orders.reduce((sum,o)=>sum+(o.attributes?.unit_type===j.key?num(o.attributes?.units_left,o.attributes?.count):0),0);
+      const missing=Math.max(0,target-owned-pending);
+      if(!missing)return out(owned>=target?'done':'wait',owned>=target?`Meta ${target} alcançada`:'Tropas em treinamento');
+      if(orders.length>=6)return out('wait','Fila de unidades do jogo cheia');
+      const per=queueCost(def.resources);
+      if(!per)return out('blocked','Custo da unidade indisponível');
+      const discount=num(W.GeneralModifications?.getUnitBuildResourcesModification?.(Number(t.id),def),1);
+      if(discount<=0)return out('blocked','Modificador de custo inválido');
+      const perUnit=queueCost(Object.fromEntries(['wood','stone','iron'].map(k=>[k,per[k]*discount])));
+      const res=resource(t);
+      const populationCost=Math.max(1,num(def.population,1));
+      const popAvailable=num(t.getAvailablePopulation?.(),num(res.population));
+      let count=Math.min(missing,Math.max(1,Math.floor(num(config.smartQueue.maxBatch,35))),Math.floor(popAvailable/populationCost));
+      for(const k of ['wood','stone','iron'])if(perUnit[k]>0)count=Math.min(count,Math.floor(num(res[k])/perUnit[k]));
+      count=Math.floor(count);
+      const estimated=queueCost(Object.fromEntries(['wood','stone','iron'].map(k=>[k,perUnit[k]*Math.max(1,count)])));
+      if(count<1)return out('wait','Aguardando recursos ou população',estimated);
+      if(isMythical(j.key,def)&&num(def.favor)>0){
+        const favor=t.getCurrentFavor?.()??t.getFavor?.();
+        if(favor===undefined)return out('wait','Favor divino não confirmado',estimated);
+        if(num(favor)<num(def.favor)*count){
+          count=Math.min(count,Math.floor(num(favor)/num(def.favor)));
+          if(count<1)return out('wait','Favor divino insuficiente',estimated);
+        }
+      }
+      const cost=queueCost(Object.fromEntries(['wood','stone','iron'].map(k=>[k,perUnit[k]*count])));
+      return out('ready',`Recrutar ${count} ${j.key}`,cost,count);
+    }
+    if(j.kind==='research'){
+      const def=W.GameData?.researches?.[j.key];
+      if(!def)return out('blocked','Pesquisa não disponível neste mundo');
+      if(t.researches?.()?.attributes?.[j.key])return out('done','Pesquisa concluída');
+      const orders=t.getResearchOrdersCollection?.()?.models || t.researchOrders?.()?.models || [];
+      if(orders.some(o=>String(o.attributes?.research_type||o.attributes?.research_id||o.attributes?.research)===j.key))return out('wait','Pesquisa em andamento');
+      if(orders.length)return out('wait','Outra pesquisa em andamento');
+      const academyReq=num(def.academy_level??def.building_level??def.building_lvl,0);
+      if(academyReq && num(t.buildings?.()?.attributes?.academy)<academyReq)return out('wait',`Academia precisa do nível ${academyReq}`);
+      const pointsReq=num(def.research_points,0);
+      if(pointsReq && typeof t.getAvailableResearchPoints==='function' && num(t.getAvailableResearchPoints())<pointsReq)return out('wait','Pontos de pesquisa insuficientes');
+      const cost=queueCost(def.resources||def.costs);
+      if(!cost)return out('blocked','Custo da pesquisa não identificado');
+      if(!availableRes(t,cost))return out('wait','Aguardando recursos',cost);
+      return out('ready','Iniciar pesquisa',cost,1);
+    }
+    return out('blocked','Tipo inválido');
+  }
+  async function smartQueue(){
+    const jobs=queueJobs();
+    if(!jobs.length)return false;
+    const rt=readRuntime();
+    const now=Date.now();
+    const options=jobs.map((j,i)=>({...queueAnalyze(j),index:i})).filter(x=>x.state==='ready' && now-num(rt.smartQueueAttempts?.[x.job.id])>=30000);
+    options.sort((a,b)=>a.score-b.score||a.index-b.index);
+    const next=options[0];
+    if(!next)return false;
+    const j=next.job, id=Number(j.townId), key=j.key;
+    try{
+      if(j.kind==='building')await bridge(id,'BuildingOrder','buildUp',{building_id:key});
+      else if(j.kind==='research')await bridge(id,'ResearchOrder','research',{id:key});
+      else await action(j.kind==='ship'?'building_docks':'building_barracks','build',{unit_id:key,amount:next.amount,town_id:id});
+      if(!config.dryRun){
+        rt.smartQueueAttempts=rt.smartQueueAttempts||{};
+        rt.smartQueueAttempts[j.id]=Date.now();
+        rt.smartQueueAttempts=Object.fromEntries(Object.entries(rt.smartQueueAttempts).filter(([,time])=>Date.now()-num(time)<3600000));
+        writeRuntime(rt);
+      }
+      log(`Fila econômica: ${queueName(j)} · ${next.why} · ${queueMoney(next.cost)} (total ${next.score})`);
+      return true;
+    }catch(e){
+      rt.smartQueueAttempts=rt.smartQueueAttempts||{};
+      rt.smartQueueAttempts[j.id]=Date.now();
+      if(!config.dryRun)writeRuntime(rt);
+      log(`Fila econômica: ${queueName(j)} · ${e.message}`,'ERROR');
+      return true;
+    }
+  }
   async function build(){
     for(const [id,targets] of Object.entries(config.build.targets)){
-      const t=townBy(id); if(!t || !targets || !Object.keys(targets).length) continue;
+      const t=townBy(id); if(!t || !targets || !Object.keys(targets).length || queueManagesTown(id)) continue;
       const current={...(t.buildings?.()?.attributes||{})};
       const queued=t.buildingOrders?.()?.models || [];
       const full=W.GameDataPremium?.isAdvisorActivated?.('curator') ? 7 : 2;
@@ -330,7 +460,7 @@
   }
   async function recruit(){
     for(const [id,target] of Object.entries(config.recruit.targets)){
-      const t=townBy(id); if(!t || !target)continue;
+      const t=townBy(id); if(!t || !target || queueManagesTown(id))continue;
       const current=t.units?.()||{},outside=t.unitsOuter?.()||{};
       const queued=t.getUnitOrdersCollection?.()?.models||[];
       if(queued.length>=6)continue;
@@ -352,7 +482,7 @@
   }
   async function research(){
     for(const [id,list] of Object.entries(config.research.queue)){
-      const t=townBy(id);if(!t || !Array.isArray(list))continue;
+      const t=townBy(id);if(!t || !Array.isArray(list) || queueManagesTown(id))continue;
       const done=t.researches?.()?.attributes||{};
       for(const key of list){
         if(done[key] || !W.GameData?.researches?.[key])continue;
@@ -627,7 +757,7 @@
     if(seenAttacks.size>200)seenAttacks=new Set([...seenAttacks].slice(-100));
     return false;
   }
-  const handlers={farm,build,finishFree,recruit,research,trade,ruralTrade,ruralUnlock,ruralUpgrade,culture,bootcamp,quests,banditRewards,cave,commands,alerts};
+  const handlers={farm,build,smartQueue,finishFree,recruit,research,trade,ruralTrade,ruralUnlock,ruralUpgrade,culture,bootcamp,quests,banditRewards,cave,commands,alerts};
   const lock = () => {
     const now=Date.now();
     try{
@@ -644,7 +774,7 @@
     running=true;
     try {
       const now=Date.now();
-      const order=['commands','alerts','finishFree','banditRewards','quests','bootcamp','ruralUnlock','ruralUpgrade','farm','build','recruit','research','trade','ruralTrade','culture','cave'];
+      const order=['commands','alerts','finishFree','banditRewards','quests','bootcamp','ruralUnlock','ruralUpgrade','farm','smartQueue','build','recruit','research','trade','ruralTrade','culture','cave'];
       for(const id of order){
         if(!config.modules[id] || num(nextRun[id])>now)continue;
         nextRun[id]=now+Math.max(2,num(config.intervals[id],MODULES[id][2]))*1000;
@@ -743,6 +873,46 @@
     <div class="smallnote">${cleanStr(JSON.stringify(config.recruit.targets[selectedCity]||{}))}</div>
     <p class="smallnote">Unidade inexistente neste mundo é ignorada no modelo. As metas são por cidade e podem ser alteradas abaixo.</p>`;
   };
+let queueKindSelected='building';
+  const queueContent=()=>{
+    const town=getSelected();
+    const kind=queueKindSelected;
+    const buildingTypes=BUILDINGS.filter(k=>W.GameData?.buildings?.[k]);
+    const unitTypes=Object.entries(W.GameData?.units||{}).filter(([k,def])=>def&&typeof def==='object'&&Boolean(def.is_naval)===(kind==='ship')).map(([k])=>k);
+    const researchTypes=Object.keys(W.GameData?.researches||{});
+    const choices=kind==='building'?buildingTypes:kind==='research'?researchTypes:unitTypes;
+    const own=queueJobs().map((j,index)=>({...queueAnalyze(j),index})).sort((a,b)=>(a.state==='ready'?0:1)-(b.state==='ready'?0:1)||(a.state==='ready'?a.score-b.score:a.index-b.index));
+    const statusName={ready:'✅ Executável',wait:'⏳ Aguardando',done:'✔ Concluído',blocked:'⚠ Verificar'};
+    const ready=own.filter(x=>x.state==='ready');
+    const best=ready[0];
+    const rows=own.map(x=>{
+      const j=x.job;
+      return `<div class="city compact">
+        <div style="flex:1;min-width:180px"><b>${cleanStr(queueName(j))}</b>
+          <div class="smallnote">${statusName[x.state]||''}: ${cleanStr(x.why)}</div>
+          <div class="smallnote">${x.cost?`${cleanStr(queueMoney(x.cost))} · total ${x.score}`:'Custo ainda não disponível'}</div>
+        </div>
+        <button title="Excluir da fila" data-remove-queue="${x.index}">Excluir</button>
+      </div>`;
+    }).join('');
+    return `${moduleNames()}
+      ${section('Prioridade: sempre o menor custo')}
+      <div class="helpbox">A fila escolhe a ordem <b>mais barata que já pode ser iniciada</b>, comparando madeira + pedra + ferro. Se a obra, pesquisa ou treino estiver bloqueado, ela tenta o próximo item. Cada meta é controlada por cidade.</div>
+      <div class="stats"><div><b>${queueJobs().length}</b>Metas cadastradas</div><div><b>${ready.length}</b>Prontas agora</div></div>
+      <p class="smallnote">${best?`Próxima ordem: ${cleanStr(queueName(best.job))} · custo total ${best.score}`:'Nenhuma ordem executável agora. O bot aguardará recursos, pré-requisitos ou espaço nas filas do jogo.'}</p>
+      ${section('Adicionar uma meta')}
+      <div class="formrow"><span>Cidade</span>${selectTown('queueCitySelect',town?.id)}</div>
+      <div class="formrow"><span>Categoria</span><select id="queueKind">${optionList([['building','Construção'],['troop','Tropas terrestres'],['ship','Navios'],['research','Pesquisa']],kind)}</select></div>
+      <div class="formrow"><span>${kind==='building'?'Edifício':kind==='research'?'Pesquisa':'Unidade'}</span><select id="queueKey">${optionList(choices.map(k=>[k,k]))}</select></div>
+      ${kind==='research'?'<p class="smallnote">A pesquisa é feita uma vez e fica marcada como concluída.</p>':`<div class="formrow"><span>${kind==='building'?'Nível desejado':'Total de unidades desejadas'}</span><input type="number" id="queueTarget" min="1" step="1" value="${kind==='building'?'10':'100'}"></div>`}
+      <div class="tools"><button class="primary" data-action="queueAdd">Adicionar à fila</button><button data-action="queueImport">Importar metas da cidade</button></div>
+      <p class="smallnote">Importar metas traz edifícios, tropas, navios e pesquisas dos modelos já aplicados na aba Cidades/Tropas. Quando a fila inteligente está ativa, ela assume essas tarefas nas cidades cadastradas e evita duplicação pelos módulos antigos.</p>
+      <div class="formrow"><span>Máximo por ordem de tropas/navios</span><input type="number" min="1" max="999" data-setting="smartQueue.maxBatch" value="${config.smartQueue.maxBatch}"></div>
+      ${section('Fila ordenada por custo')}
+      <div class="tools"><button data-action="queueClearDone">Limpar concluídos</button><button data-action="queueClearAll">Limpar toda a fila</button></div>
+      <div class="cityscroll" style="max-height:320px">${rows||'<p class="smallnote">A fila está vazia. Adicione uma meta acima.</p>'}</div>
+      <p class="smallnote">As ações aparecem no histórico (Log). A prioridade é econômica, não por tempo de conclusão. Em modo simulação, apenas registra o que seria executado.</p>`;
+  };
   const combatContent=()=>{
     const t=getSelected(),unitNames=Object.keys(W.GameData?.units||{}).filter(k=>typeof W.GameData.units[k]==='object');
     return `${moduleNames()}
@@ -792,11 +962,11 @@
     host.style.left=config.ui.x===null?'auto':Math.max(0,num(config.ui.x))+'px';
     host.style.right=config.ui.x===null?'20px':'auto';
     host.style.top=Math.max(0,num(config.ui.y))+'px';
-    const body=({'INÍCIO':dashboard,CIDADES:cityContent,ALDEIAS:villagesContent,TROPAS:troopsContent,COMBATE:combatContent,ECONOMIA:economyContent,'MISSÕES':rewardsContent,AJUSTES:configContent,LOG:logContent}[config.ui.tab]||dashboard)();
+    const body=({'INÍCIO':dashboard,CIDADES:cityContent,FILA:queueContent,ALDEIAS:villagesContent,TROPAS:troopsContent,COMBATE:combatContent,ECONOMIA:economyContent,'MISSÕES':rewardsContent,AJUSTES:configContent,LOG:logContent}[config.ui.tab]||dashboard)();
     shadow.querySelector('#gp-app').innerHTML=`
-      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.3.2</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
+      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.4.0</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
       ${config.ui.collapsed?'':`<div class="status"><i class="dot ${config.enabled?(config.dryRun?'sim':'live'):''}"></i>${cleanStr(STATUS())}</div>
-      <div class="tabs">${['INÍCIO','CIDADES','ALDEIAS','TROPAS','COMBATE','ECONOMIA','MISSÕES','AJUSTES','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
+      <div class="tabs">${['INÍCIO','CIDADES','FILA','ALDEIAS','TROPAS','COMBATE','ECONOMIA','MISSÕES','AJUSTES','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
       <div class="body">${body}</div><div class="foot"><button class="${config.enabled?'stop':'go'}" data-action="toggle">${config.enabled?'■ PARAR TUDO':'▶ INICIAR'}</button><span>${Object.values(config.modules).filter(Boolean).length} módulos ativos</span></div>`}`;
   };
   const CSS=`
@@ -831,11 +1001,44 @@
     if(trg.dataset.tab){config.ui.tab=trg.dataset.tab;save();render();return;}
     if(trg.dataset.removeRoute!==undefined){config.trade.routes.splice(num(trg.dataset.removeRoute),1);save();render();return;}
     if(trg.dataset.removeJob!==undefined){config.commands.jobs.splice(num(trg.dataset.removeJob),1);save();render();return;}
+    if(trg.dataset.removeQueue!==undefined){config.smartQueue.items.splice(num(trg.dataset.removeQueue),1);save();render();return;}
     if(!id)return;
     try{
       switch(id){
         case 'collapse':config.ui.collapsed=!config.ui.collapsed;save();break;
         case 'toggle':config.enabled=!config.enabled;save();log(config.enabled?'Bot iniciado':'Bot interrompido');break;
+        case 'queueAdd': {
+          const t=getSelected(),kind=el('queueKind')?.value,key=el('queueKey')?.value;
+          if(!t||!['building','troop','ship','research'].includes(kind)||!key)throw Error('Selecione cidade, tipo e item');
+          const goal=kind==='research'?1:Math.floor(num(el('queueTarget')?.value));
+          if(goal<1)throw Error('A meta deve ser maior que zero');
+          if(queueJobs().length>=120)throw Error('Limite de 120 metas; exclua uma antes de adicionar');
+          const existing=queueJobs().find(j=>String(j.townId)===String(t.id)&&j.kind===kind&&j.key===key);
+          if(existing) existing.target=goal;
+          else config.smartQueue.items.push({id:'GQ-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,7),townId:Number(t.id),kind,key,target:goal});
+          config.modules.smartQueue=true;
+          nextRun.smartQueue=0;save();log('Fila: meta adicionada ou atualizada');break;
+        }
+        case 'queueImport': {
+          const t=getSelected();if(!t)throw Error('Selecione uma cidade');
+          const items=[];
+          for(const [key,target] of Object.entries(config.build.targets[t.id]||{}))if(num(target)>0)items.push({kind:'building',key,target});
+          for(const key of config.research.queue[t.id]||[])if(W.GameData?.researches?.[key])items.push({kind:'research',key,target:1});
+          for(const [key,target] of Object.entries(config.recruit.targets[t.id]||{}))if(num(target)>0&&W.GameData?.units?.[key])items.push({kind:W.GameData.units[key].is_naval?'ship':'troop',key,target});
+          let count=0;
+          for(const item of items){
+            const old=queueJobs().find(j=>String(j.townId)===String(t.id)&&j.kind===item.kind&&j.key===item.key);
+            if(old)old.target=item.target;
+            else {if(queueJobs().length>=120)break;config.smartQueue.items.push({id:'GQ-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,7),townId:Number(t.id),...item})}
+            count++;
+          }
+          if(count)config.modules.smartQueue=true;
+          nextRun.smartQueue=0;save();log('Fila: importadas '+count+' metas de '+tName(t));break;
+        }
+        case 'queueClearDone':
+          config.smartQueue.items=queueJobs().filter(j=>queueAnalyze(j).state!=='done');save();break;
+        case 'queueClearAll':
+          config.smartQueue.items=[];save();break;
         case 'setBootcampHome': {
           const id=num(el('bootcampHome').value);
           if(!townBy(id))throw new Error('Escolha uma cidade válida da ilha inicial');
@@ -916,7 +1119,8 @@
     if(t.dataset.global){config[t.dataset.global]=t.checked;save();render();return;}
     if(t.dataset.setting){setPath(t.dataset.setting,t.type==='checkbox'?t.checked:t.type==='number'?num(t.value):t.value);render();return;}
     if(t.dataset.interval){config.intervals[t.dataset.interval]=Math.max(2,num(t.value,60));save();render();return;}
-    if(t.id==='citySelect'){selectedCity=t.value;render();}
+    if(t.id==='citySelect'||t.id==='queueCitySelect'){selectedCity=t.value;render();}
+    if(t.id==='queueKind'){queueKindSelected=t.value;render();}
   };
   const mount=()=>{
     if(host)return;
