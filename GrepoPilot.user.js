@@ -119,7 +119,7 @@
     alerts: {desktop:true,checkAll:true},
     dodge: {leadSeconds:5,returnAfterSeconds:1,waveGapSeconds:12,land:true,naval:true,targets:{}},
     attackTest: {delay:20,wave:0,mode:'preview'},
-    presence: {tracked:{},group:'all',status:'all'},
+    presence: {tracked:{},group:'all',status:'all',search:''},
     ui: {x:null,y:90,tab:'INÍCIO',collapsed:false}
   };
   const clone = v => JSON.parse(JSON.stringify(v));
@@ -1578,6 +1578,54 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     });
     return result;
   }
+  function presenceContent(){
+  const list=presenceSnapshot();
+  const group=config.presence?.group||'all',status=config.presence?.status||'all';
+  const search=String(config.presence?.search||'').trim().toLowerCase();
+  const filtered=list.filter(x=>(group==='all'||x.relation===group)&&(status==='all'||x.status===status)&&
+    (!search||[x.city,x.player,x.alliance,x.id,x.playerId].some(value=>String(value||'').toLowerCase().includes(search))));
+  const byType=(name)=>list.filter(x=>x.relation===name).length;
+  const byStatus=(name)=>list.filter(x=>x.status===name).length;
+  const groupLabels={ally:'Aliada',enemy:'Inimiga',other:'Não classificada'};
+  const statusLabels={on:'🟢 ON',off:'⚪ OFF',unknown:'❔ Desconhecido'};
+  const rows=filtered.slice(0,100).map(x=>{
+    const details=[x.player?`Jogador: ${cleanStr(x.player)}`:'Jogador não identificado',
+      x.playerId?`#${x.playerId}`:'',x.alliance?`Aliança: ${cleanStr(x.alliance)}`:''].filter(Boolean).join(' · ');
+    const label=x.city?cleanStr(x.city):`Cidade #${x.id}`;
+    const overrides=config.presence?.tracked?.[x.id]||{};
+    return `<div class="city">
+      <div class="city compact"><b>${label}</b><span>#${x.id} · ${cleanStr(groupLabels[x.relation])}</span></div>
+      <div class="smallnote">${details}</div>
+      <div><b>${statusLabels[x.status]}</b> ${x.onlineSource?`<span class="smallnote">· informado pelo cliente: ${cleanStr(x.onlineSource)}</span>`:'<span class="smallnote">· sem indicador de presença</span>'}</div>
+      <div class="formrow compact"><span>Classificação</span>
+        <select data-presence-classify="${x.id}">${optionList([['auto','Detectar pelo jogo'],['ally','Aliada'],['enemy','Inimiga'],['other','Outra']],overrides.relation||'auto')}</select>
+        ${x.tracked?`<button data-presence-untrack="${x.id}" title="Remover da lista manual">Remover</button>`:''}
+      </div>
+    </div>`;
+  }).join('');
+  return `${section('Presença de aliados e adversários')}
+    <div class="helpbox">A presença é do <b>jogador que controla a cidade</b>. ON ou OFF aparece só quando o cliente do Grepolis informa o estado explicitamente; caso contrário, fica <b>Desconhecido</b>. Cidades carregadas no mapa podem aparecer automaticamente.</div>
+    <div class="stats">
+      <div><b>${list.length}</b>Cidades identificadas</div>
+      <div><b>${byType('ally')} / ${byType('enemy')}</b>Aliadas / Inimigas</div>
+      <div><b>${byStatus('on')} / ${byStatus('off')}</b>ON / OFF informados</div>
+      <div><b>${byStatus('unknown')}</b>Presença desconhecida</div>
+    </div>
+    <div class="formrow"><span>Grupo</span><select data-setting="presence.group">${optionList([['all','Todas'],['ally','Aliadas'],['enemy','Inimigas'],['other','Outras']],group)}</select></div>
+    <div class="formrow"><span>Presença</span><select data-setting="presence.status">${optionList([['all','Todos os estados'],['on','🟢 ON'],['off','⚪ OFF'],['unknown','❔ Desconhecido']],status)}</select></div>
+    <div class="formrow"><span>Buscar cidade/jogador</span><input data-setting="presence.search" value="${cleanStr(config.presence?.search||'')}" placeholder="Nome ou ID"></div>
+    <div class="tools"><button class="primary" data-action="presenceRefresh">Atualizar leitura do jogo</button></div>
+    ${section('Adicionar cidade pelo ID')}
+    <div class="formrow"><span>ID da cidade</span><input id="presenceCityId" type="number" min="1" step="1" placeholder="Ex.: 12345"></div>
+    <div class="formrow"><span>Nome opcional</span><input id="presenceCityName" maxlength="70" placeholder="Apelido"></div>
+    <div class="formrow"><span>Grupo</span><select id="presenceCityGroup">${optionList([['ally','Aliada'],['enemy','Inimiga'],['other','Outra']],'enemy')}</select></div>
+    <div class="tools"><button data-action="presenceTrack">Adicionar ao monitor</button></div>
+    <p class="smallnote">Adicione uma cidade que ainda não apareceu no mapa. Se os dados do proprietário não estiverem carregados no cliente, o estado permanecerá Desconhecido. Abrir a cidade no mapa pode disponibilizar mais informações.</p>
+    ${section('Cidades observadas')}
+    <div class="cityscroll" style="max-height:390px">${rows||'<p class="smallnote">Nenhuma cidade encontrada com esses filtros ou ainda sem dados no cliente.</p>'}</div>
+    ${filtered.length>100?`<p class="smallnote">Exibindo as primeiras 100 de ${filtered.length} cidades. Use os filtros para refinar.</p>`:''}
+    <p class="smallnote">Aliados são membros da própria aliança, pactos explicitamente visíveis ou marcações manuais. Inimigos exigem relação hostil explícita ou marcação manual. <b>OFF</b> nunca é inferido por inatividade, pontuação ou falta de eventos. Não são feitas requisições adicionais ao servidor.</p>`;
+}
   const dashboard=()=>{
     const r=ruralStatus();const q=questRows();const camp=W.MM?.getModelByNameAndPlayerId?.('PlayerAttackSpot');
     const enabled=Object.entries(config.modules).filter(([,v])=>v).length;
@@ -1776,11 +1824,11 @@ let queueKindSelected='building';
     host.style.left=config.ui.x===null?'auto':Math.max(0,num(config.ui.x))+'px';
     host.style.right=config.ui.x===null?'20px':'auto';
     host.style.top=Math.max(0,num(config.ui.y))+'px';
-    const body=({'INÍCIO':dashboard,CIDADES:cityContent,FILA:queueContent,ESQUIVA:dodgeContent,TESTE:testContent,ALDEIAS:villagesContent,TROPAS:troopsContent,COMBATE:combatContent,ECONOMIA:economyContent,'MISSÕES':rewardsContent,AJUSTES:configContent,LOG:logContent}[config.ui.tab]||dashboard)();
+    const body=({'INÍCIO':dashboard,CIDADES:cityContent,FILA:queueContent,ESQUIVA:dodgeContent,TESTE:testContent,'PRESENÇA':presenceContent,ALDEIAS:villagesContent,TROPAS:troopsContent,COMBATE:combatContent,ECONOMIA:economyContent,'MISSÕES':rewardsContent,AJUSTES:configContent,LOG:logContent}[config.ui.tab]||dashboard)();
     shadow.querySelector('#gp-app').innerHTML=`
       <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.8.0</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
       ${config.ui.collapsed?'':`<div class="status"><i class="dot ${config.enabled?(config.dryRun?'sim':'live'):''}"></i>${cleanStr(STATUS())}</div>
-      <div class="tabs">${['INÍCIO','CIDADES','FILA','ALDEIAS','TROPAS','COMBATE','ESQUIVA','TESTE','ECONOMIA','MISSÕES','AJUSTES','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
+      <div class="tabs">${['INÍCIO','CIDADES','FILA','ALDEIAS','TROPAS','COMBATE','ESQUIVA','TESTE','PRESENÇA','ECONOMIA','MISSÕES','AJUSTES','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
       <div class="body">${body}</div><div class="foot"><button class="${config.enabled?'stop':'go'}" data-action="toggle">${config.enabled?'■ PARAR TUDO':'▶ INICIAR'}</button><span>${Object.values(config.modules).filter(Boolean).length} módulos ativos</span></div>`}`;
   };
   const CSS=`
@@ -1816,6 +1864,10 @@ let queueKindSelected='building';
     if(trg.dataset.removeRoute!==undefined){config.trade.routes.splice(num(trg.dataset.removeRoute),1);save();render();return;}
     if(trg.dataset.removeJob!==undefined){config.commands.jobs.splice(num(trg.dataset.removeJob),1);save();render();return;}
     if(trg.dataset.removeQueue!==undefined){config.smartQueue.items.splice(num(trg.dataset.removeQueue),1);save();render();return;}
+    if(trg.dataset.presenceUntrack!==undefined){
+      const id=Number(trg.dataset.presenceUntrack);
+      delete config.presence.tracked[id];save();render();return;
+    }
     if(!id)return;
     try{
       switch(id){
@@ -1854,6 +1906,18 @@ let queueKindSelected='building';
           config.smartQueue.items=queueJobs().filter(j=>queueAnalyze(j).state!=='done');save();break;
         case 'queueClearAll':
           config.smartQueue.items=[];save();break;
+        case 'presenceRefresh':log('Presença: dados em memória do jogo consultados novamente');break;
+        case 'presenceTrack':{
+          const townId=Number(el('presenceCityId')?.value);
+          if(!Number.isSafeInteger(townId)||townId<1)throw Error('Digite um ID numérico válido da cidade');
+          if(towns().some(t=>Number(t.id)===townId))throw Error('Esta é uma das suas cidades');
+          const relation=el('presenceCityGroup')?.value;
+          if(!['ally','enemy','other'].includes(relation))throw Error('Grupo inválido');
+          config.presence.tracked??={};
+          if(Object.keys(config.presence.tracked).length>=250&&!config.presence.tracked[townId])throw Error('Limite de 250 cidades monitoradas manualmente');
+          config.presence.tracked[townId]={relation,name:String(el('presenceCityName')?.value||'').slice(0,70)};
+          save();log('Presença: cidade #'+townId+' adicionada ao monitor');break;
+        }
         case 'testStart': {
           const id=Number(el('testCity')?.value||getSelected()?.id);
           if(config.attackTest.mode==='live'&&!el('testConfirm')?.checked)throw Error('Confirme a movimentação real de tropas para testar');
@@ -1939,6 +2003,19 @@ let queueKindSelected='building';
     if(t.dataset.module){config.modules[t.dataset.module]=t.checked;nextRun[t.dataset.module]=0;save();render();return;}
     if(t.dataset.culture){config.culture[t.dataset.culture]=t.checked;save();render();return;}
     if(t.dataset.global){config[t.dataset.global]=t.checked;save();render();return;}
+    if(t.dataset.presenceClassify!==undefined){
+      const id=Number(t.dataset.presenceClassify),relation=t.value;
+      if(Number.isSafeInteger(id)&&id>0&&['auto','ally','enemy','other'].includes(relation)){
+        config.presence.tracked??={};
+        const existing=config.presence.tracked[id]||{};
+        if(relation==='auto'){
+          if(existing.name)config.presence.tracked[id]={name:existing.name};
+          else delete config.presence.tracked[id];
+        }else config.presence.tracked[id]={...existing,relation};
+        save();
+      }
+      render();return;
+    }
     if(t.dataset.queueUrgency!==undefined){
       const index=Number(t.dataset.queueUrgency);
       if(Number.isSafeInteger(index)&&queueJobs()[index]&&['normal','high','urgent'].includes(t.value)){
@@ -1982,6 +2059,7 @@ let queueKindSelected='building';
     setInterval(()=>{try{tick()}catch(e){log(e.message,'ERROR')}},1500);
     setInterval(()=>{dodgePulse().catch(e=>log(`Esquiva: ${e.message}`,'ERROR'))},125);
     setInterval(()=>{try{testTick();if(config.ui.tab==='TESTE'&&shadow){const a=testRead().active;const el=shadow.getElementById('testCountdown');if(a&&el)el.textContent=Math.max(0,(a.impactMs-dodgeNow())/1000).toFixed(1)+'s';}}catch(e){log(`Teste: ${e.message}`,'ERROR')}},250);
+    setInterval(()=>{if(config.ui.tab==='PRESENÇA'&&!document.hidden&&shadow&&!shadow.activeElement?.matches?.('input,select')){try{render();}catch(e){log('Presença: '+e.message,'ERROR');}}},15000);
     setInterval(()=>{if(dodgeBusy){try{const active=JSON.parse(localStorage.getItem(DODGE_LOCK)||'{}');if(active.owner===instanceId)localStorage.setItem(DODGE_LOCK,JSON.stringify({owner:instanceId,until:Date.now()+2500}));}catch{}}},500);
     window.addEventListener('pagehide',()=>{try{const active=JSON.parse(localStorage.getItem(DODGE_LOCK)||'{}');if(active.owner===instanceId)localStorage.removeItem(DODGE_LOCK);}catch{}});
     setInterval(()=>{
