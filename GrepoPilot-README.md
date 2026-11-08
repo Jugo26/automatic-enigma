@@ -187,3 +187,17 @@ Nova aba **DIAG**.
 Mantidos Auto Farm v0.7.1, fila inteligente v0.7.0, recrutamento por lotes, esquiva, laboratório de ataques virtuais, rotas manuais, histórico de ações e demais módulos. O monitor de presença ON/OFF removido em v0.8.1 continua removido.
 
 Testes com APIs simuladas: geração de carga por déficit real; combinação de dois recursos; limites de comércio e armazém; reserva para o fornecedor; supressão de repetição por entrega pendente; preservação de rotas manuais; exportação/importação entre PCs com conta/mundo iguais; rejeição de conta/mundo divergentes; modo Secundário impedindo execução; e diagnóstico de falha/recuperação. A versão ainda precisa de teste operacional em um servidor real de Grepolis.
+
+## GrepoPilot 0.9.1 — Proteção durante CAPTCHA
+
+Adicionada detecção de verificações CAPTCHA **visíveis na página** do Grepolis, com pausa temporária de rotinas e aviso opcional. **Não soluciona, preenche, contorna nem terceiriza a resolução de CAPTCHA.**
+
+- O monitor verifica elementos conhecidos de CAPTCHA (iframes e containers visíveis) a cada ciclo de aproximadamente 1,5 segundos; elementos ocultos não acionam a pausa.
+- Ao detectar um desafio visível, o GrepoPilot interrompe temporariamente a execução dos módulos e impede novos comandos enviados ao cliente, inclusive durante a esquiva e no teste prático.
+- Se um **teste prático de esquiva** estiver ativo no momento do desafio, ele é interrompido e seus apoios previamente identificados recebem marcação para cancelamento posterior, assim que a verificação deixar o jogo operável. **Cancelamentos podem atrasar enquanto o desafio estiver presente.**
+- O estado de execução configurado pelo usuário é mantido. Quando o desafio não estiver mais visível por um período contínuo (padrão: **5 segundos**), a execução é liberada. Módulos que estavam pausados manualmente continuam pausados.
+- **AJUSTES → Proteção durante CAPTCHA:** status, notificações de navegador e intervalo de confirmação de desaparecimento (de 1 a 30 segundos).
+- **DIAG:** módulos mostram **CAPTCHA** como motivo de suspensão.
+- A detecção é baseada nos elementos visíveis do cliente: desafios proprietários que não utilizem os seletores monitorados podem não ser identificados. O recurso foi testado em ambiente simulado, sem validação ao vivo.
+
+Testes simulados concluídos: operação normal sem desafio; pausa com CAPTCHA visível; nenhum envio de comando durante o desafio; interrupção de teste prático preservando a solicitação de cancelamento; status de diagnóstico; liberação após intervalo de confirmação; manutenção de configuração; não detecção de widget oculto; preservação das funções anteriores.
