@@ -124,3 +124,15 @@ O recrutamento compartilhado com a aba TROPAS não reduz o lote mínimo apenas p
 Testes locais aprovados: urgência estratégica, modo clássico, pesquisa e construção com academia insuficiente, disparo de melhoria, proteção contra edifícios no limite máximo, armazenamento insuficiente para lote mínimo, controles da interface e inibição de pré-requisitos automáticos quando desativados.
 
 O arquivo `GrepoPilot.meta.js` será atualizado somente após a publicação do script completo.
+
+## GrepoPilot 0.7.1 — Pausa do auto farm por armazém cheio
+
+**Por cidade**, o auto farm pausa a coleta quando **madeira, pedra e ferro atingem todos 100% da capacidade de armazenamento**. Se **qualquer um** dos três cair abaixo da capacidade, a cidade fica novamente elegível para coleta no **próximo ciclo configurado** do módulo, sujeito à disponibilidade da aldeia. Outras cidades com espaço livre continuam sendo coletadas normalmente.
+
+O comportamento vale tanto para as coletas individuais das aldeias quanto para a **coleta em massa do Capitão**. Se todas as cidades elegíveis estiverem com os três recursos cheios, nenhuma solicitação de coleta é enviada ao jogo.
+
+A aba **ECONOMIA** apresenta, por cidade, o estado **Pausada / Pronta / Capacidade indisponível** e os valores de madeira, pedra e ferro em relação ao armazenamento. As transições de pausa e retomada são registradas uma vez no log, evitando mensagens repetidas. Quando o jogo não fornece capacidade válida, o script aguarda os dados em vez de tentar coleta indevida.
+
+A antiga configuração `farm.minStorageFree` deixa de influenciar o auto farm; configurações antigas podem manter o campo no JSON sem alterar essa regra.
+
+Testes simulados concluídos: pausa com 3/3 cheios, coleta seletiva com cidade parcial, retorno ao liberar um único recurso, coleta em massa somente nas cidades com espaço, ausência de solicitações quando todas estão cheias e compatibilidade com configurações antigas. Sem validação em servidor de jogo real.
