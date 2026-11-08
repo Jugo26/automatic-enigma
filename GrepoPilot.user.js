@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GrepoPilot - Painel de Automacao
 // @namespace    https://grepolis.com/
-// @version      0.7.0
+// @version      0.7.1
 // @updateURL    https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.meta.js
 // @downloadURL  https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.user.js
 // @homepageURL  https://github.com/Jugo26/automatic-enigma/tree/grepopilot-updates
@@ -99,7 +99,7 @@
     enabled: false, dryRun: true,
     modules: Object.fromEntries(Object.keys(MODULES).map(x => [x,false])),
     intervals: Object.fromEntries(Object.entries(MODULES).map(([x,p]) => [x,p[2]])),
-    farm: {duration:10,minStorageFree:0.12,captainBulk:false},
+    farm: {duration:10,captainBulk:false},
     build: {targets:{},priority:BUILDINGS.slice(),allowDemolition:false},
     finishFree: {maxRemainingSeconds:285},
     cityProfiles: {},
@@ -252,11 +252,48 @@
     log(text,'ALERT');
     if(config.alerts.desktop && 'Notification' in window && Notification.permission==='granted') new Notification('GrepoPilot',{body:text});
   };
+
+  // A cidade só pausa a coleta quando os três recursos atingirem a capacidade.
+  // Com qualquer recurso abaixo dela, volta a ser elegível no próximo ciclo.
+  const farmStorageState=t=>{
+    const r=resource(t);
+    const direct=Number(r.storage);
+    let cap=Number.isFinite(direct)&&direct>0?direct:NaN;
+    if(!Number.isFinite(cap)){
+      const getter=['getStorage','getStorageCapacity','getResourceStorage'].find(name=>typeof t?.[name]==='function');
+      if(getter){const value=Number(t[getter]());if(Number.isFinite(value)&&value>0)cap=value;}
+    }
+    const amounts=Object.fromEntries(['wood','stone','iron'].map(k=>[k,Number(r[k])]));
+    const known=Number.isFinite(cap)&&cap>0&&Object.values(amounts).every(v=>Number.isFinite(v)&&v>=0);
+    const full=known&&['wood','stone','iron'].every(k=>amounts[k]>=cap);
+    return {known,full,cap,amounts};
+  };
+  const farmLastFull=new Map();
+  const farmWarnedUnknown=new Set();
+  const farmEligibleCities=()=>{
+    const active=[];
+    for(const t of towns().filter(eligibleTown)){
+      const state=farmStorageState(t),id=String(t.id);
+      if(!state.known){
+        if(!farmWarnedUnknown.has(id)){
+          farmWarnedUnknown.add(id);
+          log(`Auto farm: capacidade de armazenamento indisponível em ${tName(t)}; coleta aguardando dados`,'WARN');
+        }
+        continue;
+      }
+      farmWarnedUnknown.delete(id);
+      const prior=farmLastFull.get(id);
+      if(prior!==state.full){
+        farmLastFull.set(id,state.full);
+        if(state.full)log(`Auto farm: ${tName(t)} pausada — madeira, pedra e ferro cheios (${state.cap} cada)`);
+        else if(prior===true)log(`Auto farm: ${tName(t)} retomada — pelo menos um recurso deixou de estar cheio`);
+      }
+      if(!state.full)active.push(t);
+    }
+    return active;
+  };
   async function farm(){
-    const active=towns().filter(eligibleTown).filter(t=>{
-      const r=resource(t);const cap=num(r.storage,1);
-      return ['wood','stone','iron'].some(k=>num(r[k]) <= cap*(1-num(config.farm.minStorageFree,0.12)));
-    });
+    const active=farmEligibleCities();
     if(!active.length) return false;
     const time=Math.max(5,num(config.farm.duration,10));
     if(config.farm.captainBulk && W.GameDataPremium?.isAdvisorActivated?.('captain')){
@@ -1483,7 +1520,12 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
   const economyContent=()=>`${moduleNames()}
     ${section('Coleta rural')}
     <div class="formrow"><span>Duração</span><select data-setting="farm.duration">${optionList([[5,'5 min'],[10,'10 min'],[20,'20 min']],config.farm.duration)}</select><label><input type="checkbox" data-setting="farm.captainBulk" ${config.farm.captainBulk?'checked':''}> Cap. em massa</label></div>
-    <div class="formrow"><span>Espaço mín. em armazém</span><input type="number" step="0.01" min="0" max="0.9" data-setting="farm.minStorageFree" value="${config.farm.minStorageFree}"></div>
+    <p class="smallnote">Coleta pausada por cidade somente quando madeira, pedra e ferro estão todos em 100% da capacidade. Assim que qualquer um baixar, a coleta volta no próximo ciclo. Funciona também com Capitão.</p>
+    <div class="cityscroll" style="max-height:185px">${towns().filter(eligibleTown).map(t=>{
+      const f=farmStorageState(t),v=f.amounts;
+      const label=!f.known?'⚠ Capacidade indisponível':f.full?'⏸ Pausada · 3 recursos cheios':'▶ Pronta · há espaço no armazém';
+      return `<div class="city"><b>${cleanStr(tName(t))}</b> <span>${label}</span><div class="smallnote">🌲 ${Number.isFinite(v.wood)?Math.floor(v.wood):'?'} · 🪨 ${Number.isFinite(v.stone)?Math.floor(v.stone):'?'} · 🪙 ${Number.isFinite(v.iron)?Math.floor(v.iron):'?'} / ${f.known?Math.floor(f.cap):'?'}</div></div>`;
+    }).join('')||'<p class="smallnote">Nenhuma cidade disponível.</p>'}</div>
     ${section('Comércio entre cidades')}
     <div class="formrow"><span>Origem</span>${selectTown('routeFrom')}</div>
     <div class="formrow"><span>Destino</span>${selectTown('routeTo',towns()[1]?.id)}</div>
@@ -1620,7 +1662,7 @@ let queueKindSelected='building';
     host.style.top=Math.max(0,num(config.ui.y))+'px';
     const body=({'INÍCIO':dashboard,CIDADES:cityContent,FILA:queueContent,ESQUIVA:dodgeContent,TESTE:testContent,ALDEIAS:villagesContent,TROPAS:troopsContent,COMBATE:combatContent,ECONOMIA:economyContent,'MISSÕES':rewardsContent,AJUSTES:configContent,LOG:logContent}[config.ui.tab]||dashboard)();
     shadow.querySelector('#gp-app').innerHTML=`
-      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.7.0</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
+      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.7.1</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
       ${config.ui.collapsed?'':`<div class="status"><i class="dot ${config.enabled?(config.dryRun?'sim':'live'):''}"></i>${cleanStr(STATUS())}</div>
       <div class="tabs">${['INÍCIO','CIDADES','FILA','ALDEIAS','TROPAS','COMBATE','ESQUIVA','TESTE','ECONOMIA','MISSÕES','AJUSTES','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
       <div class="body">${body}</div><div class="foot"><button class="${config.enabled?'stop':'go'}" data-action="toggle">${config.enabled?'■ PARAR TUDO':'▶ INICIAR'}</button><span>${Object.values(config.modules).filter(Boolean).length} módulos ativos</span></div>`}`;
