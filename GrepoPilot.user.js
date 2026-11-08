@@ -1592,6 +1592,94 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
       <div class="cityscroll">${records||'<p class="smallnote">Nenhuma esquiva em trânsito.</p>'}</div>
       <p class="smallnote">O retorno continua programado mesmo se o bot for pausado depois do envio. A precisão de 1 segundo depende da resposta do servidor e da latência da conexão. O script só cancela apoios que ele próprio identificou. Relógio usado: ${dodgeClock.source}.</p>`;
   }
+
+  function diagReason(id){
+    if(syncRole()==='standby')return 'PC secundário: execução bloqueada';
+    if(!connected())return 'Cliente do Grepolis não está pronto';
+    if(document.querySelector('iframe[src*="captcha"],.captcha_container,.recaptcha-wrapper'))return 'Verificação de segurança do jogo em andamento';
+    if(!config.enabled)return 'Execução geral pausada';
+    if(!config.modules[id])return 'Módulo desativado';
+    try{
+      if(id==='farm'){
+        const list=towns().filter(eligibleTown);
+        if(!list.length)return 'Nenhuma cidade elegível';
+        const eligible=list.filter(t=>farmStorageState(t).known&&!farmStorageState(t).full);
+        if(!eligible.length)return list.every(t=>farmStorageState(t).full)?'Todas as cidades com 3 recursos cheios':'Capacidade de armazenamento indisponível';
+        if(!models('FarmTownPlayerRelation').length)return 'Nenhuma aldeia carregada pelo cliente';
+        return eligible.length+' cidade(s) apta(s); aguarda disponibilidade da aldeia';
+      }
+      if(id==='trade'){
+        if(config.trade.intelligent===true){
+          const items=tradeAutoCandidates();
+          if(items.length)return items.length+' oportunidade(s) de comércio inteligente';
+          return 'Sem rota manual disponível ou falta elegível; conferir metas, reserva, comerciantes, capacidade e cooldown';
+        }
+        return config.trade.routes?.length?'Rotas cadastradas; aguarda recursos, comerciantes ou intervalo':'Sem rotas manuais; ative comércio inteligente ou cadastre rota';
+      }
+      if(id==='smartQueue'){
+        if(!queueJobs().length)return 'Nenhuma meta cadastrada na FILA';
+        const plan=queueCandidates();
+        if(plan.ready.length)return plan.ready.length+' tarefa(s) pronta(s)';
+        const pending=plan.rows.filter(x=>x.state==='wait').length;
+        return pending?pending+' tarefa(s) aguardando recursos, nível, população ou espaço':'Metas concluídas ou bloqueadas';
+      }
+      if(id==='recruit')return Object.keys(config.recruit.targets||{}).length?'Aguardando lote mínimo, recursos e espaço no quartel/porto':'Sem metas de tropas';
+      if(id==='build')return Object.keys(config.build.targets||{}).length?'Aguardando recursos, população ou espaço de construção':'Sem metas de construção';
+      if(id==='research')return Object.keys(config.research.queue||{}).length?'Aguardando pontos, academia e recursos':'Sem pesquisas planejadas';
+      if(id==='commands')return config.commands.jobs?.length?'Comandos cadastrados; aguardando horário':'Nenhum comando agendado';
+      if(id==='dodge')return dodgeIncoming().length?'Ataque detectado; aguardando janela de esquiva':'Nenhum ataque confirmado';
+      if(id==='ruralTrade'||id==='ruralUpgrade'||id==='ruralUnlock')return 'Aguardando aldeias, recursos ou disponibilidade';
+      if(id==='bootcamp')return 'Aguardando nível do acampamento, tropas ou recarga';
+      return 'Aguardando condição do jogo ou próximo ciclo';
+    }catch(e){return 'Dados insuficientes: '+String(e.message||e).slice(0,100);}
+  }
+  const diagMark=(id,kind,detail='')=>{
+    const rt=readRuntime();rt.diagnostics??={};
+    const before=rt.diagnostics[id]||{};
+    const now=Date.now();
+    rt.diagnostics[id]={
+      lastAt:now,lastState:kind,lastMessage:String(detail).slice(0,240),
+      lastSuccessAt:kind==='done'&&!config.dryRun?now:before.lastSuccessAt||0,
+      runs:Math.min(1000000,num(before.runs)+1),
+      successes:Math.min(1000000,num(before.successes)+(kind==='done'&&!config.dryRun?1:0)),
+      errors:Math.min(1000000,num(before.errors)+(kind==='error'?1:0)),
+      consecutiveErrors:kind==='error'?num(before.consecutiveErrors)+1:0
+    };
+    writeRuntime(rt);
+  };
+  function diagSnapshot(){
+    const rt=readRuntime(),now=Date.now();
+    return Object.keys(MODULES).map(id=>{
+      const data=rt.diagnostics?.[id]||{};
+      const enabled=Boolean(config.modules[id]);
+      const status=syncRole()==='standby'?'secondary':
+        !connected()?'offline':
+        !config.enabled?'paused':!enabled?'disabled':
+        config.dryRun?'simulation':
+        data.lastState==='error'&&now-num(data.lastAt)<1800000?'error':'ready';
+      return {id,name:MODULES[id][0],enabled,status,...data,
+        reason:diagReason(id),
+        nextAt:Math.max(0,num(nextRun[id])-now)};
+    });
+  }
+  const diagContent=()=>{
+    const rows=diagSnapshot(),err=rows.filter(x=>x.status==='error'),active=rows.filter(x=>x.enabled);
+    const badge={secondary:'💤 Secundário',offline:'🔌 Sem cliente',paused:'⏸ Pausado',
+      disabled:'○ Desativado',simulation:'🧪 Simulação',error:'⚠ Falha recente',ready:'✓ Acompanhando'};
+    const format=ms=>ms?new Date(ms).toLocaleString('pt-BR'):'Nenhuma';
+    return `${section('Diagnóstico automático')}
+      <div class="helpbox">Inspeciona o estado de cada módulo, rastreia tentativas, ações executadas e falhas locais. Não envia comandos ao Grepolis para diagnosticar.</div>
+      <div class="stats"><div><b>${active.length}</b>Módulos ligados</div><div><b>${err.length}</b>Falhas recentes</div><div><b>${towns().length}</b>Cidades no cliente</div><div><b>${syncRole()==='standby'?'2º':'1º'}</b>Modo do PC</div></div>
+      <div class="tools"><button data-action="diagRefresh">Reavaliar agora</button><button data-action="diagExport">Exportar diagnóstico</button><button data-action="diagReset">Limpar contadores</button></div>
+      <div class="cityscroll" style="max-height:420px">
+        ${rows.map(x=>`<div class="city"><b>${cleanStr(x.name)}</b> <span>${badge[x.status]||x.status}</span>
+          <div class="smallnote">${cleanStr(x.reason)}</div>
+          <div class="smallnote">Última tentativa: ${format(x.lastAt)} · Resultado: ${cleanStr(x.lastState||'sem execução')}</div>
+          <div class="smallnote">Execuções ${num(x.runs)} · Ações ${num(x.successes)} · Erros ${num(x.errors)}
+          ${x.lastMessage?' · '+cleanStr(x.lastMessage):''}</div></div>`).join('')}
+      </div>
+      <p class="smallnote">Se um módulo não executou uma ação, isso não é necessariamente falha: pode estar aguardando recursos, tempo ou condição. Em modo simulação, ações não são contabilizadas como executadas no jogo. Dados de diagnóstico são armazenados somente neste PC.</p>`;
+  };
   const handlers={farm,build,smartQueue,finishFree,recruit,research,trade,ruralTrade,ruralUnlock,ruralUpgrade,culture,bootcamp,quests,banditRewards,cave,commands,alerts};
   const lock = () => {
     const now=Date.now();
@@ -1613,8 +1701,15 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
       for(const id of order){
         if(!config.modules[id] || num(nextRun[id])>now)continue;
         nextRun[id]=now+Math.max(2,num(config.intervals[id],MODULES[id][2]))*1000;
-        try{const did=await handlers[id](); if(did){if(id!=='commands')nextRun[id]=Date.now()+Math.max(5,num(config.intervals[id],MODULES[id][2]))*1000;break;}}
-        catch(e){log(`${MODULES[id][0]}: ${e.message}`,'ERROR');nextRun[id]=Date.now()+60000;break;}
+        try{
+          const did=await handlers[id]();
+          diagMark(id,did?'done':'wait',did?(config.dryRun?'Execução simulada':'Ação enviada') : diagReason(id));
+          if(did){if(id!=='commands')nextRun[id]=Date.now()+Math.max(5,num(config.intervals[id],MODULES[id][2]))*1000;break;}
+        }catch(e){
+          diagMark(id,'error',e.message);
+          log(`${MODULES[id][0]}: ${e.message}`,'ERROR');
+          nextRun[id]=Date.now()+60000;break;
+        }
       }
     }finally{running=false;unlock();}
   };
@@ -1826,11 +1921,11 @@ let queueKindSelected='building';
     host.style.left=config.ui.x===null?'auto':Math.max(0,num(config.ui.x))+'px';
     host.style.right=config.ui.x===null?'20px':'auto';
     host.style.top=Math.max(0,num(config.ui.y))+'px';
-    const body=({'INÍCIO':dashboard,CIDADES:cityContent,FILA:queueContent,ESQUIVA:dodgeContent,TESTE:testContent,ALDEIAS:villagesContent,TROPAS:troopsContent,COMBATE:combatContent,ECONOMIA:economyContent,'MISSÕES':rewardsContent,AJUSTES:configContent,LOG:logContent}[config.ui.tab]||dashboard)();
+    const body=({'INÍCIO':dashboard,CIDADES:cityContent,FILA:queueContent,ESQUIVA:dodgeContent,TESTE:testContent,DIAG:diagContent,ALDEIAS:villagesContent,TROPAS:troopsContent,COMBATE:combatContent,ECONOMIA:economyContent,'MISSÕES':rewardsContent,AJUSTES:configContent,LOG:logContent}[config.ui.tab]||dashboard)();
     shadow.querySelector('#gp-app').innerHTML=`
       <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.9.0</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
       ${config.ui.collapsed?'':`<div class="status"><i class="dot ${config.enabled?(config.dryRun?'sim':'live'):''}"></i>${cleanStr(STATUS())}</div>
-      <div class="tabs">${['INÍCIO','CIDADES','FILA','ALDEIAS','TROPAS','COMBATE','ESQUIVA','TESTE','ECONOMIA','MISSÕES','AJUSTES','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
+      <div class="tabs">${['INÍCIO','CIDADES','FILA','ALDEIAS','TROPAS','COMBATE','ESQUIVA','TESTE','DIAG','ECONOMIA','MISSÕES','AJUSTES','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
       <div class="body">${body}</div><div class="foot"><button class="${config.enabled?'stop':'go'}" data-action="toggle">${config.enabled?'■ PARAR TUDO':'▶ INICIAR'}</button><span>${Object.values(config.modules).filter(Boolean).length} módulos ativos</span></div>`}`;
   };
   const CSS=`
@@ -1871,6 +1966,12 @@ let queueKindSelected='building';
       switch(id){
         case 'collapse':config.ui.collapsed=!config.ui.collapsed;save();break;
         case 'toggle':if(syncRole()==='standby')throw Error('PC secundário: selecione Principal em AJUSTES antes de iniciar');config.enabled=!config.enabled;save();log(config.enabled?'Bot iniciado':'Bot interrompido');break;
+        case 'diagRefresh':log('Diagnóstico: condições reavaliadas');break;
+        case 'diagExport':download('GrepoPilot-diagnostico-'+location.host+'.json',JSON.stringify({
+          version:'0.9.0',world:location.host,at:new Date().toISOString(),summary:diagSnapshot()},null,2));break;
+        case 'diagReset':{
+          const rt=readRuntime();delete rt.diagnostics;writeRuntime(rt);log('Diagnóstico: contadores reiniciados');break;
+        }
         case 'syncCopy':{
           const payload=syncExport();
           try{
@@ -2058,6 +2159,7 @@ let queueKindSelected='building';
     setInterval(()=>{try{testTick();if(config.ui.tab==='TESTE'&&shadow){const a=testRead().active;const el=shadow.getElementById('testCountdown');if(a&&el)el.textContent=Math.max(0,(a.impactMs-dodgeNow())/1000).toFixed(1)+'s';}}catch(e){log(`Teste: ${e.message}`,'ERROR')}},250);
     setInterval(()=>{if(dodgeBusy){try{const active=JSON.parse(localStorage.getItem(DODGE_LOCK)||'{}');if(active.owner===instanceId)localStorage.setItem(DODGE_LOCK,JSON.stringify({owner:instanceId,until:Date.now()+2500}));}catch{}}},500);
     window.addEventListener('pagehide',()=>{try{const active=JSON.parse(localStorage.getItem(DODGE_LOCK)||'{}');if(active.owner===instanceId)localStorage.removeItem(DODGE_LOCK);}catch{}});
+    setInterval(()=>{if(config.ui.tab==='DIAG'&&shadow&&!document.hidden){try{render();}catch(e){console.error('[GrepoPilot] Diagnóstico: '+e.message);}}},15000);
     setInterval(()=>{
       if(config.ui.tab==='LOG'||config.ui.collapsed)return;
       const el=shadow.querySelector('.status');if(el)el.lastChild.textContent=STATUS();
