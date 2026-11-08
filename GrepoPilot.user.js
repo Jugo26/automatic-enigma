@@ -1786,7 +1786,20 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
       const label=!f.known?'⚠ Capacidade indisponível':f.full?'⏸ Pausada · 3 recursos cheios':'▶ Pronta · há espaço no armazém';
       return `<div class="city"><b>${cleanStr(tName(t))}</b> <span>${label}</span><div class="smallnote">🌲 ${Number.isFinite(v.wood)?Math.floor(v.wood):'?'} · 🪨 ${Number.isFinite(v.stone)?Math.floor(v.stone):'?'} · 🪙 ${Number.isFinite(v.iron)?Math.floor(v.iron):'?'} / ${f.known?Math.floor(f.cap):'?'}</div></div>`;
     }).join('')||'<p class="smallnote">Nenhuma cidade disponível.</p>'}</div>
-    ${section('Comércio entre cidades')}
+    ${section('Comércio inteligente entre cidades')}
+    <div class="checks"><label><input type="checkbox" data-setting="trade.intelligent" ${config.trade.intelligent?'checked':''}> Distribuir automaticamente para cidades com metas bloqueadas por recursos</label></div>
+    <div class="formrow"><span>Reserva mínima por recurso na origem</span><input type="number" min="0" step="100" data-setting="trade.minReserve" value="${config.trade.minReserve}"></div>
+    <div class="formrow"><span>Limite do armazém no destino (fração)</span><input type="number" min="0.1" max="1" step="0.05" data-setting="trade.maxFill" value="${config.trade.maxFill}"></div>
+    <div class="formrow"><span>Carga mínima no comércio inteligente</span><input type="number" min="100" step="50" data-setting="trade.minCargo" value="${config.trade.minCargo}"></div>
+    <div class="formrow"><span>Intervalo entre envios (min)</span><input type="number" min="1" max="30" data-setting="trade.cooldownMinutes" value="${config.trade.cooldownMinutes}"></div>
+    <p class="smallnote">Calcula déficits para a próxima construção, pesquisa ou lote de tropas, respeita comerciantes disponíveis, reserva, armazém e entregas recentes. Rotas manuais têm prioridade. Cidades sem metas não recebem comércio inteligente automaticamente.</p>
+    ${config.trade.intelligent?`
+      ${section('Oportunidades encontradas agora')}
+      <div class="cityscroll" style="max-height:180px">
+      ${tradeAutoCandidates().slice(0,7).map(x=>`<div class="city"><b>${cleanStr(tName(townBy(x.from)))} → ${cleanStr(tName(townBy(x.to)))}</b>
+      <div class="smallnote">🌲 ${x.cargo.wood} · 🪨 ${x.cargo.stone} · 🪙 ${x.cargo.iron} · total ${x.total}</div>
+      <div class="smallnote">Meta: ${cleanStr(x.reason)}</div></div>`).join('')||'<p class="smallnote">Nenhuma transferência necessária/possível agora. Confira metas, recursos, comerciantes ou intervalo.</p>'}</div>`:''}
+    ${section('Rotas manuais (prioritárias)')}
     <div class="formrow"><span>Origem</span>${selectTown('routeFrom')}</div>
     <div class="formrow"><span>Destino</span>${selectTown('routeTo',towns()[1]?.id)}</div>
     <div class="formrow mini"><span>Madeira</span><input type="number" id="routeWood" value="1000" min="0"><span>Pedra</span><input type="number" id="routeStone" value="1000" min="0"><span>Ferro</span><input type="number" id="routeIron" value="1000" min="0"></div>
@@ -1984,6 +1997,8 @@ let queueKindSelected='building';
           }
           log('Perfil copiado');break;
         }
+        case 'tradePreview':
+          log('Comércio inteligente: oportunidades calculadas novamente');break;
         case 'syncDownload':
           download('GrepoPilot-perfil-'+location.host+'.json',syncExport());log('Perfil exportado');break;
         case 'syncApply':syncImport(el('syncImportText')?.value||'');break;
@@ -2089,7 +2104,10 @@ let queueKindSelected='building';
         }
         case 'askNotif':{if('Notification'in window)await Notification.requestPermission();break;}
         case 'applyJson':{
-          const v=JSON.parse(el('jsonEdit').value);config=migrate(merge(clone(BASE),v),v);save();nextRun={};log('JSON aplicado');break;
+          const v=JSON.parse(el('jsonEdit').value);
+          config=migrate(merge(clone(BASE),v),v);
+          if(syncRole()==='standby')config.enabled=false;
+          save();nextRun={};log('JSON aplicado');break;
         }
         case 'exportJson':download(`grepopilot_${location.host}.json`,JSON.stringify(config,null,2));break;
         case 'clearFired':localStorage.removeItem(FIRED);log('Comandos rearmados');break;
@@ -2120,6 +2138,11 @@ let queueKindSelected='building';
       }
       setPath(t.dataset.setting,t.type==='checkbox'?t.checked:t.type==='number'?num(t.value):t.value);
       if(t.dataset.setting.startsWith('smartQueue.'))nextRun.smartQueue=0;
+      if(t.dataset.setting.startsWith('trade.')){
+        nextRun.trade=0;
+        if(t.dataset.setting==='trade.intelligent'&&t.checked)config.modules.trade=true;
+        save();
+      }
       render();return;
     }
     if(t.dataset.interval){config.intervals[t.dataset.interval]=Math.max(2,num(t.value,60));save();render();return;}
