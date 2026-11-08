@@ -144,3 +144,46 @@ Removida por solicitação do usuário a aba **PRESENÇA**, incluindo leitura de
 Os módulos anteriores permanecem: **Auto Farm** com pausa quando todos os três recursos estão cheios, **Fila Econômica Inteligente**, recrutamento em lotes, esquiva e teste de esquiva, entre outras funcionalidades já publicadas.
 
 As preferências antigas do monitor são descartadas quando a nova versão carrega a configuração. Se a aba PRESENÇA estava aberta, o painel volta à aba INÍCIO. Versão incrementada para **0.8.1** para receber atualização automática no Tampermonkey.
+
+## GrepoPilot v0.9.0 — Comércio inteligente, perfis entre PCs e diagnóstico automático
+
+### 1. Comércio inteligente (ECONOMIA)
+
+Na aba **ECONOMIA**, marque **Distribuir automaticamente para cidades com metas bloqueadas por recursos** e ative o módulo **Comércio entre cidades** (o painel também o ativa ao marcar a opção).
+
+- Detecta necessidade de madeira, pedra e ferro para a **próxima construção**, **pesquisa** ou **lote mínimo de recrutamento** de cada cidade com metas definidas na FILA ou nas abas de construção/tropas.
+- Procura cidade fornecedora com recursos disponíveis, sem ultrapassar o limite de capacidade dos comerciantes, a capacidade do armazém de destino ou a fração de enchimento configurada.
+- Respeita **reserva mínima na origem** (padrão: 2.500 de cada recurso) e protege os custos das metas próprias da cidade fornecedora.
+- Só envia se a carga total atingir o mínimo configurado (padrão: 200), com intervalo mínimo entre cidades (padrão: 5 minutos).
+- Contabiliza **entregas pendentes** em uma janela de tempo (padrão: 15 minutos) para não repetir o envio enquanto o recurso ainda viaja. O cálculo é local e conservador; sem confirmação de chegada no cliente não é uma garantia de estado final.
+- **Rotas manuais existentes têm prioridade** e continuam disponíveis. Se não houver transferência inteligente necessária e viável, não envia comando.
+- O comércio inteligente está **desativado por padrão** em instalações antigas; ative-o quando quiser. O modo simulação continua sem executar o envio.
+
+### 2. Perfil entre PCs (AJUSTES)
+
+**AJUSTES → Perfil entre computadores** permite **Copiar perfil**, **Baixar perfil .json**, **Importar código neste PC** ou **Importar arquivo .json**.
+
+- No PC antigo, copie o perfil ou salve o arquivo.
+- No PC novo, abra a **mesma conta e mundo** e importe o código ou arquivo.
+- Importa metas, módulos, rotas e preferências. **A importação pausa a execução e força o papel Secundário**, mesmo que o perfil original estivesse ativo.
+- Para mudar qual PC executa as ações, **pause o PC anterior** e selecione **Principal** no novo, iniciando a automação conscientemente.
+- **Sem serviço em nuvem configurado, esta transferência é manual, não sincronização contínua**. A classificação Principal/Secundário é local: duas máquinas ambas escolhidas como Principal **não têm bloqueio de concorrência pela rede**. Os locks já existentes do script continuam sendo locais ao navegador.
+- Não transfere movimentações em trânsito, horários de esquiva pendentes, logs nem bloqueios de sessão.
+- A importação de perfil de outra conta ou mundo é recusada. Limite de tamanho do perfil: 1 MB.
+
+### 3. Diagnóstico automático (DIAG)
+
+Nova aba **DIAG**.
+
+- Mostra todos os módulos: ligado/desligado, cliente indisponível, simulação, PC secundário ou falha recente.
+- Explica motivos de espera específicos (três recursos cheios no Auto Farm, nenhuma meta na FILA, falta de recursos, comerciantes indisponíveis, módulos parados).
+- Registra **tentativas, ações confirmadas pelo executor local e erros** por módulo, incluindo horário e último motivo. Reavalia o painel periodicamente (15 segundos).
+- Permite **Reavaliar agora**, **Exportar diagnóstico JSON** e **Limpar contadores**.
+- O diagnóstico usa modelos e logs locais, sem requisições adicionais ao jogo.
+- A marcação de execução concluída indica sucesso do retorno da chamada do cliente; não comprova que uma operação assíncrona tenha chegado ao estado final no servidor.
+
+### Compatibilidade e testes
+
+Mantidos Auto Farm v0.7.1, fila inteligente v0.7.0, recrutamento por lotes, esquiva, laboratório de ataques virtuais, rotas manuais, histórico de ações e demais módulos. O monitor de presença ON/OFF removido em v0.8.1 continua removido.
+
+Testes com APIs simuladas: geração de carga por déficit real; combinação de dois recursos; limites de comércio e armazém; reserva para o fornecedor; supressão de repetição por entrega pendente; preservação de rotas manuais; exportação/importação entre PCs com conta/mundo iguais; rejeição de conta/mundo divergentes; modo Secundário impedindo execução; e diagnóstico de falha/recuperação. A versão ainda precisa de teste operacional em um servidor real de Grepolis.
