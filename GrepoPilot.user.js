@@ -1557,19 +1557,20 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const tracked=config.presence?.tracked||{};
     for(const [id,value] of Object.entries(tracked)){
       if(!Number.isSafeInteger(Number(id))||Number(id)<1||own.has(Number(id)))continue;
-      if(!townList.has(Number(id)))townList.set(Number(id),{id:Number(id),city:value?.name||''});
+      if(!townList.has(Number(id)))townList.set(Number(id),{id:Number(id),city:value?.name||'',playerId:presenceId(value,['playerId'])});
     }
     const result=[];
     for(const record of townList.values()){
       const track=tracked[record.id]||{};
-      const player=players.get(record.playerId)||{};
+      const knownPlayer=record.playerId||presenceId(track,['playerId']);
+      const player=players.get(knownPlayer)||{};
       const aid=record.allianceId||player.allianceId||0;
       const override=['ally','enemy','other'].includes(track.relation)?track.relation:null;
-      let relation=override||presenceRelation(record.relationData,record.playerId,aid);
+      let relation=override||presenceRelation(record.relationData,knownPlayer,aid);
       if(!override&&relation==='other'&&relations.has(aid))relation=relations.get(aid);
       if(relation==='self')continue;
       const status=player.presence||'unknown';
-      result.push({...record,allianceId:aid,relation,status,onlineSource:player.source||'',
+      result.push({...record,playerId:knownPlayer,allianceId:aid,relation,status,onlineSource:player.source||'',
         player:record.player||player.name||'',city:record.city||track.name||'',tracked:Boolean(tracked[record.id])});
     }
     result.sort((a,b)=>{
@@ -1618,6 +1619,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     ${section('Adicionar cidade pelo ID')}
     <div class="formrow"><span>ID da cidade</span><input id="presenceCityId" type="number" min="1" step="1" placeholder="Ex.: 12345"></div>
     <div class="formrow"><span>Nome opcional</span><input id="presenceCityName" maxlength="70" placeholder="Apelido"></div>
+    <div class="formrow"><span>ID do jogador (opcional)</span><input id="presencePlayerId" type="number" min="1" step="1" placeholder="Dono da cidade"></div>
     <div class="formrow"><span>Grupo</span><select id="presenceCityGroup">${optionList([['ally','Aliada'],['enemy','Inimiga'],['other','Outra']],'enemy')}</select></div>
     <div class="tools"><button data-action="presenceTrack">Adicionar ao monitor</button></div>
     <p class="smallnote">Adicione uma cidade que ainda não apareceu no mapa. Se os dados do proprietário não estiverem carregados no cliente, o estado permanecerá Desconhecido. Abrir a cidade no mapa pode disponibilizar mais informações.</p>
@@ -1915,7 +1917,10 @@ let queueKindSelected='building';
           if(!['ally','enemy','other'].includes(relation))throw Error('Grupo inválido');
           config.presence.tracked??={};
           if(Object.keys(config.presence.tracked).length>=250&&!config.presence.tracked[townId])throw Error('Limite de 250 cidades monitoradas manualmente');
-          config.presence.tracked[townId]={relation,name:String(el('presenceCityName')?.value||'').slice(0,70)};
+          const rawOwner=String(el('presencePlayerId')?.value||'').trim();
+          const ownerId=rawOwner?Number(rawOwner):0;
+          if(rawOwner&&(!Number.isSafeInteger(ownerId)||ownerId<1))throw Error('ID do jogador inválido');
+          config.presence.tracked[townId]={relation,name:String(el('presenceCityName')?.value||'').slice(0,70),playerId:ownerId};
           save();log('Presença: cidade #'+townId+' adicionada ao monitor');break;
         }
         case 'testStart': {
