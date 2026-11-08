@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GrepoPilot - Painel de Automacao
 // @namespace    https://grepolis.com/
-// @version      0.9.0
+// @version      0.9.1
 // @updateURL    https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.meta.js
 // @downloadURL  https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.user.js
 // @homepageURL  https://github.com/Jugo26/automatic-enigma/tree/grepopilot-updates
@@ -121,6 +121,7 @@
     dodge: {leadSeconds:5,returnAfterSeconds:1,waveGapSeconds:12,land:true,naval:true,targets:{}},
     attackTest: {delay:20,wave:0,mode:'preview'},
     sync: {role:'primary'},
+    security: {notify:true,resumeAfterSeconds:5},
     ui: {x:null,y:90,tab:'INÍCIO',collapsed:false}
   };
   const clone = v => JSON.parse(JSON.stringify(v));
@@ -223,6 +224,7 @@
   };
   const resource = t => t?.resources?.() || {};
   const action = async (controller,method,data,forceLive=false) => {
+    if(securityWatch())throw new Error('CAPTCHA ativo: comando suspenso até a verificação ser resolvida');
     if (config.dryRun && !forceLive) {log(`SIMULACAO ${controller}/${method} ${JSON.stringify(data).slice(0,160)}`);return {dryRun:true};}
     if (!connected()) throw new Error('Cliente Grepolis indisponível.');
     return new Promise((resolve,reject) => {
@@ -286,7 +288,62 @@
     return ['wood','stone','iron'].every(k=>num(res[k])>=num(cost?.[k])+pad);
   };
   const eligibleTown = t => t && !t.attributes?.on_small_island;
-  const canRun = () => config.enabled && syncRole()==='primary' && connected() && !document.querySelector('iframe[src*="captcha"],.captcha_container,.recaptcha-wrapper');
+
+  const securityState={active:false,since:0,clearSince:0,lastCheck:0,source:''};
+  // Somente detecção de verificação visível; nenhum CAPTCHA é resolvido ou contornado.
+  const securitySelectors=[
+    'iframe[src*="captcha"]','iframe[src*="recaptcha"]','iframe[src*="hcaptcha"]',
+    'iframe[src*="arkoselabs"]','.captcha_container','.recaptcha-wrapper',
+    '.g-recaptcha','.h-captcha','#captcha',
+    '[id*="captcha"]','[class*="captcha"]'
+  ];
+  function securityVisible(node){
+    if(!node||node.closest?.('#grepopilot-host'))return false;
+    if(node.hidden||node.getAttribute?.('aria-hidden')==='true')return false;
+    try{
+      if(node.getClientRects?.().length===0)return false;
+      if(typeof window.getComputedStyle==='function'){
+        const css=window.getComputedStyle(node);
+        if(css?.display==='none'||css?.visibility==='hidden'||css?.visibility==='collapse')return false;
+      }
+    }catch{return false;}
+    return true;
+  }
+  function securityProbe(){
+    if(typeof document.querySelectorAll!=='function')return '';
+    for(const selector of securitySelectors){
+      let nodes;
+      try{nodes=document.querySelectorAll(selector);}catch{continue;}
+      for(const node of nodes)if(securityVisible(node))return selector;
+    }
+    return '';
+  }
+  function securityWatch(){
+    const now=Date.now(),source=securityProbe();
+    securityState.lastCheck=now;
+    if(source){
+      securityState.clearSince=0;
+      if(!securityState.active){
+        securityState.active=true;securityState.since=now;securityState.source=source;
+        log('Verificação CAPTCHA detectada: automações temporariamente suspensas','WARN');
+        if(config.security?.notify!==false)notify('CAPTCHA no Grepolis: resolva a verificação na página para retomar o GrepoPilot');
+        if(shadow)render();
+      }
+      return true;
+    }
+    if(!securityState.active)return false;
+    if(!securityState.clearSince)securityState.clearSince=now;
+    const delay=Math.max(1,Math.min(30,num(config.security?.resumeAfterSeconds,5)))*1000;
+    if(now-securityState.clearSince<delay)return true;
+    securityState.active=false;securityState.since=0;securityState.clearSince=0;securityState.source='';
+    log('Verificação não está mais visível: operações liberadas novamente');
+    nextRun={};
+    if(config.security?.notify!==false)notify('Verificação concluída: GrepoPilot pode retomar as rotinas habilitadas');
+    if(shadow)render();
+    return false;
+  }
+  const securityBlocked=()=>securityState.active;
+  const canRun = () => config.enabled && syncRole()==='primary' && connected() && !securityWatch();
   const notify = text => {
     log(text,'ALERT');
     if(config.alerts.desktop && 'Notification' in window && Notification.permission==='granted') new Notification('GrepoPilot',{body:text});
@@ -1182,6 +1239,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
   }));
 }
   function testStart(id,mode,delay,wave){
+  if(mode==='live'&&securityWatch())throw Error('CAPTCHA ativo: teste prático temporariamente indisponível');
   const town=townBy(id);
   if(!town)throw Error('Cidade inválida');
   if(!['preview','live'].includes(mode))throw Error('Modo inválido');
@@ -1485,7 +1543,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     if(dirty)dodgeWrite(store);
   }
   async function dodgePulse(){
-    if(dodgeBusy||!dodgeCanOperate())return;
+    if(dodgeBusy||securityWatch()||!dodgeCanOperate())return;
     if((!config.enabled||!config.modules.dodge)&&!dodgeTracked(dodgeRead()).length&&!testActive())return;
     if(!dodgeLeader())return;
     dodgeBusy=true;
@@ -1620,6 +1678,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
   }
 
   function diagReason(id){
+    if(securityBlocked())return 'CAPTCHA: operações suspensas até a verificação ser resolvida';
     if(syncRole()==='standby')return 'PC secundário: execução bloqueada';
     if(!connected())return 'Cliente do Grepolis não está pronto';
     if(document.querySelector('iframe[src*="captcha"],.captcha_container,.recaptcha-wrapper'))return 'Verificação de segurança do jogo em andamento';
@@ -1678,7 +1737,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     return Object.keys(MODULES).map(id=>{
       const data=rt.diagnostics?.[id]||{};
       const enabled=Boolean(config.modules[id]);
-      const status=syncRole()==='standby'?'secondary':
+      const status=securityBlocked()?'captcha':syncRole()==='standby'?'secondary':
         !connected()?'offline':
         !config.enabled?'paused':!enabled?'disabled':
         config.dryRun?'simulation':
@@ -1690,11 +1749,11 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
   }
   const diagContent=()=>{
     const rows=diagSnapshot(),err=rows.filter(x=>x.status==='error'),active=rows.filter(x=>x.enabled);
-    const badge={secondary:'💤 Secundário',offline:'🔌 Sem cliente',paused:'⏸ Pausado',
+    const badge={captcha:'⚠ CAPTCHA',secondary:'💤 Secundário',offline:'🔌 Sem cliente',paused:'⏸ Pausado',
       disabled:'○ Desativado',simulation:'🧪 Simulação',error:'⚠ Falha recente',ready:'✓ Acompanhando'};
     const format=ms=>ms?new Date(ms).toLocaleString('pt-BR'):'Nenhuma';
     return `${section('Diagnóstico automático')}
-      <div class="helpbox">Inspeciona o estado de cada módulo, rastreia tentativas, ações executadas e falhas locais. Não envia comandos ao Grepolis para diagnosticar.</div>
+      <div class="helpbox">Inspeciona o estado de cada módulo, rastreia tentativas, ações executadas e falhas locais. Não envia comandos ao Grepolis para diagnosticar. ${securityBlocked()?'<b>⚠ CAPTCHA detectado: operações suspensas.</b>':''}</div>
       <div class="stats"><div><b>${active.length}</b>Módulos ligados</div><div><b>${err.length}</b>Falhas recentes</div><div><b>${towns().length}</b>Cidades no cliente</div><div><b>${syncRole()==='standby'?'2º':'1º'}</b>Modo do PC</div></div>
       <div class="tools"><button data-action="diagRefresh">Reavaliar agora</button><button data-action="diagExport">Exportar diagnóstico</button><button data-action="diagReset">Limpar contadores</button></div>
       <div class="cityscroll" style="max-height:420px">
@@ -1732,6 +1791,10 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
           diagMark(id,did?'done':'wait',did?(config.dryRun?'Execução simulada':'Ação enviada') : diagReason(id));
           if(did){if(id!=='commands')nextRun[id]=Date.now()+Math.max(5,num(config.intervals[id],MODULES[id][2]))*1000;break;}
         }catch(e){
+          if(securityBlocked()){
+            diagMark(id,'wait','CAPTCHA detectado: aguardando verificação');
+            nextRun[id]=Date.now()+5000;break;
+          }
           diagMark(id,'error',e.message);
           log(`${MODULES[id][0]}: ${e.message}`,'ERROR');
           nextRun[id]=Date.now()+60000;break;
@@ -1740,7 +1803,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     }finally{running=false;unlock();}
   };
   let selectedCity='';
-  const STATUS=()=> connected()?`${towns().length} cidades · ${syncRole()==='standby'?'SECUNDÁRIO (pausado)':config.enabled?'executando':'pausado'} · ${config.dryRun?'SIMULAÇÃO':'AO VIVO'}`:'Aguardando cliente do jogo';
+  const STATUS=()=>securityBlocked()?'⚠ CAPTCHA — operações suspensas':connected()?`${towns().length} cidades · ${syncRole()==='standby'?'SECUNDÁRIO (pausado)':config.enabled?'executando':'pausado'} · ${config.dryRun?'SIMULAÇÃO':'AO VIVO'}`:'Aguardando cliente do jogo';
   const toggle=(k,title)=>`<label class="mod"><input type="checkbox" data-module="${k}" ${config.modules[k]?'checked':''}><span>${title}</span><small>${num(config.intervals[k])}s</small></label>`;
   const optionList=(list,chosen)=>list.map(([v,label])=>`<option value="${cleanStr(v)}" ${String(chosen)===String(v)?'selected':''}>${cleanStr(label)}</option>`).join('');
   const selectTown=(id,selected='')=>`<select id="${id}">${optionList(towns().map(t=>[t.id,`${tName(t)} (#${t.id})`]),selected)}</select>`;
@@ -1944,6 +2007,12 @@ let queueKindSelected='building';
   const configContent=()=>`${section('Controle global')}
     <div class="checks"><label><input type="checkbox" data-global="enabled" ${config.enabled?'checked':''}> Execução geral</label><label><input type="checkbox" data-global="dryRun" ${config.dryRun?'checked':''}> Modo simulação (sem envio)</label></div>
     <p class="smallnote">Configurações locais por mundo/jogador. Perfil entre PCs disponível sem servidor externo. Desativar todos os módulos é o estado inicial.</p>
+    ${section('Proteção durante CAPTCHA')}
+    <div class="helpbox"><b>${securityBlocked()?'⚠ CAPTCHA DETECTADO — operações temporariamente suspensas':'Nenhuma verificação CAPTCHA detectada'}</b>. Ao aparecer um desafio, resolva-o diretamente no Grepolis. O GrepoPilot não preenche nem contorna CAPTCHAs. Assim que desaparecer e passar o intervalo de confirmação, as rotinas anteriormente habilitadas poderão continuar.</div>
+    <div class="checks"><label><input type="checkbox" data-setting="security.notify" ${config.security.notify!==false?'checked':''}> Notificar ao detectar e liberar CAPTCHA</label></div>
+    <div class="formrow"><span>Retomar após a verificação desaparecer (seg)</span><input type="number" min="1" max="30" data-setting="security.resumeAfterSeconds" value="${config.security.resumeAfterSeconds}"></div>
+    <div class="tools"><button data-action="askNotif">Ativar alertas do navegador</button></div>
+    <p class="smallnote">Com um CAPTCHA visível, inclusive ações de esquiva e testes práticos aguardam. Cancelamentos de apoio podem ficar atrasados durante a verificação.</p>
     ${section('Intervalos')}
     ${Object.keys(MODULES).map(k=>`<div class="formrow compact"><span>${MODULES[k][0]}</span><input type="number" data-interval="${k}" min="2" max="86400" value="${num(config.intervals[k])}"> <small>s</small></div>`).join('')}
     ${section('JSON da configuração')}
@@ -1962,7 +2031,7 @@ let queueKindSelected='building';
     host.style.top=Math.max(0,num(config.ui.y))+'px';
     const body=({'INÍCIO':dashboard,CIDADES:cityContent,FILA:queueContent,ESQUIVA:dodgeContent,TESTE:testContent,DIAG:diagContent,ALDEIAS:villagesContent,TROPAS:troopsContent,COMBATE:combatContent,ECONOMIA:economyContent,'MISSÕES':rewardsContent,AJUSTES:configContent,LOG:logContent}[config.ui.tab]||dashboard)();
     shadow.querySelector('#gp-app').innerHTML=`
-      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.9.0</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
+      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.9.1</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
       ${config.ui.collapsed?'':`<div class="status"><i class="dot ${config.enabled?(config.dryRun?'sim':'live'):''}"></i>${cleanStr(STATUS())}</div>
       <div class="tabs">${['INÍCIO','CIDADES','FILA','ALDEIAS','TROPAS','COMBATE','ESQUIVA','TESTE','DIAG','ECONOMIA','MISSÕES','AJUSTES','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
       <div class="body">${body}</div><div class="foot"><button class="${config.enabled?'stop':'go'}" data-action="toggle">${config.enabled?'■ PARAR TUDO':'▶ INICIAR'}</button><span>${Object.values(config.modules).filter(Boolean).length} módulos ativos</span></div>`}`;
@@ -2214,7 +2283,7 @@ let queueKindSelected='building';
   const start=()=>{
     mount();
     save(); // Persiste migração dos controles de aldeia da v0.2.
-    setInterval(()=>{try{tick()}catch(e){log(e.message,'ERROR')}},1500);
+    setInterval(()=>{try{securityWatch();tick()}catch(e){log(e.message,'ERROR')}},1500);
     setInterval(()=>{dodgePulse().catch(e=>log(`Esquiva: ${e.message}`,'ERROR'))},125);
     setInterval(()=>{try{testTick();if(config.ui.tab==='TESTE'&&shadow){const a=testRead().active;const el=shadow.getElementById('testCountdown');if(a&&el)el.textContent=Math.max(0,(a.impactMs-dodgeNow())/1000).toFixed(1)+'s';}}catch(e){log(`Teste: ${e.message}`,'ERROR')}},250);
     setInterval(()=>{if(dodgeBusy){try{const active=JSON.parse(localStorage.getItem(DODGE_LOCK)||'{}');if(active.owner===instanceId)localStorage.setItem(DODGE_LOCK,JSON.stringify({owner:instanceId,until:Date.now()+2500}));}catch{}}},500);
