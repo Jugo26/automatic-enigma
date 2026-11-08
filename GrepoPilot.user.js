@@ -202,8 +202,9 @@
     <div class="formrow"><span>Papel deste computador</span><select data-setting="sync.role">${optionList([['primary','Principal · pode executar'],['standby','Secundário · sem automação']],syncRole())}</select></div>
     <p class="smallnote">Conta ${cleanStr(W.Game?.player_id||'?')} · mundo ${cleanStr(location.host)}. Para trocar de PC, pause o anterior antes de ativar este: não existe bloqueio de execução entre redes distintas sem servidor compartilhado.</p>
     <div class="tools"><button data-action="syncCopy">Copiar perfil</button><button data-action="syncDownload">Baixar perfil .json</button></div>
-    <textarea id="syncImportText" spellcheck="false" style="height:95px" placeholder="No outro computador, cole aqui o perfil JSON"></textarea>
-    <div class="tools"><button class="primary" data-action="syncApply">Importar neste PC</button></div>
+    <textarea id="syncImportText" spellcheck="false" style="height:95px" placeholder="Cole aqui o perfil JSON copiado do outro PC"></textarea>
+    <div class="formrow"><span>Ou escolha o arquivo .json</span><input type="file" id="syncImportFile" accept=".json,application/json" style="max-width:210px"></div>
+    <div class="tools"><button class="primary" data-action="syncApply">Importar código neste PC</button><button data-action="syncApplyFile">Importar arquivo .json</button></div>
     <p class="smallnote">Importar substitui metas, rotas e preferências locais, mas sempre pausa a execução. Não transfere logs, comandos em trânsito nem bloqueios de sessão.</p>`;
   const log = (message,level='INFO') => {
     const stamp = new Date().toLocaleTimeString('pt-BR');
@@ -2027,6 +2028,12 @@ let queueKindSelected='building';
         case 'syncDownload':
           download('GrepoPilot-perfil-'+location.host+'.json',syncExport());log('Perfil exportado');break;
         case 'syncApply':syncImport(el('syncImportText')?.value||'');break;
+        case 'syncApplyFile':{
+          const file=el('syncImportFile')?.files?.[0];
+          if(!file)throw Error('Selecione o arquivo .json exportado do outro PC');
+          if(file.size>1000000)throw Error('O perfil excede o limite de 1 MB');
+          syncImport(await file.text());break;
+        }
         case 'queueAdd': {
           const t=getSelected(),kind=el('queueKind')?.value,key=el('queueKey')?.value;
           if(!t||!['building','troop','ship','research'].includes(kind)||!key)throw Error('Selecione cidade, tipo e item');
@@ -2147,7 +2154,12 @@ let queueKindSelected='building';
     const t=e.target;
     if(t.dataset.module){config.modules[t.dataset.module]=t.checked;nextRun[t.dataset.module]=0;save();render();return;}
     if(t.dataset.culture){config.culture[t.dataset.culture]=t.checked;save();render();return;}
-    if(t.dataset.global){config[t.dataset.global]=t.checked;save();render();return;}
+    if(t.dataset.global){
+      if(t.dataset.global==='enabled'&&t.checked&&syncRole()==='standby'){
+        log('PC secundário: escolha Principal em AJUSTES antes de iniciar','WARN');render();return;
+      }
+      config[t.dataset.global]=t.checked;save();render();return;
+    }
     if(t.dataset.queueUrgency!==undefined){
       const index=Number(t.dataset.queueUrgency);
       if(Number.isSafeInteger(index)&&queueJobs()[index]&&['normal','high','urgent'].includes(t.value)){
