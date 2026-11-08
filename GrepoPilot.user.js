@@ -9,6 +9,7 @@
 // @match        https://*.grepolis.com/game/*
 // @run-at       document-idle
 // @grant        unsafeWindow
+// @grant        GM_setClipboard
 // ==/UserScript==
 (() => {
   'use strict';
@@ -119,6 +120,7 @@
     alerts: {desktop:true,checkAll:true},
     dodge: {leadSeconds:5,returnAfterSeconds:1,waveGapSeconds:12,land:true,naval:true,targets:{}},
     attackTest: {delay:20,wave:0,mode:'preview'},
+    sync: {role:'primary'},
     ui: {x:null,y:90,tab:'INÍCIO',collapsed:false}
   };
   const clone = v => JSON.parse(JSON.stringify(v));
@@ -169,6 +171,40 @@
   const num = (v,def=0) => Number.isFinite(Number(v)) ? Number(v) : def;
   const tName = t => t?.getName?.() || t?.name || `Cidade ${t?.id}`;
   const save = () => {localStorage.setItem(STORE,JSON.stringify(config));};
+
+  const syncRole=()=>config.sync?.role==='standby'?'standby':'primary';
+  const syncExport=()=>{
+    const cfg=clone(config);
+    cfg.enabled=false;cfg.sync={role:'standby'};
+    return JSON.stringify({format:'grepopilot-profile',schema:1,world:String(location.host),
+      playerId:String(W.Game?.player_id||'unknown'),exportedAt:new Date().toISOString(),config:cfg},null,2);
+  };
+  function syncImport(text){
+    if(typeof text!=='string'||text.length>1000000)throw Error('Perfil inválido ou grande demais (limite 1 MB)');
+    let data;
+    try{data=JSON.parse(text);}catch{throw Error('Cole um perfil JSON válido exportado do GrepoPilot');}
+    if(data?.format!=='grepopilot-profile'||data?.schema!==1||!data?.config||typeof data.config!=='object'||Array.isArray(data.config))
+      throw Error('Formato de perfil não reconhecido');
+    if(data.world!==String(location.host)||String(data.playerId)!==String(W.Game?.player_id||'unknown'))
+      throw Error('Perfil de outra conta ou mundo: abra a mesma conta e servidor do Grepolis');
+    const imported=migrate(merge(clone(BASE),data.config),data.config);
+    imported.enabled=false;
+    imported.sync={role:'standby'};
+    imported.ui={...imported.ui,tab:'AJUSTES',x:null,y:90,collapsed:false};
+    config=imported;
+    nextRun={};save();
+    log('Perfil importado como PC SECUNDÁRIO, com automação pausada');
+    return true;
+  }
+  const syncPanel=()=>`
+    ${section('Perfil entre computadores')}
+    <div class="helpbox">Transfira metas, rotas e preferências entre computadores por <b>código JSON ou arquivo</b>. Sem servidor de sincronização a transferência é manual. O PC que recebe o perfil entra em modo <b>secundário (pausado)</b>.</div>
+    <div class="formrow"><span>Papel deste computador</span><select data-setting="sync.role">${optionList([['primary','Principal · pode executar'],['standby','Secundário · sem automação']],syncRole())}</select></div>
+    <p class="smallnote">Conta ${cleanStr(W.Game?.player_id||'?')} · mundo ${cleanStr(location.host)}. Para trocar de PC, pause o anterior antes de ativar este: não existe bloqueio de execução entre redes distintas sem servidor compartilhado.</p>
+    <div class="tools"><button data-action="syncCopy">Copiar perfil</button><button data-action="syncDownload">Baixar perfil .json</button></div>
+    <textarea id="syncImportText" spellcheck="false" style="height:95px" placeholder="No outro computador, cole aqui o perfil JSON"></textarea>
+    <div class="tools"><button class="primary" data-action="syncApply">Importar neste PC</button></div>
+    <p class="smallnote">Importar substitui metas, rotas e preferências locais, mas sempre pausa a execução. Não transfere logs, comandos em trânsito nem bloqueios de sessão.</p>`;
   const log = (message,level='INFO') => {
     const stamp = new Date().toLocaleTimeString('pt-BR');
     logs.unshift({stamp,level,message:String(message)});
@@ -249,7 +285,7 @@
     return ['wood','stone','iron'].every(k=>num(res[k])>=num(cost?.[k])+pad);
   };
   const eligibleTown = t => t && !t.attributes?.on_small_island;
-  const canRun = () => config.enabled && connected() && !document.querySelector('iframe[src*="captcha"],.captcha_container,.recaptcha-wrapper');
+  const canRun = () => config.enabled && syncRole()==='primary' && connected() && !document.querySelector('iframe[src*="captcha"],.captcha_container,.recaptcha-wrapper');
   const notify = text => {
     log(text,'ALERT');
     if(config.alerts.desktop && 'Notification' in window && Notification.permission==='granted') new Notification('GrepoPilot',{body:text});
@@ -1130,6 +1166,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
   const now=dodgeNow();
   const targetId=dodgeDestination(Number(id),dodgeIncoming());
   if(mode==='live'){
+  if(syncRole()==='standby')throw Error('O teste prático exige PC principal');
     if(!dodgeCanOperate())throw Error('Grepolis não está disponível');
     if(!targetId)throw Error('Teste prático precisa de outra cidade própria na mesma ilha');
     if(dodgeTracked(dodgeRead()).some(j=>Number(j.townId)===Number(id)))throw Error('Há esquiva real pendente nesta cidade');
@@ -1480,7 +1517,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
           return;
         }
       }
-      if((!config.enabled||!config.modules.dodge)&&!testActive())return;
+      if(syncRole()==='standby'||((!config.enabled||!config.modules.dodge)&&!testActive()))return;
       const minLead=1000,lead=Math.min(5000,Math.max(1000,Number(config.dodge.leadSeconds||5)*1000));
       const own=new Map(towns().map(t=>[Number(t.id),t]));
       const normalDodge=Boolean(config.enabled&&config.modules.dodge);
@@ -1582,7 +1619,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     }finally{running=false;unlock();}
   };
   let selectedCity='';
-  const STATUS=()=> connected()?`${towns().length} cidades · ${config.enabled?'executando':'pausado'} · ${config.dryRun?'SIMULAÇÃO':'AO VIVO'}`:'Aguardando cliente do jogo';
+  const STATUS=()=> connected()?`${towns().length} cidades · ${syncRole()==='standby'?'SECUNDÁRIO (pausado)':config.enabled?'executando':'pausado'} · ${config.dryRun?'SIMULAÇÃO':'AO VIVO'}`:'Aguardando cliente do jogo';
   const toggle=(k,title)=>`<label class="mod"><input type="checkbox" data-module="${k}" ${config.modules[k]?'checked':''}><span>${title}</span><small>${num(config.intervals[k])}s</small></label>`;
   const optionList=(list,chosen)=>list.map(([v,label])=>`<option value="${cleanStr(v)}" ${String(chosen)===String(v)?'selected':''}>${cleanStr(label)}</option>`).join('');
   const selectTown=(id,selected='')=>`<select id="${id}">${optionList(towns().map(t=>[t.id,`${tName(t)} (#${t.id})`]),selected)}</select>`;
@@ -1772,13 +1809,14 @@ let queueKindSelected='building';
   };
   const configContent=()=>`${section('Controle global')}
     <div class="checks"><label><input type="checkbox" data-global="enabled" ${config.enabled?'checked':''}> Execução geral</label><label><input type="checkbox" data-global="dryRun" ${config.dryRun?'checked':''}> Modo simulação (sem envio)</label></div>
-    <p class="smallnote">Sem ferramentas externas, tokens ou senhas. Dados ficam no navegador, por mundo e jogador. Desativar todos os módulos é o estado inicial.</p>
+    <p class="smallnote">Configurações locais por mundo/jogador. Perfil entre PCs disponível sem servidor externo. Desativar todos os módulos é o estado inicial.</p>
     ${section('Intervalos')}
     ${Object.keys(MODULES).map(k=>`<div class="formrow compact"><span>${MODULES[k][0]}</span><input type="number" data-interval="${k}" min="2" max="86400" value="${num(config.intervals[k])}"> <small>s</small></div>`).join('')}
     ${section('JSON da configuração')}
     <textarea id="jsonEdit" spellcheck="false">${cleanStr(JSON.stringify(config,null,2))}</textarea>
     <div class="tools"><button class="primary" data-action="applyJson">Aplicar JSON</button><button data-action="exportJson">Exportar</button><button data-action="clearFired">Rearmar comandos</button><button data-action="reset">Redefinir</button></div>
-    <p class="smallnote">Envios operacionais para Grepolis não são executados em modo simulação. Os identificadores dos edifícios, pesquisas e unidades vêm do cliente do jogo.</p>`;
+    <p class="smallnote">Envios operacionais para Grepolis não são executados em modo simulação. Os identificadores dos edifícios, pesquisas e unidades vêm do cliente do jogo.</p>
+    ${syncPanel()}`;
   const logContent=()=>`${section('Registro local')}
     <div class="tools"><button data-action="clearLog">Limpar histórico</button><button data-action="downloadLog">Exportar log</button></div>
     <div class="history">${logs.map(x=>`<div class="${x.level==='ERROR'?'error':x.level==='ALERT'?'warn':''}"><span>${x.stamp}</span> <b>${x.level}</b> ${cleanStr(x.message)}</div>`).join('')||'<p>Nenhum evento registrado.</p>'}</div>`;
@@ -1832,7 +1870,22 @@ let queueKindSelected='building';
     try{
       switch(id){
         case 'collapse':config.ui.collapsed=!config.ui.collapsed;save();break;
-        case 'toggle':config.enabled=!config.enabled;save();log(config.enabled?'Bot iniciado':'Bot interrompido');break;
+        case 'toggle':if(syncRole()==='standby')throw Error('PC secundário: selecione Principal em AJUSTES antes de iniciar');config.enabled=!config.enabled;save();log(config.enabled?'Bot iniciado':'Bot interrompido');break;
+        case 'syncCopy':{
+          const payload=syncExport();
+          try{
+            if(typeof navigator?.clipboard?.writeText==='function')await navigator.clipboard.writeText(payload);
+            else if(typeof GM_setClipboard==='function')GM_setClipboard(payload,'text');
+            else throw Error('Área de transferência indisponível');
+          }catch(e){
+            if(typeof GM_setClipboard==='function')GM_setClipboard(payload,'text');
+            else throw Error('Não foi possível copiar; use Baixar perfil .json: '+e.message);
+          }
+          log('Perfil copiado');break;
+        }
+        case 'syncDownload':
+          download('GrepoPilot-perfil-'+location.host+'.json',syncExport());log('Perfil exportado');break;
+        case 'syncApply':syncImport(el('syncImportText')?.value||'');break;
         case 'queueAdd': {
           const t=getSelected(),kind=el('queueKind')?.value,key=el('queueKey')?.value;
           if(!t||!['building','troop','ship','research'].includes(kind)||!key)throw Error('Selecione cidade, tipo e item');
@@ -1958,7 +2011,16 @@ let queueKindSelected='building';
       }
       render();return;
     }
-    if(t.dataset.setting){setPath(t.dataset.setting,t.type==='checkbox'?t.checked:t.type==='number'?num(t.value):t.value);if(t.dataset.setting.startsWith('smartQueue.'))nextRun.smartQueue=0;render();return;}
+    if(t.dataset.setting){
+      if(t.dataset.setting==='sync.role'&&t.value==='standby'){
+        const test=testRead().active;
+        if(test?.state==='active'&&test.mode==='live')testStop();
+        config.enabled=false;
+      }
+      setPath(t.dataset.setting,t.type==='checkbox'?t.checked:t.type==='number'?num(t.value):t.value);
+      if(t.dataset.setting.startsWith('smartQueue.'))nextRun.smartQueue=0;
+      render();return;
+    }
     if(t.dataset.interval){config.intervals[t.dataset.interval]=Math.max(2,num(t.value,60));save();render();return;}
     if(t.id==='citySelect'||t.id==='queueCitySelect'||t.id==='dodgeSource'||t.id==='testCity'){selectedCity=t.value;render();}
     if(t.id==='queueKind'){queueKindSelected=t.value;render();}
