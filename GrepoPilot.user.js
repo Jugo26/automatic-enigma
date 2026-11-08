@@ -760,11 +760,13 @@ function policyForUnit(key,def){
   // Necessidades reais da cidade: custo da próxima obra, pesquisa ou lote de tropas.
   const tradeCostsForGoal=(t,j)=>{
     if(j.kind==='building'){
+      if(t.buildingOrders?.()?.models?.some(o=>String(o.attributes?.building_type)===String(j.key)))return null;
       const level=num(t.buildings?.()?.attributes?.[j.key],0);
       if(level>=num(j.target,1))return null;
       return queueCost(W.MM?.getModels?.()?.BuildingBuildData?.[t.id]?.attributes?.building_data?.[j.key]?.resources_for);
     }
     if(j.kind==='research'){
+      if(t.getResearchOrdersCollection?.()?.models?.some(o=>String(o.attributes?.research_type??o.attributes?.research_id)===String(j.key)))return null;
       if(t.researches?.()?.attributes?.[j.key])return null;
       const def=W.GameData?.researches?.[j.key];
       return queueCost(def?.resources||def?.costs);
@@ -820,6 +822,28 @@ function policyForUnit(key,def){
     }
     return {needs:Object.fromEntries(Object.entries(res).map(([k,v])=>[k,Math.max(0,v)])),goals:ordered};
   }
+
+  // Impede que o comércio inteligente consuma o orçamento das metas da origem.
+  function tradeSourceReserves(t){
+    const base=Math.max(0,num(config.trade.minReserve,2500));
+    const wanted={wood:base,stone:base,iron:base},id=Number(t.id),tasks=[];
+    if(config.modules.smartQueue&&queueJobs().some(j=>Number(j.townId)===id)){
+      tasks.push(...queueJobs().filter(j=>Number(j.townId)===id));
+    }else{
+      for(const [key,target] of Object.entries(config.build.targets?.[id]||{}))tasks.push({kind:'building',key,target});
+      for(const key of config.research.queue?.[id]||[])tasks.push({kind:'research',key,target:1});
+      for(const [key,target] of Object.entries(config.recruit.targets?.[id]||{})){
+        const def=W.GameData?.units?.[key];
+        tasks.push({kind:def?.is_naval?'ship':'troop',key,target});
+      }
+    }
+    for(const job of tasks.slice(0,30)){
+      const cost=tradeCostsForGoal(t,job);
+      if(!cost)continue;
+      for(const k of ['wood','stone','iron'])wanted[k]=Math.max(wanted[k],num(cost[k]));
+    }
+    return wanted;
+  }
   const tradePending=(rt,townId,k,now)=>Object.values(rt.tradePending||{}).reduce((n,p)=>n+
     (Number(p.to)===Number(townId)&&now-Number(p.at)<Math.max(120000,Math.min(1800000,num(config.trade.pendingMinutes,15)*60000))?num(p.cargo?.[k]):0),0);
   const tradeCooldown=(rt,from,to,now)=>now-num(rt.tradeAttempts?.[from+':'+to],0)<
@@ -835,14 +859,15 @@ function policyForUnit(key,def){
     const results=[];
     for(const dest of cities){
       const rd=resource(dest),demand=tradeDemandForTown(dest);
-      if(!Object.values(demand.needs).some(v=>v>=minCargo))continue;
+      if(Object.values(demand.needs).reduce((total,v)=>total+v,0)<minCargo)continue;
       for(const src of cities){
         if(!tradeReadyPair(src,dest)||tradeCooldown(rt,src.id,dest.id,now))continue;
         const rs=resource(src),raw={},cap=Math.floor(num(src.getAvailableTradeCapacity?.(),0));
+        const ownReserve=tradeSourceReserves(src);
         if(cap<minCargo)continue;
         let remaining=cap;
         for(const k of ['wood','stone','iron']){
-          const available=Math.max(0,Math.floor(num(rs[k])-minReserve));
+          const available=Math.max(0,Math.floor(num(rs[k])-Math.max(minReserve,ownReserve[k])));
           const pending=tradePending(rt,dest.id,k,now);
           const needed=Math.max(0,Math.floor(demand.needs[k]-pending));
           const space=Math.max(0,Math.floor(num(rd.storage)*fill-num(rd[k])-pending));
