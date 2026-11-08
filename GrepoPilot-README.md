@@ -136,3 +136,22 @@ A aba **ECONOMIA** apresenta, por cidade, o estado **Pausada / Pronta / Capacida
 A antiga configuração `farm.minStorageFree` deixa de influenciar o auto farm; configurações antigas podem manter o campo no JSON sem alterar essa regra.
 
 Testes simulados concluídos: pausa com 3/3 cheios, coleta seletiva com cidade parcial, retorno ao liberar um único recurso, coleta em massa somente nas cidades com espaço, ausência de solicitações quando todas estão cheias e compatibilidade com configurações antigas. Sem validação em servidor de jogo real.
+
+## GrepoPilot 0.8.0 — Aba PRESENÇA (aliados e adversários)
+
+A nova aba **PRESENÇA** identifica cidades estrangeiras que estiverem carregadas nos modelos locais do Grepolis e seus jogadores, mostrando:
+
+- Nome e ID da cidade; nome e ID do proprietário; aliança, se disponível.
+- Relação: **aliada**, **inimiga** ou **não classificada**. Jogadores da mesma aliança são reconhecidos automaticamente. Pactos e hostilidades só são classificados automaticamente se o cliente expuser uma relação diplomática explícita.
+- Presença: **🟢 ON**, **⚪ OFF** ou **❔ Desconhecido**. As flags são verificadas explicitamente nos registros do jogador ou membro da aliança carregados no cliente, como `is_online`, `isOnline`, `online` e `online_status`. A mesma pessoa controla uma ou várias cidades e tem o **mesmo** status em todas elas.
+- Filtros por relação, status e busca por nome/ID. Botão **Atualizar leitura do jogo**. Enquanto a aba estiver aberta, atualiza o painel a cada 15 segundos, exceto quando o usuário está editando os filtros.
+- Cadastro de cidade **por ID** para monitoramento local e classificação manual como aliada/inimiga. Opcionalmente informe o **ID do jogador**, para associar um jogador já carregado no cliente a essa cidade. Um ID isolado não revela presença sem os dados do jogador.
+- Identificação automática usa apenas registros já disponíveis no navegador (`MapTown`, `Town`, `Player`, `AllianceMember` e variações conhecidas). **Não envia requisições novas ao servidor** e não usa sites externos.
+
+### Limites de informação
+
+**Desconhecido não significa offline.** Não é possível confirmar presença em tempo real de inimigos pelo cadastro público de cidades, pontuação, horário de último login ou ausência de movimentos. Os dados de presença podem não estar disponíveis mesmo para aliados; nesse caso, o painel apresenta Desconhecido, sem inventar sinais. O painel não modifica a conta, cidades nem o sistema de combate.
+
+**Uso:** atualize o script, abra **PRESENÇA**, filtre Aliadas/Inimigas e ON/OFF/Desconhecido. Se a cidade não aparecer, abra-a no mapa do jogo para carregar dados ou adicione seu ID manualmente. As marcações são guardadas localmente por mundo e jogador.
+
+**Testes locais:** status explícito ON de membro aliado, OFF explícito de inimigo, agrupamento do mesmo dono, classificação manual, associação de ID de jogador, filtros de estado, exclusão das cidades próprias e ausência de modelos. **Não testado em sessão ao vivo do Grepolis**; campos efetivamente disponíveis dependem do servidor/cliente.
