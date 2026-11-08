@@ -326,6 +326,14 @@
       if(!securityState.active){
         securityState.active=true;securityState.since=now;securityState.source=source;
         log('Verificação CAPTCHA detectada: automações temporariamente suspensas','WARN');
+        // Impede que um teste prático continue usando horários vencidos após a verificação.
+        try{
+          const activeTest=testRead().active;
+          if(activeTest?.state==='active'&&activeTest.mode==='live'){
+            testStop();
+            log('CAPTCHA: teste prático interrompido; apoios identificados serão cancelados quando o jogo permitir','WARN');
+          }
+        }catch(e){log('CAPTCHA: não foi possível interromper o teste: '+e.message,'WARN');}
         if(config.security?.notify!==false)notify('CAPTCHA no Grepolis: resolva a verificação na página para retomar o GrepoPilot');
         if(shadow)render();
       }
