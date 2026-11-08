@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GrepoPilot - Painel de Automacao
 // @namespace    https://grepolis.com/
-// @version      0.8.0
+// @version      0.8.1
 // @updateURL    https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.meta.js
 // @downloadURL  https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.user.js
 // @homepageURL  https://github.com/Jugo26/automatic-enigma/tree/grepopilot-updates
@@ -119,7 +119,6 @@
     alerts: {desktop:true,checkAll:true},
     dodge: {leadSeconds:5,returnAfterSeconds:1,waveGapSeconds:12,land:true,naval:true,targets:{}},
     attackTest: {delay:20,wave:0,mode:'preview'},
-    presence: {tracked:{},group:'all',status:'all',search:''},
     ui: {x:null,y:90,tab:'INÍCIO',collapsed:false}
   };
   const clone = v => JSON.parse(JSON.stringify(v));
@@ -146,6 +145,8 @@
     if(raw?.modules?.ruralUpgrade && raw?.ruralUpgrade?.upgrade===false) cfg.modules.ruralUpgrade=false;
     if(cfg?.ui?.tab==='MILITAR')cfg.ui.tab='TROPAS';
     if(cfg?.ui?.tab==='CONFIG')cfg.ui.tab='AJUSTES';
+    if(cfg?.ui?.tab==='PRESENÇA')cfg.ui.tab='INÍCIO';
+    delete cfg.presence;
     return cfg;
   };
   let config = migrate(merge(clone(BASE),old),old);
@@ -1464,170 +1465,6 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
   const moduleNames=()=>Object.entries(MODULES).filter(([k,p])=>p[1]===config.ui.tab).map(([k,p])=>toggle(k,p[0])).join('');
   const paneModule=k=>toggle(k,MODULES[k][0]);
 
-  // Presença pertence ao jogador, nunca a uma cidade isoladamente.
-  // Não inferimos "offline" por ausência de movimento ou falta de dados.
-  const presenceRecords=(name)=>{
-    const collection=models(name);
-    let entries=collection.length?collection:[];
-    if(!entries.length){
-      const raw=W.MM?.getModels?.()?.[name];
-      if(Array.isArray(raw))entries=raw;
-      else if(raw?.models&&Array.isArray(raw.models))entries=raw.models;
-      else if(raw&&typeof raw==='object')entries=Object.values(raw);
-    }
-    return entries.slice(0,2500).map(o=>({raw:o,data:o?.attributes||o||{}}));
-  };
-  const presenceId=(data,keys)=>{for(const k of keys){const v=Number(data?.[k]);if(Number.isSafeInteger(v)&&v>0)return v;}return 0;};
-  const presenceFlag=(data)=>{
-    // Só aceita uma flag EXPLÍCITA do jogo. "Ativo" e último login não são online.
-    for(const k of ['is_online','isOnline','online','online_status','onlineStatus']){
-      if(!Object.prototype.hasOwnProperty.call(data||{},k))continue;
-      const v=data[k];
-      if(v===true||v===1||v==='1')return 'on';
-      if(v===false||v===0||v==='0')return 'off';
-      if(typeof v==='string'){
-        const status=v.trim().toLowerCase();
-        if(['online','on','true'].includes(status))return 'on';
-        if(['offline','off','false'].includes(status))return 'off';
-      }
-    }
-    if(data?.presence&&typeof data.presence==='object')return presenceFlag(data.presence);
-    return null;
-  };
-  const presenceRelation=(data,playerId,allianceId)=>{
-    const myId=presenceId(W.Game,['player_id','playerId']);
-    const mine=presenceId(W.Game,['alliance_id','allianceId','player_alliance_id']);
-    if(playerId&&playerId===myId)return 'self';
-    if(mine&&allianceId&&mine===allianceId)return 'ally';
-    const explicit=String(data?.diplomacy_status??data?.diplomacy_relation??data?.alliance_relation??data?.relation_type??'').toLowerCase();
-    if(['allied','ally','pact','alliance','friendly','friend'].includes(explicit))return 'ally';
-    if(['enemy','hostile','war','opponent'].includes(explicit))return 'enemy';
-    return 'other';
-  };
-  function presenceSnapshot(){
-    const players=new Map(),relations=new Map(),townList=new Map();
-    for(const key of ['Player','PlayerProfile','AllianceMember','AlliancePlayer','AllianceMembers','AllianceMemberStatus']){
-      for(const {data:a,raw} of presenceRecords(key)){
-        const id=presenceId(a,['player_id','playerId','id'])||Number(raw?.id)||0;
-        if(!Number.isSafeInteger(id)||id<=0)continue;
-        const known=players.get(id)||{};
-        const n=a.name??a.player_name??a.playerName??a.username;
-        const aid=presenceId(a,['alliance_id','allianceId']);
-        if(n&&!known.name)known.name=String(n);
-        if(aid&&!known.allianceId)known.allianceId=aid;
-        const flag=presenceFlag(a);
-        if(flag!==null && (known.presence===undefined||key==='AllianceMember'||key==='AllianceMembers')){
-          known.presence=flag;known.source=key;
-        }
-        players.set(id,known);
-      }
-    }
-    for(const key of ['AllianceRelation','AllianceRelations']){
-      for(const {data:a} of presenceRecords(key)){
-        const aid=presenceId(a,['other_alliance_id','target_alliance_id','alliance_id']);
-        const kind=String(a.relation_type??a.type??a.status??'').toLowerCase();
-        if(aid&&['allied','ally','pact','friendly','friend','enemy','hostile','war'].includes(kind)){
-          relations.set(aid,['enemy','hostile','war'].includes(kind)?'enemy':'ally');
-        }
-      }
-    }
-    const own=new Set(towns().map(t=>Number(t.id)));
-    for(const key of ['MapTown','MapTowns','Town','Towns','TownInfo','MapTownInfo']){
-      for(const {raw,data:a} of presenceRecords(key)){
-        const id=presenceId(a,['town_id','townId','id'])||Number(raw?.id)||0;
-        if(!Number.isSafeInteger(id)||id<=0||own.has(id))continue;
-        const previous=townList.get(id)||{};
-        const pid=presenceId(a,['player_id','playerId','owner_id','ownerId']);
-        const aid=presenceId(a,['alliance_id','allianceId']);
-        const name=a.name??a.town_name??a.townName;
-        const owner=a.player_name??a.playerName??a.owner_name??a.ownerName;
-        const alliance=a.alliance_name??a.allianceName;
-        const flag=presenceFlag(a);
-        const row={...previous,id,playerId:pid||previous.playerId||0,allianceId:aid||previous.allianceId||0,
-          city:name?String(name):previous.city||'',player:owner?String(owner):previous.player||'',
-          alliance:alliance?String(alliance):previous.alliance||'',
-          relationData:Object.keys(a).some(k=>['diplomacy_status','diplomacy_relation','alliance_relation','relation_type'].includes(k))?a:previous.relationData};
-        if(flag!==null&&pid){
-          const p=players.get(pid)||{};
-          if(p.presence===undefined){p.presence=flag;p.source=key;players.set(pid,p);}
-        }
-        townList.set(id,row);
-      }
-    }
-    const tracked=config.presence?.tracked||{};
-    for(const [id,value] of Object.entries(tracked)){
-      if(!Number.isSafeInteger(Number(id))||Number(id)<1||own.has(Number(id)))continue;
-      if(!townList.has(Number(id)))townList.set(Number(id),{id:Number(id),city:value?.name||'',playerId:presenceId(value,['playerId'])});
-    }
-    const result=[];
-    for(const record of townList.values()){
-      const track=tracked[record.id]||{};
-      const knownPlayer=record.playerId||presenceId(track,['playerId']);
-      const player=players.get(knownPlayer)||{};
-      const aid=record.allianceId||player.allianceId||0;
-      const override=['ally','enemy','other'].includes(track.relation)?track.relation:null;
-      let relation=override||presenceRelation(record.relationData,knownPlayer,aid);
-      if(!override&&relation==='other'&&relations.has(aid))relation=relations.get(aid);
-      if(relation==='self')continue;
-      const status=player.presence||'unknown';
-      result.push({...record,playerId:knownPlayer,allianceId:aid,relation,status,onlineSource:player.source||'',
-        player:record.player||player.name||'',city:record.city||track.name||'',tracked:Boolean(tracked[record.id])});
-    }
-    result.sort((a,b)=>{
-      const ranks={ally:0,enemy:1,other:2};
-      return (ranks[a.relation]??2)-(ranks[b.relation]??2)||String(a.player).localeCompare(String(b.player))||a.id-b.id;
-    });
-    return result;
-  }
-  function presenceContent(){
-  const list=presenceSnapshot();
-  const group=config.presence?.group||'all',status=config.presence?.status||'all';
-  const search=String(config.presence?.search||'').trim().toLowerCase();
-  const filtered=list.filter(x=>(group==='all'||x.relation===group)&&(status==='all'||x.status===status)&&
-    (!search||[x.city,x.player,x.alliance,x.id,x.playerId].some(value=>String(value||'').toLowerCase().includes(search))));
-  const byType=(name)=>list.filter(x=>x.relation===name).length;
-  const byStatus=(name)=>list.filter(x=>x.status===name).length;
-  const groupLabels={ally:'Aliada',enemy:'Inimiga',other:'Não classificada'};
-  const statusLabels={on:'🟢 ON',off:'⚪ OFF',unknown:'❔ Desconhecido'};
-  const rows=filtered.slice(0,100).map(x=>{
-    const details=[x.player?`Jogador: ${cleanStr(x.player)}`:'Jogador não identificado',
-      x.playerId?`#${x.playerId}`:'',x.alliance?`Aliança: ${cleanStr(x.alliance)}`:''].filter(Boolean).join(' · ');
-    const label=x.city?cleanStr(x.city):`Cidade #${x.id}`;
-    const overrides=config.presence?.tracked?.[x.id]||{};
-    return `<div class="city">
-      <div class="city compact"><b>${label}</b><span>#${x.id} · ${cleanStr(groupLabels[x.relation])}</span></div>
-      <div class="smallnote">${details}</div>
-      <div><b>${statusLabels[x.status]}</b> ${x.onlineSource?`<span class="smallnote">· informado pelo cliente: ${cleanStr(x.onlineSource)}</span>`:'<span class="smallnote">· sem indicador de presença</span>'}</div>
-      <div class="formrow compact"><span>Classificação</span>
-        <select data-presence-classify="${x.id}">${optionList([['auto','Detectar pelo jogo'],['ally','Aliada'],['enemy','Inimiga'],['other','Outra']],overrides.relation||'auto')}</select>
-        ${x.tracked?`<button data-presence-untrack="${x.id}" title="Remover da lista manual">Remover</button>`:''}
-      </div>
-    </div>`;
-  }).join('');
-  return `${section('Presença de aliados e adversários')}
-    <div class="helpbox">A presença é do <b>jogador que controla a cidade</b>. ON ou OFF aparece só quando o cliente do Grepolis informa o estado explicitamente; caso contrário, fica <b>Desconhecido</b>. Cidades carregadas no mapa podem aparecer automaticamente.</div>
-    <div class="stats">
-      <div><b>${list.length}</b>Cidades identificadas</div>
-      <div><b>${byType('ally')} / ${byType('enemy')}</b>Aliadas / Inimigas</div>
-      <div><b>${byStatus('on')} / ${byStatus('off')}</b>ON / OFF informados</div>
-      <div><b>${byStatus('unknown')}</b>Presença desconhecida</div>
-    </div>
-    <div class="formrow"><span>Grupo</span><select data-setting="presence.group">${optionList([['all','Todas'],['ally','Aliadas'],['enemy','Inimigas'],['other','Outras']],group)}</select></div>
-    <div class="formrow"><span>Presença</span><select data-setting="presence.status">${optionList([['all','Todos os estados'],['on','🟢 ON'],['off','⚪ OFF'],['unknown','❔ Desconhecido']],status)}</select></div>
-    <div class="formrow"><span>Buscar cidade/jogador</span><input data-setting="presence.search" value="${cleanStr(config.presence?.search||'')}" placeholder="Nome ou ID"></div>
-    <div class="tools"><button class="primary" data-action="presenceRefresh">Atualizar leitura do jogo</button></div>
-    ${section('Adicionar cidade pelo ID')}
-    <div class="formrow"><span>ID da cidade</span><input id="presenceCityId" type="number" min="1" step="1" placeholder="Ex.: 12345"></div>
-    <div class="formrow"><span>Nome opcional</span><input id="presenceCityName" maxlength="70" placeholder="Apelido"></div>
-    <div class="formrow"><span>ID do jogador (opcional)</span><input id="presencePlayerId" type="number" min="1" step="1" placeholder="Dono da cidade"></div>
-    <div class="formrow"><span>Grupo</span><select id="presenceCityGroup">${optionList([['ally','Aliada'],['enemy','Inimiga'],['other','Outra']],'enemy')}</select></div>
-    <div class="tools"><button data-action="presenceTrack">Adicionar ao monitor</button></div>
-    <p class="smallnote">Adicione uma cidade que ainda não apareceu no mapa. Se os dados do proprietário não estiverem carregados no cliente, o estado permanecerá Desconhecido. Abrir a cidade no mapa pode disponibilizar mais informações.</p>
-    ${section('Cidades observadas')}
-    <div class="cityscroll" style="max-height:390px">${rows||'<p class="smallnote">Nenhuma cidade encontrada com esses filtros ou ainda sem dados no cliente.</p>'}</div>
-    ${filtered.length>100?`<p class="smallnote">Exibindo as primeiras 100 de ${filtered.length} cidades. Use os filtros para refinar.</p>`:''}
-    <p class="smallnote">Aliados são membros da própria aliança, pactos explicitamente visíveis ou marcações manuais. Inimigos exigem relação hostil explícita ou marcação manual. <b>OFF</b> nunca é inferido por inatividade, pontuação ou falta de eventos. Não são feitas requisições adicionais ao servidor.</p>`;
-}
   const dashboard=()=>{
     const r=ruralStatus();const q=questRows();const camp=W.MM?.getModelByNameAndPlayerId?.('PlayerAttackSpot');
     const enabled=Object.entries(config.modules).filter(([,v])=>v).length;
@@ -1826,11 +1663,11 @@ let queueKindSelected='building';
     host.style.left=config.ui.x===null?'auto':Math.max(0,num(config.ui.x))+'px';
     host.style.right=config.ui.x===null?'20px':'auto';
     host.style.top=Math.max(0,num(config.ui.y))+'px';
-    const body=({'INÍCIO':dashboard,CIDADES:cityContent,FILA:queueContent,ESQUIVA:dodgeContent,TESTE:testContent,'PRESENÇA':presenceContent,ALDEIAS:villagesContent,TROPAS:troopsContent,COMBATE:combatContent,ECONOMIA:economyContent,'MISSÕES':rewardsContent,AJUSTES:configContent,LOG:logContent}[config.ui.tab]||dashboard)();
+    const body=({'INÍCIO':dashboard,CIDADES:cityContent,FILA:queueContent,ESQUIVA:dodgeContent,TESTE:testContent,ALDEIAS:villagesContent,TROPAS:troopsContent,COMBATE:combatContent,ECONOMIA:economyContent,'MISSÕES':rewardsContent,AJUSTES:configContent,LOG:logContent}[config.ui.tab]||dashboard)();
     shadow.querySelector('#gp-app').innerHTML=`
-      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.8.0</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
+      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.8.1</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
       ${config.ui.collapsed?'':`<div class="status"><i class="dot ${config.enabled?(config.dryRun?'sim':'live'):''}"></i>${cleanStr(STATUS())}</div>
-      <div class="tabs">${['INÍCIO','CIDADES','FILA','ALDEIAS','TROPAS','COMBATE','ESQUIVA','TESTE','PRESENÇA','ECONOMIA','MISSÕES','AJUSTES','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
+      <div class="tabs">${['INÍCIO','CIDADES','FILA','ALDEIAS','TROPAS','COMBATE','ESQUIVA','TESTE','ECONOMIA','MISSÕES','AJUSTES','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
       <div class="body">${body}</div><div class="foot"><button class="${config.enabled?'stop':'go'}" data-action="toggle">${config.enabled?'■ PARAR TUDO':'▶ INICIAR'}</button><span>${Object.values(config.modules).filter(Boolean).length} módulos ativos</span></div>`}`;
   };
   const CSS=`
@@ -1866,10 +1703,6 @@ let queueKindSelected='building';
     if(trg.dataset.removeRoute!==undefined){config.trade.routes.splice(num(trg.dataset.removeRoute),1);save();render();return;}
     if(trg.dataset.removeJob!==undefined){config.commands.jobs.splice(num(trg.dataset.removeJob),1);save();render();return;}
     if(trg.dataset.removeQueue!==undefined){config.smartQueue.items.splice(num(trg.dataset.removeQueue),1);save();render();return;}
-    if(trg.dataset.presenceUntrack!==undefined){
-      const id=Number(trg.dataset.presenceUntrack);
-      delete config.presence.tracked[id];save();render();return;
-    }
     if(!id)return;
     try{
       switch(id){
@@ -1908,21 +1741,6 @@ let queueKindSelected='building';
           config.smartQueue.items=queueJobs().filter(j=>queueAnalyze(j).state!=='done');save();break;
         case 'queueClearAll':
           config.smartQueue.items=[];save();break;
-        case 'presenceRefresh':log('Presença: dados em memória do jogo consultados novamente');break;
-        case 'presenceTrack':{
-          const townId=Number(el('presenceCityId')?.value);
-          if(!Number.isSafeInteger(townId)||townId<1)throw Error('Digite um ID numérico válido da cidade');
-          if(towns().some(t=>Number(t.id)===townId))throw Error('Esta é uma das suas cidades');
-          const relation=el('presenceCityGroup')?.value;
-          if(!['ally','enemy','other'].includes(relation))throw Error('Grupo inválido');
-          config.presence.tracked??={};
-          if(Object.keys(config.presence.tracked).length>=250&&!config.presence.tracked[townId])throw Error('Limite de 250 cidades monitoradas manualmente');
-          const rawOwner=String(el('presencePlayerId')?.value||'').trim();
-          const ownerId=rawOwner?Number(rawOwner):0;
-          if(rawOwner&&(!Number.isSafeInteger(ownerId)||ownerId<1))throw Error('ID do jogador inválido');
-          config.presence.tracked[townId]={relation,name:String(el('presenceCityName')?.value||'').slice(0,70),playerId:ownerId};
-          save();log('Presença: cidade #'+townId+' adicionada ao monitor');break;
-        }
         case 'testStart': {
           const id=Number(el('testCity')?.value||getSelected()?.id);
           if(config.attackTest.mode==='live'&&!el('testConfirm')?.checked)throw Error('Confirme a movimentação real de tropas para testar');
@@ -2008,19 +1826,6 @@ let queueKindSelected='building';
     if(t.dataset.module){config.modules[t.dataset.module]=t.checked;nextRun[t.dataset.module]=0;save();render();return;}
     if(t.dataset.culture){config.culture[t.dataset.culture]=t.checked;save();render();return;}
     if(t.dataset.global){config[t.dataset.global]=t.checked;save();render();return;}
-    if(t.dataset.presenceClassify!==undefined){
-      const id=Number(t.dataset.presenceClassify),relation=t.value;
-      if(Number.isSafeInteger(id)&&id>0&&['auto','ally','enemy','other'].includes(relation)){
-        config.presence.tracked??={};
-        const existing=config.presence.tracked[id]||{};
-        if(relation==='auto'){
-          if(existing.name)config.presence.tracked[id]={name:existing.name};
-          else delete config.presence.tracked[id];
-        }else config.presence.tracked[id]={...existing,relation};
-        save();
-      }
-      render();return;
-    }
     if(t.dataset.queueUrgency!==undefined){
       const index=Number(t.dataset.queueUrgency);
       if(Number.isSafeInteger(index)&&queueJobs()[index]&&['normal','high','urgent'].includes(t.value)){
@@ -2064,7 +1869,6 @@ let queueKindSelected='building';
     setInterval(()=>{try{tick()}catch(e){log(e.message,'ERROR')}},1500);
     setInterval(()=>{dodgePulse().catch(e=>log(`Esquiva: ${e.message}`,'ERROR'))},125);
     setInterval(()=>{try{testTick();if(config.ui.tab==='TESTE'&&shadow){const a=testRead().active;const el=shadow.getElementById('testCountdown');if(a&&el)el.textContent=Math.max(0,(a.impactMs-dodgeNow())/1000).toFixed(1)+'s';}}catch(e){log(`Teste: ${e.message}`,'ERROR')}},250);
-    setInterval(()=>{if(config.ui.tab==='PRESENÇA'&&!document.hidden&&shadow&&!shadow.activeElement?.matches?.('input,select')){try{render();}catch(e){log('Presença: '+e.message,'ERROR');}}},15000);
     setInterval(()=>{if(dodgeBusy){try{const active=JSON.parse(localStorage.getItem(DODGE_LOCK)||'{}');if(active.owner===instanceId)localStorage.setItem(DODGE_LOCK,JSON.stringify({owner:instanceId,until:Date.now()+2500}));}catch{}}},500);
     window.addEventListener('pagehide',()=>{try{const active=JSON.parse(localStorage.getItem(DODGE_LOCK)||'{}');if(active.owner===instanceId)localStorage.removeItem(DODGE_LOCK);}catch{}});
     setInterval(()=>{
