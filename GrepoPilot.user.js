@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GrepoPilot - Painel de Automacao
 // @namespace    https://grepolis.com/
-// @version      0.8.1
+// @version      0.9.0
 // @updateURL    https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.meta.js
 // @downloadURL  https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.user.js
 // @homepageURL  https://github.com/Jugo26/automatic-enigma/tree/grepopilot-updates
@@ -106,7 +106,7 @@
     recruit: {targets:{},maxBatch:35,minBatch:10,shipBatch:8,minShipBatch:3,mythicalBatch:2,minMythicalBatch:2,maxQueueSlots:2},
     research: {queue:{}},
     smartQueue: {items:[],maxBatch:35,mode:'intelligent',autoPrereqs:true},
-    trade: {routes:[],minReserve:2500,maxFill:0.90},
+    trade: {routes:[],minReserve:2500,maxFill:0.90,intelligent:false,minCargo:200,cooldownMinutes:5,pendingMinutes:15,maxGoals:8},
     ruralTrade: {wanted:'wood',minRatio:1,maxAmount:3000},
     ruralUpgrade: {unlock:false,upgrade:false,targetLevel:3},
     troopProfiles: {},
@@ -720,27 +720,152 @@ function policyForUnit(key,def){
     }
     return false;
   }
+
+  // Necessidades reais da cidade: custo da próxima obra, pesquisa ou lote de tropas.
+  const tradeCostsForGoal=(t,j)=>{
+    if(j.kind==='building'){
+      const level=num(t.buildings?.()?.attributes?.[j.key],0);
+      if(level>=num(j.target,1))return null;
+      return queueCost(W.MM?.getModels?.()?.BuildingBuildData?.[t.id]?.attributes?.building_data?.[j.key]?.resources_for);
+    }
+    if(j.kind==='research'){
+      if(t.researches?.()?.attributes?.[j.key])return null;
+      const def=W.GameData?.researches?.[j.key];
+      return queueCost(def?.resources||def?.costs);
+    }
+    if(j.kind==='troop'||j.kind==='ship'){
+      const def=W.GameData?.units?.[j.key];
+      if(!def)return null;
+      const own=num(t.units?.()?.[j.key])+num(t.unitsOuter?.()?.[j.key]);
+      const orders=t.getUnitOrdersCollection?.()?.models||[];
+      const queued=orders.reduce((n,o)=>n+(o.attributes?.unit_type===j.key?num(o.attributes?.units_left??o.attributes?.count??o.attributes?.amount):0),0);
+      const remaining=Math.max(0,Math.floor(num(j.target)-own-queued));
+      if(!remaining)return null;
+      const pol=policyForUnit(j.key,def);
+      const qty=Math.min(remaining,Math.max(1,Math.min(pol.minimum,num(config.smartQueue.maxBatch,35))));
+      const mul=Number(W.GeneralModifications?.getUnitBuildResourcesModification?.(Number(t.id),def)??1);
+      if(!Number.isFinite(mul)||mul<=0)return null;
+      const cost=queueCost(def.resources);
+      return cost?queueCost(Object.fromEntries(['wood','stone','iron'].map(k=>[k,cost[k]*mul*qty]))):null;
+    }
+    return null;
+  };
+  function tradeDemandForTown(t){
+    const candidates=[],id=Number(t.id);
+    if(config.modules.smartQueue&&queueJobs().some(j=>Number(j.townId)===id)){
+      const plan=queueCandidates();
+      for(const row of plan.rows.filter(x=>Number(x.job.townId)===id)){
+        if(row.state==='done'||row.state==='blocked')continue;
+        if(row.state==='wait'&&/fila|andamento|atualiza|pesquisa em andamento|Aguardando quartel|Aguardando porto/i.test(row.why))continue;
+        const cost=tradeCostsForGoal(t,row.job);
+        if(cost)candidates.push({cost,weight:{normal:1,high:3,urgent:6}[queueUrgency(row.job)]||1,task:queueName(row.job)});
+      }
+    }else{
+      for(const [key,target] of Object.entries(config.build.targets?.[id]||{})){
+        const cost=tradeCostsForGoal(t,{townId:id,kind:'building',key,target});
+        if(cost)candidates.push({cost,weight:2,task:key});
+      }
+      for(const key of config.research.queue?.[id]||[]){
+        const cost=tradeCostsForGoal(t,{townId:id,kind:'research',key,target:1});
+        if(cost)candidates.push({cost,weight:1,task:key});
+      }
+      for(const [key,target] of Object.entries(config.recruit.targets?.[id]||{})){
+        const def=W.GameData?.units?.[key];
+        const cost=tradeCostsForGoal(t,{townId:id,kind:def?.is_naval?'ship':'troop',key,target});
+        if(cost)candidates.push({cost,weight:1,task:key});
+      }
+    }
+    const current=resource(t),res={wood:0,stone:0,iron:0};
+    const ordered=candidates.sort((a,b)=>b.weight-a.weight);
+    for(const c of ordered.slice(0,Math.max(1,Math.min(20,num(config.trade.maxGoals,8))))){
+      for(const k of ['wood','stone','iron']){
+        res[k]=Math.max(res[k],Math.ceil(c.cost[k]-num(current[k])));
+      }
+    }
+    return {needs:Object.fromEntries(Object.entries(res).map(([k,v])=>[k,Math.max(0,v)])),goals:ordered};
+  }
+  const tradePending=(rt,townId,k,now)=>Object.values(rt.tradePending||{}).reduce((n,p)=>n+
+    (Number(p.to)===Number(townId)&&now-Number(p.at)<Math.max(120000,Math.min(1800000,num(config.trade.pendingMinutes,15)*60000))?num(p.cargo?.[k]):0),0);
+  const tradeCooldown=(rt,from,to,now)=>now-num(rt.tradeAttempts?.[from+':'+to],0)<
+    Math.max(60000,Math.min(1800000,num(config.trade.cooldownMinutes,5)*60000));
+  const tradeReadyPair=(src,dst)=>{
+    if(!src||!dst||Number(src.id)===Number(dst.id))return false;
+    return num(src.getAvailableTradeCapacity?.(),0)>=100;
+  };
+  function tradeAutoCandidates(now=Date.now()){
+    const cfg=config.trade||{}, rt=readRuntime(), minReserve=Math.max(0,num(cfg.minReserve,2500)),
+      fill=Math.max(0.1,Math.min(1,num(cfg.maxFill,0.90))), minCargo=Math.max(100,Math.floor(num(cfg.minCargo,200)));
+    const cities=towns().filter(t=>t&&num(resource(t).storage,0)>0);
+    const results=[];
+    for(const dest of cities){
+      const rd=resource(dest),demand=tradeDemandForTown(dest);
+      if(!Object.values(demand.needs).some(v=>v>=minCargo))continue;
+      for(const src of cities){
+        if(!tradeReadyPair(src,dest)||tradeCooldown(rt,src.id,dest.id,now))continue;
+        const rs=resource(src),raw={},cap=Math.floor(num(src.getAvailableTradeCapacity?.(),0));
+        if(cap<minCargo)continue;
+        let remaining=cap;
+        for(const k of ['wood','stone','iron']){
+          const available=Math.max(0,Math.floor(num(rs[k])-minReserve));
+          const pending=tradePending(rt,dest.id,k,now);
+          const needed=Math.max(0,Math.floor(demand.needs[k]-pending));
+          const space=Math.max(0,Math.floor(num(rd.storage)*fill-num(rd[k])-pending));
+          raw[k]=Math.max(0,Math.min(needed,available,space));
+        }
+        // Prioriza a falta mais importante e limita ao transporte disponível.
+        const cargo={wood:0,stone:0,iron:0};
+        const keys=['wood','stone','iron'].sort((a,b)=>raw[b]-raw[a]);
+        for(const k of keys){cargo[k]=Math.min(remaining,raw[k]);remaining-=cargo[k];}
+        const total=cap-remaining;
+        if(total<minCargo)continue;
+        const critical=Math.max(...Object.values(demand.needs));
+        const weight=demand.goals[0]?.weight||1;
+        results.push({from:Number(src.id),to:Number(dest.id),cargo,total,
+          score:weight*100000+critical+total/10,reason:demand.goals[0]?.task||'metas da cidade'});
+      }
+    }
+    return results.sort((a,b)=>b.score-a.score||a.from-b.from||a.to-b.to);
+  }
+  const tradeMark=(result)=>{
+    if(config.dryRun)return;
+    const now=Date.now(),rt=readRuntime();
+    rt.tradeAttempts??={};rt.tradePending??={};
+    const key=result.from+':'+result.to;
+    rt.tradeAttempts[key]=now;
+    rt.tradePending[key]={to:result.to,at:now,cargo:result.cargo};
+    rt.tradeAttempts=Object.fromEntries(Object.entries(rt.tradeAttempts).filter(([,ts])=>now-num(ts)<3600000));
+    rt.tradePending=Object.fromEntries(Object.entries(rt.tradePending).filter(([,v])=>now-num(v.at)<1800000));
+    writeRuntime(rt);
+  };
   async function trade(){
-    const routes=Array.isArray(config.trade.routes)?config.trade.routes:[];
-    for(const route of routes){
+    const rs=Array.isArray(config.trade.routes)?config.trade.routes:[];
+    const now=Date.now(),rt=readRuntime();
+    for(const route of rs){
       if(route.enabled===false)continue;
       const src=townBy(route.from),dst=townBy(route.to);
-      if(!src || !dst || Number(route.from)===Number(route.to))continue;
-      const rs=resource(src),rd=resource(dst);
-      const cargo={};let total=0;
+      if(!tradeReadyPair(src,dst)||tradeCooldown(rt,src.id,dst.id,now))continue;
+      const a=resource(src),b=resource(dst),cargo={wood:0,stone:0,iron:0};
+      let available=Math.floor(num(src.getAvailableTradeCapacity?.(),0));
       for(const k of ['wood','stone','iron']){
-        const requested=Math.max(0,Math.floor(num(route[k])));
-        const supply=Math.max(0,num(rs[k])-num(config.trade.minReserve));
-        const free=Math.max(0,Math.floor(num(rd.storage,999999)*num(config.trade.maxFill,0.90)-num(rd[k])));
-        cargo[k]=Math.min(requested,supply,free);total+=cargo[k];
+        const reserve=Math.max(0,num(config.trade.minReserve,2500));
+        const supply=Math.max(0,Math.floor(num(a[k])-reserve));
+        const room=Math.max(0,Math.floor(num(b.storage)*Math.max(0.1,Math.min(1,num(config.trade.maxFill,0.90)))-num(b[k])-tradePending(rt,dst.id,k,now)));
+        cargo[k]=Math.min(available,supply,room,Math.max(0,Math.floor(num(route[k]))));
+        available-=cargo[k];
       }
-      const cap=num(src.getAvailableTradeCapacity?.());
-      if(total<100 || cap<100)continue;
-      if(total>cap){const f=cap/total; for(const k of Object.keys(cargo))cargo[k]=Math.floor(cargo[k]*f);}
-      await action('town_info','trade',{id:Number(route.to),town_id:Number(route.from),nl_init:true,...cargo});
-      log(`${tName(src)} → ${tName(dst)}: ${JSON.stringify(cargo)}`);return true;
+      const total=Object.values(cargo).reduce((sum,v)=>sum+v,0);
+      if(total<100)continue;
+      await action('town_info','trade',{id:Number(dst.id),town_id:Number(src.id),nl_init:true,...cargo});
+      tradeMark({from:src.id,to:dst.id,cargo});
+      log(`Rota manual ${tName(src)} → ${tName(dst)}: ${JSON.stringify(cargo)}`);return true;
     }
-    return false;
+    if(config.trade.intelligent!==true)return false;
+    const best=tradeAutoCandidates(now)[0];
+    if(!best)return false;
+    await action('town_info','trade',{id:best.to,town_id:best.from,nl_init:true,...best.cargo});
+    tradeMark(best);
+    log(`Comércio inteligente: ${tName(townBy(best.from))} → ${tName(townBy(best.to))}: ${JSON.stringify(best.cargo)} · meta ${best.reason}`);
+    return true;
   }
   async function ruralTrade(){
     const fs=models('FarmTown'),rs=models('FarmTownPlayerRelation');
@@ -1665,7 +1790,7 @@ let queueKindSelected='building';
     host.style.top=Math.max(0,num(config.ui.y))+'px';
     const body=({'INÍCIO':dashboard,CIDADES:cityContent,FILA:queueContent,ESQUIVA:dodgeContent,TESTE:testContent,ALDEIAS:villagesContent,TROPAS:troopsContent,COMBATE:combatContent,ECONOMIA:economyContent,'MISSÕES':rewardsContent,AJUSTES:configContent,LOG:logContent}[config.ui.tab]||dashboard)();
     shadow.querySelector('#gp-app').innerHTML=`
-      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.8.1</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
+      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.9.0</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
       ${config.ui.collapsed?'':`<div class="status"><i class="dot ${config.enabled?(config.dryRun?'sim':'live'):''}"></i>${cleanStr(STATUS())}</div>
       <div class="tabs">${['INÍCIO','CIDADES','FILA','ALDEIAS','TROPAS','COMBATE','ESQUIVA','TESTE','ECONOMIA','MISSÕES','AJUSTES','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
       <div class="body">${body}</div><div class="foot"><button class="${config.enabled?'stop':'go'}" data-action="toggle">${config.enabled?'■ PARAR TUDO':'▶ INICIAR'}</button><span>${Object.values(config.modules).filter(Boolean).length} módulos ativos</span></div>`}`;
