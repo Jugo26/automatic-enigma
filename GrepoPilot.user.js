@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GrepoPilot - Painel de Automacao
 // @namespace    https://grepolis.com/
-// @version      0.7.1
+// @version      0.8.0
 // @updateURL    https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.meta.js
 // @downloadURL  https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.user.js
 // @homepageURL  https://github.com/Jugo26/automatic-enigma/tree/grepopilot-updates
@@ -119,6 +119,7 @@
     alerts: {desktop:true,checkAll:true},
     dodge: {leadSeconds:5,returnAfterSeconds:1,waveGapSeconds:12,land:true,naval:true,targets:{}},
     attackTest: {delay:20,wave:0,mode:'preview'},
+    presence: {tracked:{},group:'all',status:'all'},
     ui: {x:null,y:90,tab:'INÍCIO',collapsed:false}
   };
   const clone = v => JSON.parse(JSON.stringify(v));
@@ -1462,6 +1463,121 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
   const section = title => `<div class="sect">${title}</div>`;
   const moduleNames=()=>Object.entries(MODULES).filter(([k,p])=>p[1]===config.ui.tab).map(([k,p])=>toggle(k,p[0])).join('');
   const paneModule=k=>toggle(k,MODULES[k][0]);
+
+  // Presença pertence ao jogador, nunca a uma cidade isoladamente.
+  // Não inferimos "offline" por ausência de movimento ou falta de dados.
+  const presenceRecords=(name)=>{
+    const collection=models(name);
+    let entries=collection.length?collection:[];
+    if(!entries.length){
+      const raw=W.MM?.getModels?.()?.[name];
+      if(Array.isArray(raw))entries=raw;
+      else if(raw?.models&&Array.isArray(raw.models))entries=raw.models;
+      else if(raw&&typeof raw==='object')entries=Object.values(raw);
+    }
+    return entries.slice(0,2500).map(o=>({raw:o,data:o?.attributes||o||{}}));
+  };
+  const presenceId=(data,keys)=>{for(const k of keys){const v=Number(data?.[k]);if(Number.isSafeInteger(v)&&v>0)return v;}return 0;};
+  const presenceFlag=(data)=>{
+    // Só aceita uma flag EXPLÍCITA do jogo. "Ativo" e último login não são online.
+    for(const k of ['is_online','isOnline','online','online_status','onlineStatus']){
+      if(!Object.prototype.hasOwnProperty.call(data||{},k))continue;
+      const v=data[k];
+      if(v===true||v===1||v==='1')return 'on';
+      if(v===false||v===0||v==='0')return 'off';
+      if(typeof v==='string'){
+        const status=v.trim().toLowerCase();
+        if(['online','on','true'].includes(status))return 'on';
+        if(['offline','off','false'].includes(status))return 'off';
+      }
+    }
+    if(data?.presence&&typeof data.presence==='object')return presenceFlag(data.presence);
+    return null;
+  };
+  const presenceRelation=(data,playerId,allianceId)=>{
+    const myId=presenceId(W.Game,['player_id','playerId']);
+    const mine=presenceId(W.Game,['alliance_id','allianceId','player_alliance_id']);
+    if(playerId&&playerId===myId)return 'self';
+    if(mine&&allianceId&&mine===allianceId)return 'ally';
+    const explicit=String(data?.diplomacy_status??data?.diplomacy_relation??data?.alliance_relation??data?.relation_type??'').toLowerCase();
+    if(['allied','ally','pact','alliance','friendly','friend'].includes(explicit))return 'ally';
+    if(['enemy','hostile','war','opponent'].includes(explicit))return 'enemy';
+    return 'other';
+  };
+  function presenceSnapshot(){
+    const players=new Map(),relations=new Map(),townList=new Map();
+    for(const key of ['Player','PlayerProfile','AllianceMember','AlliancePlayer','AllianceMembers','AllianceMemberStatus']){
+      for(const {data:a,raw} of presenceRecords(key)){
+        const id=presenceId(a,['player_id','playerId','id'])||Number(raw?.id)||0;
+        if(!Number.isSafeInteger(id)||id<=0)continue;
+        const known=players.get(id)||{};
+        const n=a.name??a.player_name??a.playerName??a.username;
+        const aid=presenceId(a,['alliance_id','allianceId']);
+        if(n&&!known.name)known.name=String(n);
+        if(aid&&!known.allianceId)known.allianceId=aid;
+        const flag=presenceFlag(a);
+        if(flag!==null && (known.presence===undefined||key==='AllianceMember'||key==='AllianceMembers')){
+          known.presence=flag;known.source=key;
+        }
+        players.set(id,known);
+      }
+    }
+    for(const key of ['AllianceRelation','AllianceRelations']){
+      for(const {data:a} of presenceRecords(key)){
+        const aid=presenceId(a,['other_alliance_id','target_alliance_id','alliance_id']);
+        const kind=String(a.relation_type??a.type??a.status??'').toLowerCase();
+        if(aid&&['allied','ally','pact','friendly','friend','enemy','hostile','war'].includes(kind)){
+          relations.set(aid,['enemy','hostile','war'].includes(kind)?'enemy':'ally');
+        }
+      }
+    }
+    const own=new Set(towns().map(t=>Number(t.id)));
+    for(const key of ['MapTown','MapTowns','Town','Towns','TownInfo','MapTownInfo']){
+      for(const {raw,data:a} of presenceRecords(key)){
+        const id=presenceId(a,['town_id','townId','id'])||Number(raw?.id)||0;
+        if(!Number.isSafeInteger(id)||id<=0||own.has(id))continue;
+        const previous=townList.get(id)||{};
+        const pid=presenceId(a,['player_id','playerId','owner_id','ownerId']);
+        const aid=presenceId(a,['alliance_id','allianceId']);
+        const name=a.name??a.town_name??a.townName;
+        const owner=a.player_name??a.playerName??a.owner_name??a.ownerName;
+        const alliance=a.alliance_name??a.allianceName;
+        const flag=presenceFlag(a);
+        const row={...previous,id,playerId:pid||previous.playerId||0,allianceId:aid||previous.allianceId||0,
+          city:name?String(name):previous.city||'',player:owner?String(owner):previous.player||'',
+          alliance:alliance?String(alliance):previous.alliance||'',
+          relationData:Object.keys(a).some(k=>['diplomacy_status','diplomacy_relation','alliance_relation','relation_type'].includes(k))?a:previous.relationData};
+        if(flag!==null&&pid){
+          const p=players.get(pid)||{};
+          if(p.presence===undefined){p.presence=flag;p.source=key;players.set(pid,p);}
+        }
+        townList.set(id,row);
+      }
+    }
+    const tracked=config.presence?.tracked||{};
+    for(const [id,value] of Object.entries(tracked)){
+      if(!Number.isSafeInteger(Number(id))||Number(id)<1||own.has(Number(id)))continue;
+      if(!townList.has(Number(id)))townList.set(Number(id),{id:Number(id),city:value?.name||''});
+    }
+    const result=[];
+    for(const record of townList.values()){
+      const track=tracked[record.id]||{};
+      const player=players.get(record.playerId)||{};
+      const aid=record.allianceId||player.allianceId||0;
+      const override=['ally','enemy','other'].includes(track.relation)?track.relation:null;
+      let relation=override||presenceRelation(record.relationData,record.playerId,aid);
+      if(!override&&relation==='other'&&relations.has(aid))relation=relations.get(aid);
+      if(relation==='self')continue;
+      const status=player.presence||'unknown';
+      result.push({...record,allianceId:aid,relation,status,onlineSource:player.source||'',
+        player:record.player||player.name||'',city:record.city||track.name||'',tracked:Boolean(tracked[record.id])});
+    }
+    result.sort((a,b)=>{
+      const ranks={ally:0,enemy:1,other:2};
+      return (ranks[a.relation]??2)-(ranks[b.relation]??2)||String(a.player).localeCompare(String(b.player))||a.id-b.id;
+    });
+    return result;
+  }
   const dashboard=()=>{
     const r=ruralStatus();const q=questRows();const camp=W.MM?.getModelByNameAndPlayerId?.('PlayerAttackSpot');
     const enabled=Object.entries(config.modules).filter(([,v])=>v).length;
@@ -1662,7 +1778,7 @@ let queueKindSelected='building';
     host.style.top=Math.max(0,num(config.ui.y))+'px';
     const body=({'INÍCIO':dashboard,CIDADES:cityContent,FILA:queueContent,ESQUIVA:dodgeContent,TESTE:testContent,ALDEIAS:villagesContent,TROPAS:troopsContent,COMBATE:combatContent,ECONOMIA:economyContent,'MISSÕES':rewardsContent,AJUSTES:configContent,LOG:logContent}[config.ui.tab]||dashboard)();
     shadow.querySelector('#gp-app').innerHTML=`
-      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.7.1</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
+      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.8.0</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
       ${config.ui.collapsed?'':`<div class="status"><i class="dot ${config.enabled?(config.dryRun?'sim':'live'):''}"></i>${cleanStr(STATUS())}</div>
       <div class="tabs">${['INÍCIO','CIDADES','FILA','ALDEIAS','TROPAS','COMBATE','ESQUIVA','TESTE','ECONOMIA','MISSÕES','AJUSTES','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
       <div class="body">${body}</div><div class="foot"><button class="${config.enabled?'stop':'go'}" data-action="toggle">${config.enabled?'■ PARAR TUDO':'▶ INICIAR'}</button><span>${Object.values(config.modules).filter(Boolean).length} módulos ativos</span></div>`}`;
