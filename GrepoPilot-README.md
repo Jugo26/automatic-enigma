@@ -286,3 +286,44 @@ A aba **AJUSTES** e a aba **COMEÇAR** permitem exportar **GrepoPilot-modelo-pub
 - A publicação no GitHub não significa aprovação oficial do Grepolis. Consulte a [lista de scripts aprovados](https://support.innogames.com/kb/Grepolis/pt_BR/5977); a distribuição para uso dentro do jogo depende da avaliação pela equipe oficial.
 - Testes simulados: jogador novo sem ativação automática, assistente de primeiro uso, troca de conta e restauração da configuração original, isolamento entre mundos e jogadores, bloqueio de comandos no período de troca de perfil, descarte de respostas atrasadas, modelo público sem destinos nem metas e rejeição de propriedades extras. As rotinas anteriores de coleta, fila, comércio, F5 e esquiva permanecem no script.
 - Não houve validação prática em todos os mercados Grepolis, navegadores ou versões do cliente. O monitoramento de compatibilidade indica quando dados não estão disponíveis.
+
+## GrepoPilot v0.9.5 — Heróis no PvE e objetivos automáticos de missões de ilha
+
+### Ataques PvE com heróis
+
+Em **COMBATE → Ataques automáticos aos bandidos**, marque **Incluir herói disponível da cidade no ataque PvE** (ativado por padrão na nova versão). O sistema:
+
+- Consulta os heróis carregados pelo cliente (modelos `Hero`, `Heroes` e `PlayerHero`).
+- Considera apenas um herói **explicitamente atribuído à cidade de origem**, sem ferimento, deslocamento, designação em andamento ou combate.
+- Inclui seu `hero_id` no comando de ataque do acampamento, junto com as tropas terrestres já utilizadas.
+- Sem herói elegível, continua enviando a composição de tropas **sem inventar um herói ou mudar de cidade**.
+- Mantém as proteções de espera, recompensa pendente, ataque já em trânsito e intervalo entre tentativas.
+
+O parâmetro `hero_id` no método `PlayerAttackSpot/attack` está **testado com modelos simulados**. O formato aceito pode variar entre mundos/versões; caso o jogo rejeite esse argumento, veja **LOG / DIAG** e exporte uma verificação.
+
+Conforme a [documentação oficial sobre heróis](https://support.innogames.com/kb/Grepolis/en_DK/3557), heróis devem estar atribuídos a uma cidade e os feridos não participam de batalhas.
+
+### Automação dos objetivos das missões de ilha
+
+Na aba **MISSÕES**, ative **Executar objetivos identificados automaticamente**. Essa opção também habilita o módulo de missões de ilha.
+
+A automação faz uma avaliação do modelo de cada missão:
+
+1. Missões marcadas como **satisfied** continuam recebendo automaticamente a recompensa conforme a preferência de guardar/utilizar.
+2. Objetivos explícitos de **construir** um prédio: adiciona ou amplia a meta da cidade no módulo de Construção. Não reduz metas maiores já existentes.
+3. Objetivos explícitos de **pesquisar**: adiciona a pesquisa à lista da cidade, sem duplicá-la.
+4. Objetivos explícitos de **recrutar**: adiciona ou amplia a meta de unidade, sem reduzir metas existentes.
+5. Missões de **espera**: aguarda o tempo informado pelo jogo e recolhe quando o estado mudar para satisfeita.
+6. Quando o modelo do Grepolis fornece uma **ação de decisão/cumprimento com nome e argumentos identificáveis**, seleciona a preferência configurada (Sabedoria/Guerra), respeita limites de custos e envia somente ações `IslandQuests` de uma lista restrita.
+
+Para evitar custos não desejados, **gastos de recursos e sacrifícios de tropas ficam desativados por padrão**. Limites configuráveis na aba MISSÕES: total de recursos e quantidade de tropas permitidos por objetivo. Esses limites são aplicados às ações cujo custo seja descrito pelo cliente.
+
+**Objetivos ainda não reconhecidos** (por exemplo, certas formas de ataque, defesa, reforços ou entrega que não exponham comandos suficientes no modelo) são mostrados como **objetivo sem ação compatível**, sem tentar endpoints presumidos. A automação **não afirma concluir toda missão de qualquer tipo**, nem que a ação enviada resulte em objetivo concluído sem confirmação de estado pelo servidor.
+
+A nova lista **Objetivos detectados** mostra a situação e a próxima etapa prevista. O botão **Exportar dados técnicos das missões** gera um JSON de inspeção para analisar formatos ainda não reconhecidos e adicionar suporte aos próximos tipos.
+
+### Testes
+
+Testes em cliente simulado passaram para: escolha de herói atribuído e saudável; exclusão de heróis feridos; envio sem herói quando ausente/desativado; manutenção da composição de tropas; programação de construção/pesquisa/recrutamento; preservação de metas mais elevadas; espera de missão; recompensa após satisfação; ação explícita de escolha; preferência de Sabedoria/Guerra; limite de recursos e sacrifício de tropas; bloqueio de comandos desconhecidos; exibição dos controles.
+
+**Pendente:** teste das APIs reais de seleção de herói e ações de missões em um mundo Grepolis. As capacidades efetivas dependem dos dados fornecidos pelo cliente.
