@@ -212,6 +212,83 @@
     log('Perfil importado como PC SECUNDÁRIO, com automação pausada');
     return true;
   }
+
+  // Modelo compartilhável sem IDs de cidades, ordens de ataque nem dados pessoais.
+  const templatePayload=()=>{
+    const c=config;
+    return {
+      format:'grepopilot-template',schema:1,version:'0.9.4',
+      exportedAt:new Date().toISOString(),
+      settings:{
+        modules:Object.fromEntries(Object.keys(MODULES).map(id=>[id,Boolean(c.modules?.[id])])),
+        intervals:Object.fromEntries(Object.keys(MODULES).map(id=>[id,Number(c.intervals?.[id]??MODULES[id][2])])),
+        farm:{duration:c.farm?.duration,captainBulk:!!c.farm?.captainBulk},
+        finishFree:{maxRemainingSeconds:c.finishFree?.maxRemainingSeconds},
+        smartQueue:{maxBatch:c.smartQueue?.maxBatch,mode:c.smartQueue?.mode,autoPrereqs:c.smartQueue?.autoPrereqs},
+        recruit:Object.fromEntries(['maxBatch','minBatch','shipBatch','minShipBatch','mythicalBatch','minMythicalBatch','maxQueueSlots'].map(k=>[k,c.recruit?.[k]])),
+        trade:Object.fromEntries(['minReserve','maxFill','intelligent','minCargo','cooldownMinutes','pendingMinutes','maxGoals'].map(k=>[k,c.trade?.[k]])),
+        ruralTrade:c.ruralTrade,ruralUpgrade:c.ruralUpgrade,
+        quests:c.quests,banditRewards:c.banditRewards,culture:c.culture,cave:c.cave,
+        alerts:c.alerts,security:c.security,autoReload:c.autoReload,
+        dodge:Object.fromEntries(['leadSeconds','returnAfterSeconds','waveGapSeconds','land','naval'].map(k=>[k,c.dodge?.[k]]))
+      }
+    };
+  };
+  const templateExport=()=>JSON.stringify(templatePayload(),null,2);
+  function templateImport(rawText){
+    if(typeof rawText!=='string'||rawText.length>1000000)throw Error('Modelo muito grande ou inválido');
+    let source;
+    try{source=JSON.parse(rawText);}catch{throw Error('O modelo não é um JSON válido');}
+    if(source?.format!=='grepopilot-template'||source?.schema!==1||
+      !source.settings||typeof source.settings!=='object'||Array.isArray(source.settings))
+      throw Error('Formato incorreto: use Exportar modelo para jogadores');
+    if(!currentPlayerId()||scope!==currentScope())throw Error('Abra sua conta no Grepolis antes de importar');
+    const incoming=source.settings;
+    const safe={};
+    const allowed=['modules','intervals','farm','finishFree','smartQueue','recruit','trade',
+      'ruralTrade','ruralUpgrade','quests','banditRewards','culture','cave',
+      'alerts','security','autoReload','dodge'];
+    const clean=templatePayload().settings;
+    for(const key of allowed){
+      if(!incoming[key]||typeof incoming[key]!=='object'||Array.isArray(incoming[key]))continue;
+      // Escolhe somente campos permitidos na estrutura padrão, descartando rotas e identificadores pessoais.
+      const filtered={};
+      for(const sub of Object.keys(clean[key]||{})){
+        if(!Object.prototype.hasOwnProperty.call(incoming[key],sub))continue;
+        const value=incoming[key][sub];
+        if(value===null||['string','number','boolean'].includes(typeof value))filtered[sub]=value;
+      }
+      safe[key]=filtered;
+    }
+    // Configurações existentes de cidades continuam exclusivas do jogador que importa.
+    merge(config,safe);
+    config.enabled=false;
+    config.dryRun=true;
+    config.onboarding={completed:true};
+    config.ui.tab='VERIFICAR';
+    nextRun={};save();
+    log('Modelo público importado: metas e cidades pessoais foram mantidas; execução em simulação');
+    return true;
+  }
+  const onboardingContent=()=>{
+    const id=currentPlayerId(),ready=connected(),n=towns().length;
+    return `${section('Bem-vindo ao GrepoPilot')}
+      <div class="helpbox"><b>${ready?'✅ Conta detectada: jogador #'+id:'⏳ Aguardando o Grepolis carregar sua conta'}</b>
+        <p class="smallnote">Servidor: ${cleanStr(location.host)} · ${n} cidade(s) detectada(s).
+        Cada jogador recebe um perfil separado. As funções começam desligadas e em modo simulação.</p></div>
+      ${section('Primeiros passos')}
+      <div class="city"><b>1. Confirme sua conta</b><div class="smallnote">Abra VERIFICAR para confirmar que o cliente, suas cidades e o armazenamento estão disponíveis.</div></div>
+      <div class="city"><b>2. Escolha os módulos</b><div class="smallnote">Configure apenas as cidades, construções e tropas da sua própria conta.</div></div>
+      <div class="city"><b>3. Faça uma simulação</b><div class="smallnote">O modo simulação permite acompanhar decisões sem enviar comandos ao jogo.</div></div>
+      <div class="tools"><button data-tab="VERIFICAR">Verificar minha conta</button>
+        <button class="primary" data-action="onboardingDemo" ${ready?'':'disabled'}>Testar Auto Farm em simulação</button>
+        <button data-action="onboardingFinish" ${ready?'':'disabled'}>Configurar manualmente</button></div>
+      ${section('Compartilhar configurações com amigos')}
+      <p class="smallnote">Um modelo público compartilha somente opções gerais. Nunca copia IDs de cidades, metas específicas, rotas, comandos ou informações de outro jogador.</p>
+      <div class="tools"><button data-action="templateExport">Exportar modelo .json</button></div>
+      <textarea id="templateImportText" style="height:100px" spellcheck="false" placeholder="Cole aqui um modelo público GrepoPilot"></textarea>
+      <div class="tools"><button data-action="templateImport" ${ready?'':'disabled'}>Importar modelo público</button></div>`;
+  };
   const syncPanel=()=>`
     ${section('Perfil entre computadores')}
     <div class="helpbox">Transfira metas, rotas e preferências entre computadores por <b>código JSON ou arquivo</b>. Sem servidor de sincronização a transferência é manual. O PC que recebe o perfil entra em modo <b>secundário (pausado)</b>.</div>
@@ -2018,7 +2095,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
   const dashboard=()=>{
     const r=ruralStatus();const q=questRows();const camp=W.MM?.getModelByNameAndPlayerId?.('PlayerAttackSpot');
     const enabled=Object.entries(config.modules).filter(([,v])=>v).length;
-    return `${section('Visão geral')}<div class="stats"><div><b>${towns().length}</b>Cidades</div><div><b>${r.unlocked}/${r.rows.length}</b>Aldeias</div><div><b>${r.bp??'—'}</b>Pontos de batalha</div><div><b>${q.length}</b>Missões prontas</div></div>
+    return `${!config.onboarding?.completed?'<div class="helpbox">Primeiro acesso? Abra COMEÇAR para configurar esta conta.</div>':''}${section('Visão geral')}<div class="stats"><div><b>${towns().length}</b>Cidades</div><div><b>${r.unlocked}/${r.rows.length}</b>Aldeias</div><div><b>${r.bp??'—'}</b>Pontos de batalha</div><div><b>${q.length}</b>Missões prontas</div></div>
       <div class="helpbox">1. Escolha uma aba abaixo. 2. Ative as funções desejadas. 3. Defina os modelos e as metas. 4. Ative <b>Iniciar</b> na barra inferior.${config.dryRun?' <b>Modo simulação ativo.</b>':''}</div>
       ${section('Acesso rápido')}<div class="quick">${[['CIDADES','🏛️ Modelos de cidades'],['ALDEIAS','🏡 Evoluir e desbloquear'],['TROPAS','⚔️ Modelos de tropas'],['MISSÕES','🎁 Recompensas'],['COMBATE','🏹 Acampamento e ataques'],['ECONOMIA','🌾 Coleta e comércio']].map(([tab,name])=>`<button data-tab="${tab}">${name}</button>`).join('')}</div>
       ${section('Acampamento')}<div class="smallnote">${camp ? `Fase ${cleanStr(String(camp.getLevel?.()??'?'))} · ${camp.hasReward?.()?'recompensa disponível':num(camp.getCooldownDuration?.())>0?'aguardando '+num(camp.getCooldownDuration?.())+'s':'pronto para ataque'}`:'Dados do acampamento indisponíveis'}</div>
@@ -2208,7 +2285,12 @@ let queueKindSelected='building';
       <div class="checks"><label><input type="checkbox" data-setting="banditRewards.stashIfPossible" ${config.banditRewards.stashIfPossible?'checked':''}> Guardar quando permitido</label></div>
       <p class="smallnote">Missões iniciais sem identificação confirmada no cliente não são enviadas por um endpoint presumido; o modo automático cobre missões de ilha concluídas.</p>`;
   };
-  const configContent=()=>`${section('Controle global')}
+  const configContent=()=>`${section('Compartilhar modelo com outros jogadores')}
+    <p class="smallnote">Exporta somente configurações gerais, sem suas cidades, metas, rotas e comandos pessoais. Quem importa fica pausado e em simulação.</p>
+    <div class="tools"><button data-action="templateExport">Exportar modelo .json</button></div>
+    <textarea id="templateImportText" style="height:85px" spellcheck="false" placeholder="Cole aqui o modelo público exportado"></textarea>
+    <div class="tools"><button data-action="templateImport">Importar modelo público</button></div>
+    ${section('Controle global')}
     <div class="checks"><label><input type="checkbox" data-global="enabled" ${config.enabled?'checked':''}> Execução geral</label><label><input type="checkbox" data-global="dryRun" ${config.dryRun?'checked':''}> Modo simulação (sem envio)</label></div>
     <p class="smallnote">Configurações locais por mundo/jogador. Perfil entre PCs disponível sem servidor externo. Desativar todos os módulos é o estado inicial.</p>
     ${section('Verificação de outro computador')}
@@ -2243,7 +2325,7 @@ let queueKindSelected='building';
     host.style.left=config.ui.x===null?'auto':Math.max(0,num(config.ui.x))+'px';
     host.style.right=config.ui.x===null?'20px':'auto';
     host.style.top=Math.max(0,num(config.ui.y))+'px';
-    const pane=({'INÍCIO':dashboard,CIDADES:cityContent,FILA:queueContent,ESQUIVA:dodgeContent,TESTE:testContent,DIAG:diagContent,VERIFICAR:healthContent,ALDEIAS:villagesContent,TROPAS:troopsContent,COMBATE:combatContent,ECONOMIA:economyContent,'MISSÕES':rewardsContent,AJUSTES:configContent,LOG:logContent}[config.ui.tab]||dashboard);
+    const pane=({'COMEÇAR':onboardingContent,'INÍCIO':dashboard,CIDADES:cityContent,FILA:queueContent,ESQUIVA:dodgeContent,TESTE:testContent,DIAG:diagContent,VERIFICAR:healthContent,ALDEIAS:villagesContent,TROPAS:troopsContent,COMBATE:combatContent,ECONOMIA:economyContent,'MISSÕES':rewardsContent,AJUSTES:configContent,LOG:logContent}[config.ui.tab]||dashboard);
     let body;
     try{body=pane();}
     catch(e){
@@ -2256,7 +2338,7 @@ let queueKindSelected='building';
     shadow.querySelector('#gp-app').innerHTML=`
       <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.9.4</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
       ${config.ui.collapsed?'':`<div class="status"><i class="dot ${config.enabled?(config.dryRun?'sim':'live'):''}"></i>${cleanStr(STATUS())}</div>
-      <div class="tabs">${['INÍCIO','CIDADES','FILA','ALDEIAS','TROPAS','COMBATE','ESQUIVA','TESTE','DIAG','VERIFICAR','ECONOMIA','MISSÕES','AJUSTES','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
+      <div class="tabs">${['COMEÇAR','INÍCIO','CIDADES','FILA','ALDEIAS','TROPAS','COMBATE','ESQUIVA','TESTE','DIAG','VERIFICAR','ECONOMIA','MISSÕES','AJUSTES','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
       <div class="body">${body}</div><div class="foot"><button class="${config.enabled?'stop':'go'}" data-action="toggle">${config.enabled?'■ PARAR TUDO':'▶ INICIAR'}</button><span>${Object.values(config.modules).filter(Boolean).length} módulos ativos</span></div>`}`;
   };
   const CSS=`
@@ -2297,6 +2379,26 @@ let queueKindSelected='building';
       switch(id){
         case 'collapse':config.ui.collapsed=!config.ui.collapsed;save();break;
         case 'toggle':if(syncRole()==='standby')throw Error('PC secundário: selecione Principal em AJUSTES antes de iniciar');config.enabled=!config.enabled;save();log(config.enabled?'Bot iniciado':'Bot interrompido');break;
+        case 'onboardingDemo':{
+          if(!connected()||scope!==currentScope())throw Error('Aguarde carregar sua conta para iniciar');
+          config.onboarding.completed=true;
+          config.modules.farm=true;
+          config.enabled=true;
+          config.dryRun=true;
+          config.ui.tab='ECONOMIA';
+          nextRun.farm=0;
+          save();log('Primeiro uso: Auto Farm ativado apenas em simulação');break;
+        }
+        case 'onboardingFinish':{
+          if(!connected()||scope!==currentScope())throw Error('Aguarde o cliente do jogo ficar pronto');
+          config.onboarding.completed=true;config.ui.tab='INÍCIO';save();
+          log('Primeiro uso concluído: configure os módulos da sua conta');break;
+        }
+        case 'templateExport':{
+          download('GrepoPilot-modelo-publico.json',templateExport());
+          log('Modelo público exportado sem cidades ou metas pessoais');break;
+        }
+        case 'templateImport':templateImport(el('templateImportText')?.value||'');break;
         case 'reloadRearm':reloadSchedule(true);log('F5 automático: contagem reiniciada para '+reloadMinutes()+' minutos');break;
         case 'healthRefresh':health.storageCache=null;log('Verificação do PC executada');break;
         case 'healthReopen':{
