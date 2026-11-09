@@ -217,3 +217,39 @@ O GrepoPilot agora pode executar o equivalente a **F5 (recarregar a página atua
 - Configurações anteriores, Auto Farm, esquivas, comércio inteligente, diagnóstico e perfis entre PCs foram preservados.
 
 **Testes automatizados locais:** período inicial de 30 minutos, bot pausado, PC secundário, teste em andamento, esquiva pendente, CAPTCHA visível, requisição ainda em voo, comando próximo e envio pendente, ataque inimigo com chegada próxima, liberação da atualização ao ficar seguro, somente um reload por prazo, persistência do horário após nova inicialização e interface de configuração. Sem teste de navegação com uma sessão real do Grepolis.
+
+## GrepoPilot 0.9.3 — Autodiagnóstico para outros computadores
+
+Nova aba **VERIFICAR** para descobrir o motivo de o GrepoPilot não iniciar ou não executar no segundo PC.
+
+### Verificações de compatibilidade
+
+- **Carregamento do userscript e versão:** identifica se este código conseguiu executar; se a aba não aparece, a verificação não pode ser executada pelo próprio script.
+- **Endereço do jogo e acesso aos dados da página:** identifica se o script está no endereço esperado do Grepolis e se a ponte do script para os dados da página está disponível.
+- **Conta e cidade carregadas:** detecta `Game.player_id` e coleção de cidades, distinguindo o carregamento incompleto do jogo de um bot pausado.
+- **APIs internas necessárias:** verifica a presença de `MM.getModels`, `MM.getOnlyCollectionByName` e `gpAjax.ajaxPost`, sem enviar comandos.
+- **Armazenamento no navegador:** efetua teste local isolado de gravação/leitura e remove a chave de teste imediatamente.
+- **Montagem do painel:** identifica erros de renderização, histórico de erros de boot e se a janela está anexada ao documento.
+- **Execução real:** verifica se o PC está como **Principal**, a execução geral está ativa, há módulos habilitados, o modo simulação está desligado e se há CAPTCHA.
+- **Sinal do motor:** registra o horário do último ciclo e informa se o script está pausado, aguardando cliente, bloqueado ou executando. A aba DIAG continua registrando ações enviadas, tentativas e falhas.
+
+Os indicadores **OK / ATENÇÃO / ERRO** mostram a condição e, quando necessário, o próximo passo para corrigi-la. O botão **Verificar novamente** renova a leitura. **Copiar relatório** e **Salvar relatório .json** ajudam a comparar PCs, com versão, servidor, navegador, estado do motor e dados de diagnóstico. O relatório contém o ID numérico do jogador e o identificador do mundo para que problemas de conta/servidor possam ser diferenciados.
+
+### Melhorias na inicialização
+
+- O GrepoPilot não grava mais uma configuração nova com escopo `unknown` enquanto o cliente do jogo ainda não forneceu o ID do jogador.
+- Verifica se as APIs mínimas do Grepolis realmente estão prontas antes de executar os módulos.
+- Protege o painel contra falha de uma aba: mostra uma mensagem e oferece o caminho para **VERIFICAR** sem derrubar a janela inteira.
+- Caso a montagem inicial do painel falhe devido ao DOM temporariamente indisponível, tenta remontá-lo a cada 5 segundos.
+- Captura rejeições assíncronas do motor e registra os motivos em vez de deixar uma falha silenciosa.
+
+### Se a janela nem aparece no outro PC
+
+1. Abra o Tampermonkey e confirme que **GrepoPilot v0.9.3** está instalado e ligado.
+2. Em Chrome/Edge, abra `chrome://extensions` ou `edge://extensions` → **Tampermonkey → Detalhes**; verifique **Permitir scripts de usuário** e o acesso da extensão ao domínio do Grepolis.
+3. Entre no mundo do Grepolis no navegador, aguarde o jogo carregar e atualize a página.
+4. Se o painel aparecer, entre em **VERIFICAR**. Se estiver no modo Secundário, escolha Principal em AJUSTES no PC que deve executar. Verifique também Execução geral, módulos e Modo simulação.
+
+**Limitação:** uma verificação interna não consegue constatar nem reparar uma extensão bloqueada que impediu o script de executar. Por isso os passos manuais acima continuam necessários.
+
+Testes locais simulados: abertura do painel antes das APIs do jogo; reconhecimento posterior da conta e restauração da configuração correta; PC secundário; bot pausado; modo simulação; erros de renderização sem queda da janela; armazenamento local bloqueado; falha e recuperação da montagem inicial. Mantidas todas as rotinas anteriores. Sem validação em uma sessão real de Grepolis instalada em outro PC.
