@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GrepoPilot - Painel de Automacao
 // @namespace    https://grepolis.com/
-// @version      0.9.2
+// @version      0.9.3
 // @updateURL    https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.meta.js
 // @downloadURL  https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.user.js
 // @homepageURL  https://github.com/Jugo26/automatic-enigma/tree/grepopilot-updates
@@ -160,6 +160,7 @@
   let booted = false;
   let seenAttacks = new Set();
   let rendered = false;
+  const health={startedAt:Date.now(),lastHeartbeat:0,lastClientReadyAt:0,lastTickResult:'aguardando primeiro ciclo',mountErrors:0,lastMountError:'',lastRenderError:'',storageCache:null};
   function rescope(){
     const newScope = `${location.host}:${W.Game?.player_id || 'unknown'}`;
     if(newScope===scope)return;
@@ -172,7 +173,10 @@
   const cleanStr = text => String(text??'').replace(/[&<>"']/g,x=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[x]));
   const num = (v,def=0) => Number.isFinite(Number(v)) ? Number(v) : def;
   const tName = t => t?.getName?.() || t?.name || `Cidade ${t?.id}`;
-  const save = () => {localStorage.setItem(STORE,JSON.stringify(config));};
+  const save = () => {
+    try{localStorage.setItem(STORE,JSON.stringify(config));}
+    catch(e){health.lastMountError='Falha ao salvar configurações: '+e.message;console.error('[GrepoPilot] '+health.lastMountError);}
+  };
 
   const syncRole=()=>config.sync?.role==='standby'?'standby':'primary';
   const syncExport=()=>{
@@ -1788,8 +1792,16 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
   };
   const unlock=()=>{try{if(JSON.parse(localStorage.getItem(LOCK)||'{}').owner===instanceId)localStorage.removeItem(LOCK)}catch{}};
   const tick=async()=>{
+    health.lastHeartbeat=Date.now();
+    if(connected())health.lastClientReadyAt=Date.now();
     rescope();
-    if(running||!canRun()||!lock())return;
+    if(running){health.lastTickResult='aguardando ciclo anterior';return;}
+    if(!canRun()){
+      health.lastTickResult=!connected()?'cliente do jogo indisponível':syncRole()==='standby'?'PC secundário':!config.enabled?'bot pausado':securityBlocked()?'CAPTCHA ativo':'ciclo bloqueado';
+      return;
+    }
+    if(!lock()){health.lastTickResult='outra aba executando';return;}
+    health.lastTickResult='motor de automação ativo';
     running=true;
     try {
       const now=Date.now();
@@ -1886,6 +1898,102 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
   const moduleNames=()=>Object.entries(MODULES).filter(([k,p])=>p[1]===config.ui.tab).map(([k,p])=>toggle(k,p[0])).join('');
   const paneModule=k=>toggle(k,MODULES[k][0]);
 
+
+  function healthStorage(){
+    if(health.storageCache&&Date.now()-health.storageCache.at<30000)return health.storageCache;
+    const key='grepopilot:health-probe:'+location.host;
+    let ok=false,error='';
+    try{
+      const v='test-'+Date.now();localStorage.setItem(key,v);
+      ok=localStorage.getItem(key)===v;localStorage.removeItem(key);
+      if(!ok)error='Leitura e gravação do armazenamento local não coincidem';
+    }catch(e){error=String(e.message||e);}
+    health.storageCache={at:Date.now(),ok,error};
+    return health.storageCache;
+  }
+  const healthCheck=(id,title,status,detail,fix='')=>({id,title,status,detail,fix});
+  function healthSnapshot(){
+    const ready=connected(),now=Date.now(),storage=healthStorage();
+    const n=Object.values(config.modules||{}).filter(Boolean).length;
+    const player=Number(W.Game?.player_id||0);
+    const modelOK=typeof W.MM?.getModels==='function' && typeof W.MM?.getOnlyCollectionByName==='function';
+    const townsOK=W.ITowns?.towns&&typeof W.ITowns.towns==='object';
+    const ajaxOK=typeof W.gpAjax?.ajaxPost==='function';
+    const role=syncRole();
+    const checks=[
+      healthCheck('script','GrepoPilot carregado','ok','v0.9.3 · inicialização em '+new Date(health.startedAt).toLocaleTimeString('pt-BR')),
+      healthCheck('page','Página do Grepolis',location.protocol==='https:'&&/^\/game(?:\/|$)/.test(location.pathname)?'ok':'error',
+        String(location.host)+String(location.pathname||''),'Abra a página do jogo em https://SEU-MUNDO.grepolis.com/game/'),
+      healthCheck('api','Acesso aos dados do jogo',W!==window?'ok':'warn',
+        W!==window?'Ponte com a página disponível':'Usando contexto do próprio script; dados do jogo podem ficar isolados',
+        'No Tampermonkey, confira se a extensão pode executar scripts nesta página'),
+      healthCheck('player','Conta identificada',player>0?'ok':'error',
+        player>0?'Jogador #'+player:'Aguardando Game.player_id do Grepolis',
+        'Entre no mundo e aguarde terminar o carregamento; depois clique em Verificar novamente'),
+      healthCheck('towns','Cidades carregadas',townsOK&&Object.values(W.ITowns.towns).some(t=>t?.id)?'ok':'error',
+        townsOK?Object.values(W.ITowns.towns).filter(t=>t?.id).length+' cidade(s) disponíveis':'ITowns não disponível',
+        'Abra a visão de cidade no jogo e aguarde a sincronização do cliente'),
+      healthCheck('models','Modelos internos do jogo',modelOK?'ok':'error',
+        modelOK?'Coleções MM acessíveis':'Modelos do Grepolis ainda não estão acessíveis',
+        'Atualize a página do jogo quando estiver totalmente carregado'),
+      healthCheck('ajax','Canal de comandos',ajaxOK?'ok':'error',
+        ajaxOK?'gpAjax.ajaxPost disponível (sem enviar comandos no teste)':'Canal gpAjax não disponível',
+        'Confira se o cliente do Grepolis terminou de carregar'),
+      healthCheck('storage','Armazenamento local',storage.ok?'ok':'error',
+        storage.ok?'Leitura/gravação OK':storage.error,'Verifique cookies/dados locais do site e modo privado do navegador'),
+      healthCheck('ui','Painel do GrepoPilot',host?.isConnected&&Boolean(shadow?.querySelector('#gp-app'))?'ok':'error',
+        host?.isConnected?'Painel anexado à página':'Painel não foi anexado',
+        'Clique em Reabrir painel ou recarregue o Grepolis'),
+      healthCheck('role','Computador principal',role==='primary'?'ok':'warn',
+        role==='primary'?'PC principal':'PC secundário: automações bloqueadas',
+        'Em AJUSTES → Perfil entre computadores, escolha Principal somente no PC que executará as rotinas'),
+      healthCheck('enabled','Execução geral',config.enabled?'ok':'warn',
+        config.enabled?'INICIAR ativado':'Bot pausado','Clique em INICIAR no rodapé do GrepoPilot'),
+      healthCheck('modules','Módulos ativos',n>0?'ok':'warn',
+        n+' módulo(s) habilitado(s)','Ative os módulos desejados em suas abas'),
+      healthCheck('simulation','Modo de execução',config.dryRun?'warn':'ok',
+        config.dryRun?'Simulação ativa: nenhuma ação real enviada':'Modo ao vivo selecionado',
+        'Em AJUSTES desative Modo simulação para executar ações reais'),
+      healthCheck('captcha','Verificação do jogo',securityBlocked()?'warn':'ok',
+        securityBlocked()?'CAPTCHA detectado: aguardando resolução':'Nenhum CAPTCHA detectado',
+        'Resolva a verificação diretamente no jogo'),
+      healthCheck('heartbeat','Verificação do motor',health.lastHeartbeat&&now-health.lastHeartbeat<20000?'ok':'warn',
+        health.lastHeartbeat?'Último ciclo há '+Math.floor((now-health.lastHeartbeat)/1000)+'s · '+health.lastTickResult:'Ainda não houve ciclo',
+        'Mantenha esta aba aberta por alguns segundos; verifique se o navegador suspendeu a aba')
+    ];
+    const critical=checks.filter(x=>x.status==='error');
+    const warnings=checks.filter(x=>x.status==='warn');
+    const active=ready&&critical.length===0&&config.enabled&&role==='primary'&&!config.dryRun&&!securityBlocked()&&n>0;
+    return {version:'0.9.3',time:new Date(now).toISOString(),world:location.host,
+      playerId:player||null,userAgent:typeof navigator!=='undefined'?navigator.userAgent:'',
+      active,critical:critical.length,warnings:warnings.length,
+      runtime:{uptimeSeconds:Math.floor((now-health.startedAt)/1000),
+        lastHeartbeatAt:health.lastHeartbeat?new Date(health.lastHeartbeat).toISOString():null,
+        lastClientReadyAt:health.lastClientReadyAt?new Date(health.lastClientReadyAt).toISOString():null,
+        lastTickResult:health.lastTickResult,mountErrors:health.mountErrors,
+        lastMountError:health.lastMountError,lastRenderError:health.lastRenderError,
+        moduleRuns:Object.fromEntries(Object.entries(readRuntime().diagnostics||{}).map(([id,d])=>[id,{runs:num(d.runs),successes:num(d.successes),errors:num(d.errors),lastState:d.lastState,lastMessage:d.lastMessage}]))},
+      checks};
+  }
+  const healthContent=()=>{
+    const h=healthSnapshot();
+    const badge={ok:'✅ OK',warn:'🟠 ATENÇÃO',error:'🔴 ERRO'};
+    const rows=h.checks.map(x=>`<div class="city"><b>${cleanStr(x.title)}</b> <span>${badge[x.status]}</span>
+      <div class="smallnote">${cleanStr(x.detail)}</div>
+      ${x.status!=='ok'&&x.fix?`<div class="smallnote">Como corrigir: ${cleanStr(x.fix)}</div>`:''}</div>`).join('');
+    return `${section('Verificar instalação e funcionamento')}
+      <div class="helpbox"><b>${h.critical?'🔴 Cliente ou instalação incompleta':h.active?'✅ Pronto para operar':h.warnings?'🟠 Script carregado; ajustes necessários':'✅ Verificação concluída'}</b>
+      <div class="smallnote">Versão ${h.version} · ${cleanStr(h.world)} · ${h.critical} erro(s), ${h.warnings} atenção(ões). A verificação não faz envios ao jogo.</div></div>
+      <div class="tools"><button class="primary" data-action="healthRefresh">Verificar novamente</button>
+        <button data-action="healthCopy">Copiar relatório</button>
+        <button data-action="healthDownload">Salvar relatório .json</button>
+        <button data-action="healthReopen">Reabrir painel</button></div>
+      ${section('Diagnóstico por componente')}
+      <div class="cityscroll" style="max-height:450px">${rows}</div>
+      ${section('Se o painel não aparece em outro PC')}
+      <p class="smallnote">1. Instale o Tampermonkey e o GrepoPilot neste navegador. 2. Em chrome://extensions (ou edge://extensions), abra Tampermonkey → Detalhes e ative <b>Permitir scripts de usuário</b> e acesso ao site. 3. No Tampermonkey, confirme que o GrepoPilot está habilitado para este endereço. 4. Recarregue o jogo com Ctrl+F5. Se o painel não aparece, o próprio script não consegue executar esta verificação.</p>
+      <p class="smallnote">ON/OFF e cada módulo são independentes: status OK do motor não significa que o jogo tenha uma ação disponível. Confira também a aba DIAG e os registros LOG.</p>`;
+  };
   const dashboard=()=>{
     const r=ruralStatus();const q=questRows();const camp=W.MM?.getModelByNameAndPlayerId?.('PlayerAttackSpot');
     const enabled=Object.entries(config.modules).filter(([,v])=>v).length;
@@ -2082,6 +2190,9 @@ let queueKindSelected='building';
   const configContent=()=>`${section('Controle global')}
     <div class="checks"><label><input type="checkbox" data-global="enabled" ${config.enabled?'checked':''}> Execução geral</label><label><input type="checkbox" data-global="dryRun" ${config.dryRun?'checked':''}> Modo simulação (sem envio)</label></div>
     <p class="smallnote">Configurações locais por mundo/jogador. Perfil entre PCs disponível sem servidor externo. Desativar todos os módulos é o estado inicial.</p>
+    ${section('Verificação de outro computador')}
+    <p class="smallnote">Se algo não funcionar, abra a aba <b>VERIFICAR</b> e use <b>Salvar relatório .json</b> para identificar exatamente o componente que falhou.</p>
+    <div class="tools"><button data-tab="VERIFICAR">Abrir verificação completa</button></div>
     ${section('Proteção durante CAPTCHA')}
     <div class="helpbox"><b>${securityBlocked()?'⚠ CAPTCHA DETECTADO — operações temporariamente suspensas':'Nenhuma verificação CAPTCHA detectada'}</b>. Ao aparecer um desafio, resolva-o diretamente no Grepolis. O GrepoPilot não preenche nem contorna CAPTCHAs. Assim que desaparecer e passar o intervalo de confirmação, as rotinas anteriormente habilitadas poderão continuar.</div>
     <div class="checks"><label><input type="checkbox" data-setting="security.notify" ${config.security.notify!==false?'checked':''}> Notificar ao detectar e liberar CAPTCHA</label></div>
@@ -2111,11 +2222,20 @@ let queueKindSelected='building';
     host.style.left=config.ui.x===null?'auto':Math.max(0,num(config.ui.x))+'px';
     host.style.right=config.ui.x===null?'20px':'auto';
     host.style.top=Math.max(0,num(config.ui.y))+'px';
-    const body=({'INÍCIO':dashboard,CIDADES:cityContent,FILA:queueContent,ESQUIVA:dodgeContent,TESTE:testContent,DIAG:diagContent,ALDEIAS:villagesContent,TROPAS:troopsContent,COMBATE:combatContent,ECONOMIA:economyContent,'MISSÕES':rewardsContent,AJUSTES:configContent,LOG:logContent}[config.ui.tab]||dashboard)();
+    const pane=({'INÍCIO':dashboard,CIDADES:cityContent,FILA:queueContent,ESQUIVA:dodgeContent,TESTE:testContent,DIAG:diagContent,VERIFICAR:healthContent,ALDEIAS:villagesContent,TROPAS:troopsContent,COMBATE:combatContent,ECONOMIA:economyContent,'MISSÕES':rewardsContent,AJUSTES:configContent,LOG:logContent}[config.ui.tab]||dashboard);
+    let body;
+    try{body=pane();health.lastRenderError='';}
+    catch(e){
+      health.lastRenderError=String(e?.message||e);
+      console.error('[GrepoPilot] Erro ao montar aba '+config.ui.tab+':',e);
+      body='<div class="helpbox">Não foi possível carregar esta aba: '+cleanStr(health.lastRenderError)+
+        '. Use a aba VERIFICAR para analisar o problema.</div>'+
+        '<div class="tools"><button data-tab="VERIFICAR">Abrir verificação</button></div>';
+    }
     shadow.querySelector('#gp-app').innerHTML=`
-      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.9.2</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
+      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.9.3</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
       ${config.ui.collapsed?'':`<div class="status"><i class="dot ${config.enabled?(config.dryRun?'sim':'live'):''}"></i>${cleanStr(STATUS())}</div>
-      <div class="tabs">${['INÍCIO','CIDADES','FILA','ALDEIAS','TROPAS','COMBATE','ESQUIVA','TESTE','DIAG','ECONOMIA','MISSÕES','AJUSTES','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
+      <div class="tabs">${['INÍCIO','CIDADES','FILA','ALDEIAS','TROPAS','COMBATE','ESQUIVA','TESTE','DIAG','VERIFICAR','ECONOMIA','MISSÕES','AJUSTES','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
       <div class="body">${body}</div><div class="foot"><button class="${config.enabled?'stop':'go'}" data-action="toggle">${config.enabled?'■ PARAR TUDO':'▶ INICIAR'}</button><span>${Object.values(config.modules).filter(Boolean).length} módulos ativos</span></div>`}`;
   };
   const CSS=`
@@ -2157,6 +2277,20 @@ let queueKindSelected='building';
         case 'collapse':config.ui.collapsed=!config.ui.collapsed;save();break;
         case 'toggle':if(syncRole()==='standby')throw Error('PC secundário: selecione Principal em AJUSTES antes de iniciar');config.enabled=!config.enabled;save();log(config.enabled?'Bot iniciado':'Bot interrompido');break;
         case 'reloadRearm':reloadSchedule(true);log('F5 automático: contagem reiniciada para '+reloadMinutes()+' minutos');break;
+        case 'healthRefresh':health.storageCache=null;log('Verificação do PC executada');break;
+        case 'healthReopen':{
+          config.ui.x=null;config.ui.y=90;config.ui.collapsed=false;config.ui.tab='VERIFICAR';save();break;
+        }
+        case 'healthCopy':{
+          const report=JSON.stringify(healthSnapshot(),null,2);
+          try{
+            if(typeof GM_setClipboard==='function')GM_setClipboard(report,'text');
+            else if(typeof navigator!=='undefined'&&navigator.clipboard?.writeText)await navigator.clipboard.writeText(report);
+            else throw Error('Área de transferência indisponível: use Salvar relatório');
+          }catch(e){throw Error('Não foi possível copiar: '+e.message);}
+          log('Relatório de compatibilidade copiado');break;
+        }
+        case 'healthDownload':download('GrepoPilot-verificacao-'+location.host+'.json',JSON.stringify(healthSnapshot(),null,2));break;
         case 'diagRefresh':log('Diagnóstico: condições reavaliadas');break;
         case 'diagExport':download('GrepoPilot-diagnostico-'+location.host+'.json',JSON.stringify({
           version:'0.9.0',world:location.host,at:new Date().toISOString(),summary:diagSnapshot()},null,2));break;
@@ -2340,7 +2474,8 @@ let queueKindSelected='building';
     if(t.id==='queueKind'){queueKindSelected=t.value;render();}
   };
   const mount=()=>{
-    if(host)return;
+    if(host?.isConnected&&shadow?.querySelector('#gp-app'))return;
+    if(host){try{host.remove()}catch{}host=null;shadow=null;}
     host=document.createElement('div');host.id='grepopilot-host';
     host.style.cssText='position:fixed;z-index:2147483000;top:90px;right:20px';
     shadow=host.attachShadow({mode:'open'});
@@ -2365,9 +2500,21 @@ let queueKindSelected='building';
     render();log('Painel carregado');
   };
   const start=()=>{
-    mount();
-    save(); // Persiste migração dos controles de aldeia da v0.2.
-    setInterval(()=>{try{securityWatch();tick()}catch(e){log(e.message,'ERROR')}},1500);
+    try{mount();}
+    catch(e){health.mountErrors++;health.lastMountError=String(e?.message||e);console.error('[GrepoPilot] Montagem inicial:',e);}
+    if(W.Game?.player_id)save(); // Evita escrever configuração na conta "unknown" antes do cliente carregar.
+    setInterval(()=>{
+      if(!host?.isConnected||!shadow?.querySelector('#gp-app')){
+        try{mount();health.lastMountError='';}
+        catch(e){health.mountErrors++;health.lastMountError=String(e?.message||e);console.error('[GrepoPilot] Tentativa de remontagem:',e);}
+      }
+    },5000);
+    setInterval(()=>{
+      try{securityWatch();Promise.resolve(tick()).catch(e=>{
+        health.lastTickResult='falha no ciclo: '+String(e?.message||e);
+        log('Motor: '+health.lastTickResult,'ERROR');
+      });}catch(e){health.lastTickResult='erro: '+String(e?.message||e);log('Motor: '+health.lastTickResult,'ERROR');}
+    },1500);
     setInterval(()=>{try{autoReloadPulse()}catch(e){log('F5 automático: '+e.message,'ERROR')}},10000);
     setInterval(()=>{dodgePulse().catch(e=>log(`Esquiva: ${e.message}`,'ERROR'))},125);
     setInterval(()=>{try{testTick();if(config.ui.tab==='TESTE'&&shadow){const a=testRead().active;const el=shadow.getElementById('testCountdown');if(a&&el)el.textContent=Math.max(0,(a.impactMs-dodgeNow())/1000).toFixed(1)+'s';}}catch(e){log(`Teste: ${e.message}`,'ERROR')}},250);
