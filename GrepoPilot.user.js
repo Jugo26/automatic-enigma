@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GrepoPilot - Painel de Automacao
 // @namespace    https://grepolis.com/
-// @version      0.9.4
+// @version      0.9.5
 // @updateURL    https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.meta.js
 // @downloadURL  https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.user.js
 // @homepageURL  https://github.com/Jugo26/automatic-enigma/tree/grepopilot-updates
@@ -113,10 +113,10 @@
     ruralTrade: {wanted:'wood',minRatio:1,maxAmount:3000},
     ruralUpgrade: {unlock:false,upgrade:false,targetLevel:3},
     troopProfiles: {},
-    quests: {rewardAction:'stash',onlySatisfied:true},
+    quests: {rewardAction:'stash',onlySatisfied:true,autoObjectives:false,preferred:'wise',allowResourceCost:false,maxResourceCost:1500,allowTroopCost:false,maxTroopCost:50},
     banditRewards: {stashIfPossible:true},
     culture: {festival:false,triumph:false,theater:false},
-    bootcamp: {homeTownId:0,stashRewards:true},
+    bootcamp: {homeTownId:0,stashRewards:true,useHero:true},
     cave: {minIron:15000,keepIron:5000},
     commands: {jobs:[]},
     alerts: {desktop:true,checkAll:true},
@@ -1251,6 +1251,33 @@ function policyForUnit(key,def){
     }
     return false;
   }
+
+  function banditHeroes(){
+    // Somente heróis explicitamente atribuídos a uma cidade. Não desloca heróis.
+    let all=[];
+    try{
+      const raw=W.MM?.getModels?.()?.Hero??W.MM?.getModels?.()?.Heroes;
+      all=Array.isArray(raw)?raw:Object.values(raw||{});
+    }catch{}
+    for(const k of ['Hero','Heroes','PlayerHero']){
+      try{all.push(...models(k));}catch{}
+    }
+    const seen=new Set();
+    return all.map(h=>{
+      const a=h?.attributes||h||{};
+      const id=Number(a.hero_id??a.id??h?.id),townId=Number(a.town_id??a.assigned_town_id??a.home_town_id);
+      const state=String(a.state??a.status??'').toLowerCase();
+      const recovering=a.is_wounded===true||a.wounded===true||Number(a.wounded_until)>Date.now()/1000||
+        Number(a.recovery_end_at)>Date.now()/1000||['wounded','recovering','assigning','moving','attacking','on_mission'].includes(state);
+      const busy=a.is_busy===true||a.is_attacking===true||a.is_traveling===true||a.in_assignment===true||
+        a.in_combat===true;
+      return {id,townId,name:String(a.name??a.hero_name??'Herói '+id),available:!recovering&&!busy};
+    }).filter(h=>Number.isSafeInteger(h.id)&&h.id>0&&Number.isSafeInteger(h.townId)&&h.townId>0&&!seen.has(h.id)&&seen.add(h.id));
+  }
+  function banditHeroFor(t){
+    if(!config.bootcamp.useHero)return null;
+    return banditHeroes().find(h=>h.townId===Number(t?.id)&&h.available)||null;
+  }
   async function bootcamp(){
     const camp=W.MM?.getModelByNameAndPlayerId?.('PlayerAttackSpot');
     if(!camp||typeof camp.getLevel?.()==='undefined')return false;
@@ -1277,8 +1304,12 @@ function policyForUnit(key,def){
       runtime.lastBanditStage=stage;
       writeRuntime(runtime);
     }
-    await action('frontend_bridge','execute',{model_url:`PlayerAttackSpot/${W.Game.player_id}`,action_name:'attack',arguments:units});
-    log(`Bandidos fase ${stage}: ${config.dryRun?'SIMULAÇÃO ':''}ataque por ${tName(home)} com ${total} unidades (${Object.entries(units).map(([k,v])=>`${k} ${v}`).join(', ')})`);
+    const hero=banditHeroFor(home);
+    // No ataque PvE, hero_id é incluído apenas se um herói elegível for encontrado.
+    // A aceitação desse campo precisa ser confirmada em um cliente Grepolis real.
+    const attackArgs=hero?{...units,hero_id:hero.id}:units;
+    await action('frontend_bridge','execute',{model_url:`PlayerAttackSpot/${W.Game.player_id}`,action_name:'attack',arguments:attackArgs});
+    log(`Bandidos fase ${stage}: ${config.dryRun?'SIMULAÇÃO ':''}ataque por ${tName(home)} com ${total} unidades (${Object.entries(units).map(([k,v])=>`${k} ${v}`).join(', ')})${hero?' · herói '+hero.name+' #'+hero.id:' · sem herói disponível'}`);
     return true;
   }
   async function cave(){
@@ -2279,6 +2310,8 @@ let queueKindSelected='building';
     <button data-action="setBootcampHome">Definir cidade do acampamento</button>
     <div class="smallnote">Origem: ${cleanStr(config.bootcamp.homeTownId?tName(townBy(config.bootcamp.homeTownId)):'cidade atual (até definir)')} · O bot respeita a espera do acampamento e não repete ataques em trânsito.</div>
     <p class="smallnote"><b>Enviar todas as tropas:</b> o próximo ataque ao acampamento utilizará 100% das unidades terrestres presentes nesta cidade (inclusive espadachins, arqueiros e criaturas míticas disponíveis), sem reservar tropas. Navios e milícia não entram nesta batalha.</p>
+    <div class="checks"><label><input type="checkbox" data-setting="bootcamp.useHero" ${config.bootcamp.useHero?'checked':''}> Incluir herói disponível da cidade no ataque PvE</label></div>
+    <div class="smallnote">Herói: ${(()=>{const hero=banditHeroFor(townBy(num(config.bootcamp.homeTownId)||num(W.Game?.townId)));return hero?cleanStr(hero.name)+' #'+hero.id:'Nenhum herói elegível detectado';})()}. Somente heróis atribuídos à cidade, saudáveis e sem outra missão.</div>
     ${section('Acampamento e alertas')}
     <div class="checks"><label><input type="checkbox" data-setting="bootcamp.stashRewards" ${config.bootcamp.stashRewards?'checked':''}> Guardar recompensas permitidas</label>
     <label><input type="checkbox" data-setting="alerts.desktop" ${config.alerts.desktop?'checked':''}> Notificações desktop</label></div>
@@ -2346,7 +2379,7 @@ let queueKindSelected='building';
         '<div class="tools"><button data-tab="VERIFICAR">Abrir verificação</button></div>';
     }
     shadow.querySelector('#gp-app').innerHTML=`
-      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.9.4</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
+      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.9.5</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
       ${config.ui.collapsed?'':`<div class="status"><i class="dot ${config.enabled?(config.dryRun?'sim':'live'):''}"></i>${cleanStr(STATUS())}</div>
       <div class="tabs">${['COMEÇAR','INÍCIO','CIDADES','FILA','ALDEIAS','TROPAS','COMBATE','ESQUIVA','TESTE','DIAG','VERIFICAR','ECONOMIA','MISSÕES','AJUSTES','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
       <div class="body">${body}</div><div class="foot"><button class="${config.enabled?'stop':'go'}" data-action="toggle">${config.enabled?'■ PARAR TUDO':'▶ INICIAR'}</button><span>${Object.values(config.modules).filter(Boolean).length} módulos ativos</span></div>`}`;
