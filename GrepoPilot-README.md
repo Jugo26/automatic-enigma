@@ -253,3 +253,36 @@ Os indicadores **OK / ATENÇÃO / ERRO** mostram a condição e, quando necessá
 **Limitação:** uma verificação interna não consegue constatar nem reparar uma extensão bloqueada que impediu o script de executar. Por isso os passos manuais acima continuam necessários.
 
 Testes locais simulados: abertura do painel antes das APIs do jogo; reconhecimento posterior da conta e restauração da configuração correta; PC secundário; bot pausado; modo simulação; erros de renderização sem queda da janela; armazenamento local bloqueado; falha e recuperação da montagem inicial. Mantidas todas as rotinas anteriores. Sem validação em uma sessão real de Grepolis instalada em outro PC.
+
+## GrepoPilot 0.9.4 — Versão compartilhável para múltiplos jogadores e mundos
+
+### Instalação de novos jogadores
+
+**Guia público:** [GrepoPilot-INSTALACAO-PUBLICA.md](https://github.com/Jugo26/automatic-enigma/blob/grepopilot-updates/GrepoPilot-INSTALACAO-PUBLICA.md)
+
+**Instalar no Tampermonkey:** https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.user.js
+
+- Script distribuído pelo repositório público. O cabeçalho contempla as URLs `https://*.grepolis.com/game` e `https://*.grepolis.com/game/*`.
+- O primeiro acesso com uma nova conta abre **COMEÇAR**, com o ID do próprio jogador, servidor, cidades disponíveis, acesso ao diagnóstico e botões de simulação ou configuração manual.
+- Contas novas iniciam com **bot desligado e Modo simulação ativo**, sem metas ou cidades predefinidas de outro usuário.
+- Cada conta e mundo possui armazenamento **separado por `servidor:player_id`**, inclusive se mais de um jogador utilizar o mesmo navegador. Ao detectar troca de conta, o script atualiza seu escopo de dados e bloqueia ações da configuração antiga até a mudança ser processada.
+- Respostas de requisições antigas são descartadas se o usuário trocar de conta enquanto o cliente aguarda uma resposta.
+- Usuários de versões anteriores mantêm suas configurações e não recebem um assistente de primeiro uso forçado.
+
+### Modelos públicos para compartilhar sem dados pessoais
+
+A aba **AJUSTES** e a aba **COMEÇAR** permitem exportar **GrepoPilot-modelo-publico.json** e importar o JSON de outro jogador, independentemente da conta/mundo.
+
+- Compartilha somente opções gerais: módulos, intervalos, coleta, lotes, comércio inteligente, regras de aldeias, diagnósticos/alertas, margem de esquiva, F5 e proteção durante CAPTCHA.
+- **Não compartilha** ID do jogador, mundo, cidade, destinos de comércio, metas por cidade, alvos de recrutamento, ordens de ataque/apoio ou estado de sessão.
+- A importação usa uma **lista branca** de propriedades primitivas dos padrões de configuração. Quaisquer campos extras, como `trade.routes` e `commands.jobs`, são descartados.
+- A importação **não apaga metas pessoais** de quem recebe; pausa a execução e liga o Modo simulação.
+- **Perfis entre PCs** seguem restritos à mesma conta/mundo e são diferentes de modelos compartilháveis.
+
+### Compatibilidade, limitações e testes
+
+- Verificação de conta, modelos e AJAX já existente em **VERIFICAR** permanece disponível para cada jogador.
+- Para instalar no Chrome/Edge, os jogadores precisam habilitar o uso de scripts e as permissões de acesso ao domínio no Tampermonkey; isso não pode ser liberado pelo próprio userscript.
+- A publicação no GitHub não significa aprovação oficial do Grepolis. Consulte a [lista de scripts aprovados](https://support.innogames.com/kb/Grepolis/pt_BR/5977); a distribuição para uso dentro do jogo depende da avaliação pela equipe oficial.
+- Testes simulados: jogador novo sem ativação automática, assistente de primeiro uso, troca de conta e restauração da configuração original, isolamento entre mundos e jogadores, bloqueio de comandos no período de troca de perfil, descarte de respostas atrasadas, modelo público sem destinos nem metas e rejeição de propriedades extras. As rotinas anteriores de coleta, fila, comércio, F5 e esquiva permanecem no script.
+- Não houve validação prática em todos os mercados Grepolis, navegadores ou versões do cliente. O monitoramento de compatibilidade indica quando dados não estão disponíveis.
