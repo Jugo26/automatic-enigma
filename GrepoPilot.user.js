@@ -1847,7 +1847,9 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
         return 'Ataque chegando em breve';
       const fired=readFired();
       if((config.commands?.jobs||[]).some(job=>{
-        if(job.enabled===false||fired?.[job.id])return false;
+        if(job.enabled===false)return false;
+        if(fired?.[job.id]?.status==='pendente')return true;
+        if(fired?.[job.id])return false;
         const at=Date.parse(job.sendAt);
         return Number.isFinite(at)&&at>=now-windowMs/2&&at<=now+windowMs;
       }))return 'Comando agendado próximo do horário';
