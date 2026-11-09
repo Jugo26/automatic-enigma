@@ -1206,10 +1206,129 @@ function policyForUnit(key,def){
     if(a.town_id&&townBy(a.town_id))return townBy(a.town_id);
     return towns().sort((a,b)=>Number(a.id)-Number(b.id))[0]||null;
   };
-  const questRows=()=>models('IslandQuest').filter(q=>q.attributes?.state==='satisfied' && q.attributes?.progressable_id!==undefined && q.attributes?.progressable_id!==null);
+
+  const islandQuestAll=()=>{
+    const all=models('IslandQuest');
+    if(all.length)return all;
+    try{
+      const raw=W.MM?.getModels?.()?.IslandQuest||W.MM?.getModels?.()?.IslandQuests||{};
+      return Array.isArray(raw)?raw:Object.values(raw);
+    }catch{return [];}
+  };
+  const questRows=()=>islandQuestAll().filter(q=>q.attributes?.state==='satisfied'&&
+    q.attributes?.progressable_id!==undefined&&q.attributes?.progressable_id!==null);
+  const islandQuestInfo=(q)=>{
+    const a=q?.attributes||q||{},cfg=a.configuration||{};
+    const objective=[a.objective,a.task,a.current_task,cfg.objective,cfg.task,cfg.requirements]
+      .find(x=>x&&typeof x==='object'&&!Array.isArray(x))||null;
+    const type=String(objective?.type??objective?.kind??a.objective_type??a.quest_type??'').toLowerCase();
+    const id=a.progressable_id??a.id??q?.id;
+    const town=townForQuest(a);
+    const state=String(a.state??'unknown').toLowerCase();
+    return {id,state,type,objective,town,
+      name:String(a.name||a.title||'Missão '+String(id??'?')),
+      model:q,raw:a};
+  };
+  function questActionCandidates(info){
+    const a=info.raw,model=info.model;
+    const sources=[a.available_actions,a.availableActions,a.actions,a.configuration?.available_actions,
+      typeof model?.getAvailableActions==='function'?model.getAvailableActions():null];
+    const objects=sources.flatMap(x=>Array.isArray(x)?x:x&&typeof x==='object'?Object.values(x):[]);
+    return objects.filter(x=>x&&typeof x==='object').map(x=>({
+      name:String(x.action_name??x.actionName??x.name??''),
+      model_url:String(x.model_url??x.modelUrl??'IslandQuests'),
+      arguments:x.arguments??x.args??null,
+      option:String(x.option??x.side??x.choice??x.arguments?.option??'').toLowerCase(),
+      cost:x.cost??x.resources??x.arguments?.resources??null,
+      troops:x.troops??x.units??x.arguments?.units??null
+    })).filter(x=>/^IslandQuests?(?:\/[0-9]+)?$/.test(x.model_url)&&
+      ['acceptQuest','chooseQuest','accept','chooseOption','selectOption',
+        'fulfill','fulfillTask','completeObjective','submitTask'].includes(x.name)&&
+      x.arguments&&typeof x.arguments==='object'&&!Array.isArray(x.arguments));
+  }
+  const questActionAllowed=(op,kind)=>{
+    const isDecision=['acceptQuest','chooseQuest','accept','chooseOption','selectOption'].includes(op.name);
+    if(kind==='decision'&&!isDecision||kind==='fulfill'&&isDecision)return false;
+    if(isDecision&&op.option&&['wise','aggressive'].includes(op.option)&&
+      op.option!==config.quests.preferred)return false;
+    const cost=op.cost||{},troops=op.troops||{};
+    const resources=['wood','stone','iron'].reduce((sum,k)=>sum+Math.max(0,num(cost[k])),0);
+    const lost=Object.values(troops).reduce((sum,v)=>sum+Math.max(0,num(v)),0);
+    if(resources>0&&(!config.quests.allowResourceCost||resources>num(config.quests.maxResourceCost)))return false;
+    if(lost>0&&(!config.quests.allowTroopCost||lost>num(config.quests.maxTroopCost)))return false;
+    return true;
+  };
+  function islandQuestPlan(info){
+    if(info.state==='satisfied')return {type:'reward',why:'Recompensa pronta'};
+    if(['closed','completed','done','expired','failed'].includes(info.state))return {type:'skip',why:'Missão encerrada'};
+    if(!info.town)return {type:'wait',why:'Cidade da missão indisponível'};
+    const objective=info.objective||{},key=String(objective.building_type??objective.research_type??
+      objective.unit_type??objective.building??objective.research??objective.unit??objective.key??objective.id??'');
+    const target=Math.floor(num(objective.target_level??objective.target??objective.level??objective.count??objective.amount,1));
+    const id=Number(info.town.id);
+    if(config.quests.autoObjectives&&['build','building','upgrade_building'].includes(info.type)&&
+       W.GameData?.buildings?.[key]&&target>0)
+      return {type:'build',townId:id,key,target,why:'Construir '+key+' até nível '+target};
+    if(config.quests.autoObjectives&&['research','technology'].includes(info.type)&&W.GameData?.researches?.[key])
+      return {type:'research',townId:id,key,target:1,why:'Pesquisar '+key};
+    if(config.quests.autoObjectives&&['recruit','train','units'].includes(info.type)&&
+      W.GameData?.units?.[key]&&target>0)
+      return {type:'recruit',townId:id,key,target,why:'Recrutar '+target+' '+key};
+    if(['waiting','wait','time'].includes(info.type))
+      return {type:'wait',why:'Aguardando período definido pelo jogo'};
+    const actions=questActionCandidates(info);
+    const decision=actions.find(op=>questActionAllowed(op,'decision'));
+    if(['available','offered','new','unstarted','pending'].includes(info.state)&&decision)
+      return {type:'action',op:decision,why:'Escolher opção disponível no cliente'};
+    const fulfillment=actions.find(op=>questActionAllowed(op,'fulfill'));
+    if(['active','accepted','started','in_progress','progressing','satisfiable'].includes(info.state)&&fulfillment)
+      return {type:'action',op:fulfillment,why:'Cumprir objetivo oferecido pelo cliente'};
+    return {type:'unsupported',why:actions.length?'Opções não autorizadas pelo limite de custo ou preferência':
+      'Objetivo ainda sem ação compatível identificada no cliente'};
+  }
+  async function islandQuestProgress(){
+    if(config.quests.autoObjectives!==true)return false;
+    const rt=readRuntime(),now=Date.now();rt.islandQuestActions??={};
+    for(const q of islandQuestAll()){
+      const info=islandQuestInfo(q);
+      if(info.id===undefined||info.id===null||info.state==='satisfied')continue;
+      const plan=islandQuestPlan(info),id=String(info.id);
+      if(plan.type==='build'||plan.type==='research'||plan.type==='recruit'){
+        if(config.dryRun){log('SIMULAÇÃO missão '+id+': '+plan.why);return true;}
+        if(plan.type==='build'){
+          config.build.targets[plan.townId]??={};
+          if(num(config.build.targets[plan.townId][plan.key])>=plan.target)continue;
+          config.build.targets[plan.townId][plan.key]=plan.target;config.modules.build=true;
+        }else if(plan.type==='research'){
+          config.research.queue[plan.townId]??=[];
+          if(config.research.queue[plan.townId].includes(plan.key))continue;
+          config.research.queue[plan.townId].push(plan.key);config.modules.research=true;
+        }else{
+          config.recruit.targets[plan.townId]??={};
+          if(num(config.recruit.targets[plan.townId][plan.key])>=plan.target)continue;
+          config.recruit.targets[plan.townId][plan.key]=plan.target;config.modules.recruit=true;
+        }
+        nextRun[plan.type]=0;
+        save();log('Missão '+id+': objetivo programado na cidade '+plan.townId+' — '+plan.why);return true;
+      }
+      if(plan.type!=='action'||!plan.op||!info.town)continue;
+      const key=id+':'+plan.op.name;
+      if(now-num(rt.islandQuestActions[key])<120000)continue;
+      if(!config.dryRun){
+        // Marcar antes do envio para não repetir um consumo de tropas/recursos se a resposta falhar.
+        rt.islandQuestActions[key]=now;writeRuntime(rt);
+      }
+      await action('frontend_bridge','execute',{model_url:plan.op.model_url,action_name:plan.op.name,
+        arguments:plan.op.arguments,town_id:Number(info.town.id),nl_init:true});
+      log('Missão '+id+': '+plan.why+' ('+plan.op.name+')'+(config.dryRun?' — SIMULAÇÃO':''));
+      return true;
+    }
+    return false;
+  }
+
   async function quests(){
     const ready=questRows();
-    if(!ready.length)return false;
+    if(!ready.length)return islandQuestProgress();
     const rt=readRuntime(),now=Date.now();rt.questAttempts??={};
     for(const q of ready){
       const a=q.attributes||{},pid=a.progressable_id,key=String(pid),town=townForQuest(a);
@@ -1220,7 +1339,7 @@ function policyForUnit(key,def){
       if(!config.dryRun){rt.questAttempts[key]=now;rt.questAttempts=Object.fromEntries(Object.entries(rt.questAttempts).filter(([,v])=>now-num(v)<3600000));writeRuntime(rt);}
       log(`Missão ${key}: recompensa ${args.reward_action==='stash'?'guardada':'recebida'} (${tName(town)})`);return true;
     }
-    return false;
+    return islandQuestProgress();
   }
   async function banditRewards(){
     const camp=W.MM?.getModelByNameAndPlayerId?.('PlayerAttackSpot');
@@ -1860,6 +1979,13 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
       if(id==='dodge')return dodgeIncoming().length?'Ataque detectado; aguardando janela de esquiva':'Nenhum ataque confirmado';
       if(id==='ruralTrade'||id==='ruralUpgrade'||id==='ruralUnlock')return 'Aguardando aldeias, recursos ou disponibilidade';
       if(id==='bootcamp')return 'Aguardando nível do acampamento, tropas ou recarga';
+      if(id==='quests'){
+        const all=islandQuestAll().map(q=>islandQuestPlan(islandQuestInfo(q)));
+        if(!all.length)return 'Nenhuma missão de ilha carregada pelo cliente';
+        const actionable=all.filter(x=>['reward','action','build','recruit','research'].includes(x.type)).length;
+        return actionable?String(actionable)+' missão(ões) com próxima etapa identificada':
+          'Objetivos ainda sem ação compatível; veja MISSÕES';
+      }
       return 'Aguardando condição do jogo ou próximo ciclo';
     }catch(e){return 'Dados insuficientes: '+String(e.message||e).slice(0,100);}
   }
@@ -2319,9 +2445,20 @@ let queueKindSelected='building';
   };
   const rewardsContent=()=>{
     const ready=questRows();const camp=W.MM?.getModelByNameAndPlayerId?.('PlayerAttackSpot');
+    const tasks=islandQuestAll().map(q=>{const info=islandQuestInfo(q);return {info,plan:islandQuestPlan(info)};});
     const rewards=ready.map(q=>`<div class="city"><b>${cleanStr(q.attributes?.name||q.attributes?.progressable_id)}</b><div>✅ Concluída · ilha ${cleanStr(String(q.attributes?.configuration?.island_x??'?'))}:${cleanStr(String(q.attributes?.configuration?.island_y??'?'))}</div></div>`).join('');
     return `${moduleNames()}<div class="stats"><div><b>${ready.length}</b>Missões prontas</div><div><b>${camp?.hasReward?.()?'1':'0'}</b>Recompensa PvE</div></div>
-      ${section('Missões de ilha')}<p class="smallnote">Reivindica apenas missões marcadas pelo jogo como <b>concluídas (satisfied)</b>. Não começa missões, não gasta unidades e escolhe a cidade da mesma ilha quando houver coordenadas.</p>
+      ${section('Missões de ilha')}
+      <div class="checks"><label><input type="checkbox" data-setting="quests.autoObjectives" ${config.quests.autoObjectives?'checked':''}> Executar objetivos identificados automaticamente</label></div>
+      <div class="formrow"><span>Lado preferido</span><select data-setting="quests.preferred">${optionList([['wise','Sabedoria'],['aggressive','Guerra']],config.quests.preferred)}</select></div>
+      <div class="checks"><label><input type="checkbox" data-setting="quests.allowResourceCost" ${config.quests.allowResourceCost?'checked':''}> Permitir objetivos com gasto de recursos</label>
+      <label><input type="checkbox" data-setting="quests.allowTroopCost" ${config.quests.allowTroopCost?'checked':''}> Permitir sacrifício de tropas</label></div>
+      <div class="formrow"><span>Máximo de recursos por objetivo (total)</span><input type="number" min="0" data-setting="quests.maxResourceCost" value="${config.quests.maxResourceCost}"></div>
+      <div class="formrow"><span>Máximo de tropas por objetivo</span><input type="number" min="0" data-setting="quests.maxTroopCost" value="${config.quests.maxTroopCost}"></div>
+      <p class="smallnote">Constrói, pesquisa ou recruta quando a missão fornece uma meta explícita; também escolhe e cumpre etapas quando o próprio modelo expõe um comando com argumentos verificados. Aguarda objetivos de tempo e não inventa comandos para missões desconhecidas. Gastos e sacrifícios vêm bloqueados por padrão.</p>
+      ${section('Objetivos detectados')}
+      <div class="cityscroll" style="max-height:280px">${tasks.map(x=>`<div class="city"><b>${cleanStr(x.info.name)}</b> · ${cleanStr(x.info.state)}<div class="smallnote">${cleanStr(x.plan.why)}</div></div>`).join('')||'<p class="smallnote">Nenhuma missão carregada pelo cliente.</p>'}</div>
+      <div class="tools"><button data-action="questInspect">Exportar dados técnicos das missões</button></div>
       <div class="formrow"><span>Recompensas</span><select data-setting="quests.rewardAction">${optionList([['stash','Guardar quando possível'],['use','Utilizar / receber']],config.quests.rewardAction)}</select></div>
       <div class="villages">${rewards||'<p class="smallnote">Nenhuma missão concluída encontrada agora.</p>'}</div>
       ${section('Recompensas do acampamento')}<p class="smallnote">Recebe recompensas após as batalhas dos bandidos. Se a recompensa puder ser guardada, respeita a opção abaixo. Funciona independentemente do ataque PvE.</p>
@@ -2457,6 +2594,14 @@ let queueKindSelected='building';
           log('Relatório de compatibilidade copiado');break;
         }
         case 'healthDownload':download('GrepoPilot-verificacao-'+location.host+'.json',JSON.stringify(healthSnapshot(),null,2));break;
+        case 'questInspect':{
+          const report=islandQuestAll().map(q=>{
+            const info=islandQuestInfo(q),plan=islandQuestPlan(info);
+            return {id:info.id,state:info.state,type:info.type,objective:info.objective,
+              plan:{type:plan.type,reason:plan.why},visibleFields:Object.keys(info.raw||{})};
+          });
+          download('GrepoPilot-missoes-'+location.host+'.json',JSON.stringify(report,null,2));break;
+        }
         case 'diagRefresh':log('Diagnóstico: condições reavaliadas');break;
         case 'diagExport':download('GrepoPilot-diagnostico-'+location.host+'.json',JSON.stringify({
           version:'0.9.4',world:location.host,at:new Date().toISOString(),summary:diagSnapshot()},null,2));break;
