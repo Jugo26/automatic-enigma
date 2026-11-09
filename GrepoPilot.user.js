@@ -221,7 +221,7 @@
     if (config.ui.tab === 'LOG') render();
   };
   const delay = ms => new Promise(r=>setTimeout(r,ms));
-  const connected = () => Boolean(W.ITowns?.towns && W.MM && W.gpAjax && W.Game);
+  const connected = () => Boolean(W.Game?.player_id && W.ITowns?.towns && typeof W.MM?.getModels==='function' && typeof W.MM?.getOnlyCollectionByName==='function' && typeof W.gpAjax?.ajaxPost==='function');
   const towns = () => connected()? Object.values(W.ITowns.towns).filter(t=>t && t.id): [];
   const townBy = id => W.ITowns?.towns?.[id] || W.ITowns?.getTown?.(id);
   const models = key => {
