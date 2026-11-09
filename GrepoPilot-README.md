@@ -201,3 +201,19 @@ Adicionada detecção de verificações CAPTCHA **visíveis na página** do Grep
 - A detecção é baseada nos elementos visíveis do cliente: desafios proprietários que não utilizem os seletores monitorados podem não ser identificados. O recurso foi testado em ambiente simulado, sem validação ao vivo.
 
 Testes simulados concluídos: operação normal sem desafio; pausa com CAPTCHA visível; nenhum envio de comando durante o desafio; interrupção de teste prático preservando a solicitação de cancelamento; status de diagnóstico; liberação após intervalo de confirmação; manutenção de configuração; não detecção de widget oculto; preservação das funções anteriores.
+
+## GrepoPilot 0.9.2 — F5 automático com intervalo configurável
+
+O GrepoPilot agora pode executar o equivalente a **F5 (recarregar a página atual do Grepolis)** periodicamente.
+
+- Em **AJUSTES → Atualização automática da página (F5)**, habilite/desabilite o recurso e defina o intervalo. **Padrão: ativado, 30 minutos**; permitido de 10 a 720 minutos.
+- O F5 só funciona enquanto a **execução geral do bot estiver ligada** e o computador estiver em modo **Principal**. Não força reinício em PC Secundário ou quando o bot está pausado.
+- **Proteção contra interrupções:** se houver CAPTCHA ou atraso de liberação, requisição ao jogo em andamento, escritas de automação em curso, teste ativo, apoio/esquiva a cancelar, ataque chegando em breve ou comando agendado próximo do horário (inclusive pendente de confirmação), o F5 é **adiado até a condição passar**.
+- Margem de segurança para ataques e comandos configurável (padrão 180 segundos). O sistema também espera quando o usuário estiver editando um campo dentro do GrepoPilot.
+- O próximo horário e o último F5 são armazenados **localmente por conta e mundo**. O prazo sobrevive ao reload para não entrar em ciclo de atualização ao reiniciar.
+- Botão **Reiniciar contagem do F5** na aba AJUSTES; alterações no intervalo também reiniciam a contagem. O log registra quando uma atualização foi adiada e por quê.
+- A rotina verifica o relógio a cada 10 segundos. O navegador pode atrasar execução em abas ocultas/suspensas, então o intervalo não garante precisão de segundos.
+- O F5 **não resolve nem contorna CAPTCHA** e não retoma rotinas desativadas pelo usuário.
+- Configurações anteriores, Auto Farm, esquivas, comércio inteligente, diagnóstico e perfis entre PCs foram preservados.
+
+**Testes automatizados locais:** período inicial de 30 minutos, bot pausado, PC secundário, teste em andamento, esquiva pendente, CAPTCHA visível, requisição ainda em voo, comando próximo e envio pendente, ataque inimigo com chegada próxima, liberação da atualização ao ficar seguro, somente um reload por prazo, persistência do horário após nova inicialização e interface de configuração. Sem teste de navegação com uma sessão real do Grepolis.
