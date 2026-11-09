@@ -6,6 +6,7 @@
 // @downloadURL  https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.user.js
 // @homepageURL  https://github.com/Jugo26/automatic-enigma/tree/grepopilot-updates
 // @description  Painel modular local: farm, obras, tropas, academia, comercio, aldeias, cultura, acampamento PvE, modelos de cidades/tropas, desbloqueio e evolução de aldeias, recompensas de missões/bandidos, conclusão grátis e comandos agendados.
+// @match        https://*.grepolis.com/game
 // @match        https://*.grepolis.com/game/*
 // @run-at       document-idle
 // @grant        unsafeWindow
@@ -214,26 +215,29 @@
   }
 
   // Modelo compartilhável sem IDs de cidades, ordens de ataque nem dados pessoais.
-  const templatePayload=()=>{
-    const c=config;
-    return {
-      format:'grepopilot-template',schema:1,version:'0.9.4',
-      exportedAt:new Date().toISOString(),
-      settings:{
-        modules:Object.fromEntries(Object.keys(MODULES).map(id=>[id,Boolean(c.modules?.[id])])),
-        intervals:Object.fromEntries(Object.keys(MODULES).map(id=>[id,Number(c.intervals?.[id]??MODULES[id][2])])),
-        farm:{duration:c.farm?.duration,captainBulk:!!c.farm?.captainBulk},
-        finishFree:{maxRemainingSeconds:c.finishFree?.maxRemainingSeconds},
-        smartQueue:{maxBatch:c.smartQueue?.maxBatch,mode:c.smartQueue?.mode,autoPrereqs:c.smartQueue?.autoPrereqs},
-        recruit:Object.fromEntries(['maxBatch','minBatch','shipBatch','minShipBatch','mythicalBatch','minMythicalBatch','maxQueueSlots'].map(k=>[k,c.recruit?.[k]])),
-        trade:Object.fromEntries(['minReserve','maxFill','intelligent','minCargo','cooldownMinutes','pendingMinutes','maxGoals'].map(k=>[k,c.trade?.[k]])),
-        ruralTrade:c.ruralTrade,ruralUpgrade:c.ruralUpgrade,
-        quests:c.quests,banditRewards:c.banditRewards,culture:c.culture,cave:c.cave,
-        alerts:c.alerts,security:c.security,autoReload:c.autoReload,
-        dodge:Object.fromEntries(['leadSeconds','returnAfterSeconds','waveGapSeconds','land','naval'].map(k=>[k,c.dodge?.[k]]))
-      }
+
+  const templateKeys=['farm','finishFree','recruit','smartQueue','trade',
+    'ruralTrade','ruralUpgrade','quests','banditRewards','culture','cave',
+    'alerts','security','autoReload','dodge'];
+  const templateSettings=()=>{
+    const output={
+      modules:Object.fromEntries(Object.keys(MODULES).map(id=>[id,Boolean(config.modules?.[id])])),
+      intervals:Object.fromEntries(Object.keys(MODULES).map(id=>[id,Number(config.intervals?.[id]??MODULES[id][2])]))
     };
+    // Campos declarados no padrão: nenhum identificador pessoal pode entrar em um modelo público.
+    for(const key of templateKeys){
+      const allowed=Object.entries(BASE[key]||{}).filter(([,value])=>['number','string','boolean'].includes(typeof value));
+      output[key]=Object.fromEntries(allowed.map(([sub,defaultValue])=>{
+        const value=config[key]?.[sub];
+        return [sub,typeof value===typeof defaultValue?value:defaultValue];
+      }));
+    }
+    return output;
   };
+  const templatePayload=()=>({
+    format:'grepopilot-template',schema:1,version:'0.9.4',
+    exportedAt:new Date().toISOString(),settings:templateSettings()
+  });
   const templateExport=()=>JSON.stringify(templatePayload(),null,2);
   function templateImport(rawText){
     if(typeof rawText!=='string'||rawText.length>1000000)throw Error('Modelo muito grande ou inválido');
@@ -256,7 +260,9 @@
       for(const sub of Object.keys(clean[key]||{})){
         if(!Object.prototype.hasOwnProperty.call(incoming[key],sub))continue;
         const value=incoming[key][sub];
-        if(value===null||['string','number','boolean'].includes(typeof value))filtered[sub]=value;
+        const expected=clean[key][sub];
+        if(typeof value===typeof expected&&
+          (typeof value!=='number'||Number.isFinite(value)))filtered[sub]=value;
       }
       safe[key]=filtered;
     }
@@ -322,6 +328,7 @@
     if (config.dryRun && !forceLive) {log(`SIMULACAO ${controller}/${method} ${JSON.stringify(data).slice(0,160)}`);return {dryRun:true};}
     if (!connected()) throw new Error('Cliente Grepolis indisponível.');
     inFlightActions++;
+    const requestScope=scope;
     return new Promise((resolve,reject) => {
       let done=false;
       const timeout=setTimeout(()=>{if(!done){done=true;reject(new Error(`Resposta não confirmada: ${controller}/${method}`));}},13000);
@@ -329,6 +336,8 @@
         W.gpAjax.ajaxPost(controller,method,data,false,response=>{
           if(done) return;
           done=true;clearTimeout(timeout);
+          if(scope!==requestScope||currentScope()!==requestScope)
+            return reject(new Error('Conta mudou durante a solicitação; resposta antiga descartada'));
           if(response?.success===false || response?.json?.success===false || response?.error || response?.json?.error) return reject(new Error(JSON.stringify(response?.json?.error || response?.error || 'Falha reportada pelo jogo')));
           resolve(response);
         });
