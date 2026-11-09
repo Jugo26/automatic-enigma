@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GrepoPilot - Painel de Automacao
 // @namespace    https://grepolis.com/
-// @version      0.9.1
+// @version      0.9.2
 // @updateURL    https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.meta.js
 // @downloadURL  https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.user.js
 // @homepageURL  https://github.com/Jugo26/automatic-enigma/tree/grepopilot-updates
@@ -122,6 +122,7 @@
     attackTest: {delay:20,wave:0,mode:'preview'},
     sync: {role:'primary'},
     security: {notify:true,resumeAfterSeconds:5},
+    autoReload: {enabled:true,minutes:30,safeWindowSeconds:180},
     ui: {x:null,y:90,tab:'INÍCIO',collapsed:false}
   };
   const clone = v => JSON.parse(JSON.stringify(v));
@@ -223,10 +224,12 @@
     try {return W.MM.getOnlyCollectionByName(key)?.models || []} catch {return []}
   };
   const resource = t => t?.resources?.() || {};
+  let inFlightActions=0;
   const action = async (controller,method,data,forceLive=false) => {
     if(securityWatch())throw new Error('CAPTCHA ativo: comando suspenso até a verificação ser resolvida');
     if (config.dryRun && !forceLive) {log(`SIMULACAO ${controller}/${method} ${JSON.stringify(data).slice(0,160)}`);return {dryRun:true};}
     if (!connected()) throw new Error('Cliente Grepolis indisponível.');
+    inFlightActions++;
     return new Promise((resolve,reject) => {
       let done=false;
       const timeout=setTimeout(()=>{if(!done){done=true;reject(new Error(`Resposta não confirmada: ${controller}/${method}`));}},13000);
@@ -238,7 +241,7 @@
           resolve(response);
         });
       } catch(e){if(!done){done=true;clearTimeout(timeout);reject(e)}}
-    });
+    }).finally(()=>{inFlightActions=Math.max(0,inFlightActions-1);});
   };
   const bridge = async (townId,modelUrl,actionName,args) => action('frontend_bridge','execute',{
     model_url:modelUrl,action_name:actionName,arguments:args,town_id:Number(townId)
@@ -1811,6 +1814,68 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     }finally{running=false;unlock();}
   };
   let selectedCity='';
+
+  // F5 automático apenas quando a página e os comandos estão em estado seguro.
+  // O prazo fica no runtime por conta/mundo e sobrevive ao próprio reload.
+  const reloadMinutes=()=>Math.max(10,Math.min(720,Math.floor(num(config.autoReload?.minutes,30))));
+  const reloadWindow=()=>Math.max(60,Math.min(600,Math.floor(num(config.autoReload?.safeWindowSeconds,180))))*1000;
+  function reloadState(){
+    return readRuntime().autoReload||{};
+  }
+  function reloadSchedule(reset=false){
+    const rt=readRuntime(),at=Date.now(),period=reloadMinutes()*60000;
+    if(reset||!Number.isFinite(Number(rt.autoReload?.nextAt))||Number(rt.autoReload?.nextAt)<=0||
+      Number(rt.autoReload.nextAt)>at+period){
+      rt.autoReload={...rt.autoReload,nextAt:at+period};
+      writeRuntime(rt);
+    }
+    return rt.autoReload;
+  }
+  function reloadBlockReason(now=Date.now()){
+    if(config.autoReload?.enabled!==true)return 'F5 automático desligado';
+    if(!config.enabled)return 'Bot pausado';
+    if(syncRole()!=='primary')return 'PC secundário';
+    if(!connected())return 'Grepolis ainda não está disponível';
+    if(securityWatch())return 'CAPTCHA visível ou aguardando liberação';
+    if(running||dodgeBusy||inFlightActions>0)return 'Ação em andamento';
+    if(shadow?.activeElement?.matches?.('input,textarea,select'))return 'Editando uma configuração';
+    try{
+      if(testRead().active?.state==='active')return 'Teste de esquiva em andamento';
+      if(dodgeTracked(dodgeRead()).length)return 'Apoio/esquiva ainda pendente';
+      const windowMs=reloadWindow();
+      if(dodgeIncoming().some(a=>a.arrivalMs>=now-windowMs/2&&a.arrivalMs<=now+windowMs))
+        return 'Ataque chegando em breve';
+      const fired=readFired();
+      if((config.commands?.jobs||[]).some(job=>{
+        if(job.enabled===false||fired?.[job.id])return false;
+        const at=Date.parse(job.sendAt);
+        return Number.isFinite(at)&&at>=now-windowMs/2&&at<=now+windowMs;
+      }))return 'Comando agendado próximo do horário';
+    }catch(e){return 'Aguardando dados de movimentação: '+e.message;}
+    return '';
+  }
+  function autoReloadPulse(){
+    if(config.autoReload?.enabled!==true||!config.enabled||syncRole()!=='primary')return false;
+    const state=reloadSchedule(),now=Date.now();
+    if(now<Number(state.nextAt))return false;
+    const reason=reloadBlockReason(now);
+    if(reason){
+      if(state.lastPostpone!==reason){
+        const rt=readRuntime();
+        rt.autoReload={...rt.autoReload,lastPostpone:reason};
+        writeRuntime(rt);
+        log('F5 automático adiado: '+reason);
+      }
+      return false;
+    }
+    const rt=readRuntime();
+    rt.autoReload={...rt.autoReload,lastReloadAt:now,nextAt:now+reloadMinutes()*60000,
+      lastPostpone:''};
+    writeRuntime(rt);
+    log('F5 automático: recarregando o Grepolis após '+reloadMinutes()+' minutos');
+    location.reload();
+    return true;
+  }
   const STATUS=()=>securityBlocked()?'⚠ CAPTCHA — operações suspensas':connected()?`${towns().length} cidades · ${syncRole()==='standby'?'SECUNDÁRIO (pausado)':config.enabled?'executando':'pausado'} · ${config.dryRun?'SIMULAÇÃO':'AO VIVO'}`:'Aguardando cliente do jogo';
   const toggle=(k,title)=>`<label class="mod"><input type="checkbox" data-module="${k}" ${config.modules[k]?'checked':''}><span>${title}</span><small>${num(config.intervals[k])}s</small></label>`;
   const optionList=(list,chosen)=>list.map(([v,label])=>`<option value="${cleanStr(v)}" ${String(chosen)===String(v)?'selected':''}>${cleanStr(label)}</option>`).join('');
@@ -2021,6 +2086,13 @@ let queueKindSelected='building';
     <div class="formrow"><span>Retomar após a verificação desaparecer (seg)</span><input type="number" min="1" max="30" data-setting="security.resumeAfterSeconds" value="${config.security.resumeAfterSeconds}"></div>
     <div class="tools"><button data-action="askNotif">Ativar alertas do navegador</button></div>
     <p class="smallnote">Com um CAPTCHA visível, inclusive ações de esquiva e testes práticos aguardam. Cancelamentos de apoio podem ficar atrasados durante a verificação.</p>
+    ${section('Atualização automática da página (F5)')}
+    <div class="checks"><label><input type="checkbox" data-setting="autoReload.enabled" ${config.autoReload.enabled?'checked':''}> Recarregar o Grepolis automaticamente enquanto o bot estiver ativo</label></div>
+    <div class="formrow"><span>Intervalo entre F5 (minutos)</span><input type="number" min="10" max="720" step="5" data-setting="autoReload.minutes" value="${reloadMinutes()}"></div>
+    <div class="formrow"><span>Margem antes de ataques e comandos (segundos)</span><input type="number" min="60" max="600" step="30" data-setting="autoReload.safeWindowSeconds" value="${Math.floor(reloadWindow()/1000)}"></div>
+    <div class="smallnote">Próximo F5: ${config.autoReload.enabled&&reloadState().nextAt?new Date(reloadState().nextAt).toLocaleTimeString('pt-BR',{hour12:false}):'após ativar o bot'}. ${reloadState().lastReloadAt?'Última atualização: '+new Date(reloadState().lastReloadAt).toLocaleTimeString('pt-BR',{hour12:false})+'.':''}</div>
+    <p class="smallnote">Adia o F5 durante CAPTCHA, ações em andamento, esquivas, ataques próximos, testes e comandos agendados. O relógio continua contando enquanto estiver adiado; a atualização ocorre assim que for seguro. Em abas em segundo plano, o navegador pode atrasar o temporizador.</p>
+    <div class="tools"><button data-action="reloadRearm">Reiniciar contagem do F5</button></div>
     ${section('Intervalos')}
     ${Object.keys(MODULES).map(k=>`<div class="formrow compact"><span>${MODULES[k][0]}</span><input type="number" data-interval="${k}" min="2" max="86400" value="${num(config.intervals[k])}"> <small>s</small></div>`).join('')}
     ${section('JSON da configuração')}
@@ -2039,7 +2111,7 @@ let queueKindSelected='building';
     host.style.top=Math.max(0,num(config.ui.y))+'px';
     const body=({'INÍCIO':dashboard,CIDADES:cityContent,FILA:queueContent,ESQUIVA:dodgeContent,TESTE:testContent,DIAG:diagContent,ALDEIAS:villagesContent,TROPAS:troopsContent,COMBATE:combatContent,ECONOMIA:economyContent,'MISSÕES':rewardsContent,AJUSTES:configContent,LOG:logContent}[config.ui.tab]||dashboard)();
     shadow.querySelector('#gp-app').innerHTML=`
-      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.9.1</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
+      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.9.2</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
       ${config.ui.collapsed?'':`<div class="status"><i class="dot ${config.enabled?(config.dryRun?'sim':'live'):''}"></i>${cleanStr(STATUS())}</div>
       <div class="tabs">${['INÍCIO','CIDADES','FILA','ALDEIAS','TROPAS','COMBATE','ESQUIVA','TESTE','DIAG','ECONOMIA','MISSÕES','AJUSTES','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
       <div class="body">${body}</div><div class="foot"><button class="${config.enabled?'stop':'go'}" data-action="toggle">${config.enabled?'■ PARAR TUDO':'▶ INICIAR'}</button><span>${Object.values(config.modules).filter(Boolean).length} módulos ativos</span></div>`}`;
@@ -2082,6 +2154,7 @@ let queueKindSelected='building';
       switch(id){
         case 'collapse':config.ui.collapsed=!config.ui.collapsed;save();break;
         case 'toggle':if(syncRole()==='standby')throw Error('PC secundário: selecione Principal em AJUSTES antes de iniciar');config.enabled=!config.enabled;save();log(config.enabled?'Bot iniciado':'Bot interrompido');break;
+        case 'reloadRearm':reloadSchedule(true);log('F5 automático: contagem reiniciada para '+reloadMinutes()+' minutos');break;
         case 'diagRefresh':log('Diagnóstico: condições reavaliadas');break;
         case 'diagExport':download('GrepoPilot-diagnostico-'+location.host+'.json',JSON.stringify({
           version:'0.9.0',world:location.host,at:new Date().toISOString(),summary:diagSnapshot()},null,2));break;
@@ -2251,6 +2324,7 @@ let queueKindSelected='building';
         config.enabled=false;
       }
       setPath(t.dataset.setting,t.type==='checkbox'?t.checked:t.type==='number'?num(t.value):t.value);
+      if(t.dataset.setting.startsWith('autoReload.'))reloadSchedule(true);
       if(t.dataset.setting.startsWith('smartQueue.'))nextRun.smartQueue=0;
       if(t.dataset.setting.startsWith('trade.')){
         nextRun.trade=0;
@@ -2292,6 +2366,7 @@ let queueKindSelected='building';
     mount();
     save(); // Persiste migração dos controles de aldeia da v0.2.
     setInterval(()=>{try{securityWatch();tick()}catch(e){log(e.message,'ERROR')}},1500);
+    setInterval(()=>{try{autoReloadPulse()}catch(e){log('F5 automático: '+e.message,'ERROR')}},10000);
     setInterval(()=>{dodgePulse().catch(e=>log(`Esquiva: ${e.message}`,'ERROR'))},125);
     setInterval(()=>{try{testTick();if(config.ui.tab==='TESTE'&&shadow){const a=testRead().active;const el=shadow.getElementById('testCountdown');if(a&&el)el.textContent=Math.max(0,(a.impactMs-dodgeNow())/1000).toFixed(1)+'s';}}catch(e){log(`Teste: ${e.message}`,'ERROR')}},250);
     setInterval(()=>{if(dodgeBusy){try{const active=JSON.parse(localStorage.getItem(DODGE_LOCK)||'{}');if(active.owner===instanceId)localStorage.setItem(DODGE_LOCK,JSON.stringify({owner:instanceId,until:Date.now()+2500}));}catch{}}},500);
