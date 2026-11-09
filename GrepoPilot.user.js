@@ -1944,6 +1944,9 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
       healthCheck('ui','Painel do GrepoPilot',host?.isConnected&&Boolean(shadow?.querySelector('#gp-app'))?'ok':'error',
         host?.isConnected?'Painel anexado à página':'Painel não foi anexado',
         'Clique em Reabrir painel ou recarregue o Grepolis'),
+      healthCheck('render','Erros recentes do painel',health.lastRenderError?'warn':'ok',
+        health.lastRenderError||'Nenhum erro de renderização registrado',
+        'Abra a aba VERIFICAR e exporte o relatório; um erro anterior pode afetar somente uma aba'),
       healthCheck('role','Computador principal',role==='primary'?'ok':'warn',
         role==='primary'?'PC principal':'PC secundário: automações bloqueadas',
         'Em AJUSTES → Perfil entre computadores, escolha Principal somente no PC que executará as rotinas'),
@@ -2224,7 +2227,7 @@ let queueKindSelected='building';
     host.style.top=Math.max(0,num(config.ui.y))+'px';
     const pane=({'INÍCIO':dashboard,CIDADES:cityContent,FILA:queueContent,ESQUIVA:dodgeContent,TESTE:testContent,DIAG:diagContent,VERIFICAR:healthContent,ALDEIAS:villagesContent,TROPAS:troopsContent,COMBATE:combatContent,ECONOMIA:economyContent,'MISSÕES':rewardsContent,AJUSTES:configContent,LOG:logContent}[config.ui.tab]||dashboard);
     let body;
-    try{body=pane();health.lastRenderError='';}
+    try{body=pane();}
     catch(e){
       health.lastRenderError=String(e?.message||e);
       console.error('[GrepoPilot] Erro ao montar aba '+config.ui.tab+':',e);
