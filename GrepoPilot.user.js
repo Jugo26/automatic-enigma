@@ -1944,6 +1944,9 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
       healthCheck('ui','Painel do GrepoPilot',host?.isConnected&&Boolean(shadow?.querySelector('#gp-app'))?'ok':'error',
         host?.isConnected?'Painel anexado à página':'Painel não foi anexado',
         'Clique em Reabrir painel ou recarregue o Grepolis'),
+      healthCheck('boot','Recuperação da inicialização',health.mountErrors?'warn':'ok',
+        health.mountErrors?health.mountErrors+' tentativa(s) de montar o painel falharam'+(health.lastMountError?' · '+health.lastMountError:''):'Nenhum erro de inicialização',
+        'Reabra o painel ou atualize o jogo; o script tenta recuperar a montagem automaticamente'),
       healthCheck('render','Erros recentes do painel',health.lastRenderError?'warn':'ok',
         health.lastRenderError||'Nenhum erro de renderização registrado',
         'Abra a aba VERIFICAR e exporte o relatório; um erro anterior pode afetar somente uma aba'),
@@ -2296,7 +2299,7 @@ let queueKindSelected='building';
         case 'healthDownload':download('GrepoPilot-verificacao-'+location.host+'.json',JSON.stringify(healthSnapshot(),null,2));break;
         case 'diagRefresh':log('Diagnóstico: condições reavaliadas');break;
         case 'diagExport':download('GrepoPilot-diagnostico-'+location.host+'.json',JSON.stringify({
-          version:'0.9.0',world:location.host,at:new Date().toISOString(),summary:diagSnapshot()},null,2));break;
+          version:'0.9.3',world:location.host,at:new Date().toISOString(),summary:diagSnapshot()},null,2));break;
         case 'diagReset':{
           const rt=readRuntime();delete rt.diagnostics;writeRuntime(rt);log('Diagnóstico: contadores reiniciados');break;
         }
