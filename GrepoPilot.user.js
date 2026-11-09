@@ -1231,14 +1231,15 @@ function policyForUnit(key,def){
   };
   function questActionCandidates(info){
     const a=info.raw,model=info.model;
-    const sources=[a.available_actions,a.availableActions,a.actions,a.configuration?.available_actions,
-      typeof model?.getAvailableActions==='function'?model.getAvailableActions():null];
+    let modelActions=null;
+    try{if(typeof model?.getAvailableActions==='function')modelActions=model.getAvailableActions();}catch{}
+    const sources=[a.available_actions,a.availableActions,a.actions,a.configuration?.available_actions,modelActions];
     const objects=sources.flatMap(x=>Array.isArray(x)?x:x&&typeof x==='object'?Object.values(x):[]);
     return objects.filter(x=>x&&typeof x==='object').map(x=>({
       name:String(x.action_name??x.actionName??x.name??''),
       model_url:String(x.model_url??x.modelUrl??'IslandQuests'),
       arguments:x.arguments??x.args??null,
-      option:String(x.option??x.side??x.choice??x.arguments?.option??'').toLowerCase(),
+      option:String(x.option??x.side??x.choice??x.arguments?.option??x.arguments?.choice??'').toLowerCase(),
       cost:x.cost??x.resources??x.arguments?.resources??null,
       troops:x.troops??x.units??x.arguments?.units??null
     })).filter(x=>/^IslandQuests?(?:\/[0-9]+)?$/.test(x.model_url)&&
@@ -1249,8 +1250,10 @@ function policyForUnit(key,def){
   const questActionAllowed=(op,kind)=>{
     const isDecision=['acceptQuest','chooseQuest','accept','chooseOption','selectOption'].includes(op.name);
     if(kind==='decision'&&!isDecision||kind==='fulfill'&&isDecision)return false;
-    if(isDecision&&op.option&&['wise','aggressive'].includes(op.option)&&
-      op.option!==config.quests.preferred)return false;
+    if(isDecision){
+      const side={peaceful:'wise',wisdom:'wise',wise:'wise',aggressive:'aggressive',war:'aggressive',military:'aggressive'}[op.option];
+      if(!side||side!==config.quests.preferred)return false;
+    }
     const cost=op.cost||{},troops=op.troops||{};
     const resources=['wood','stone','iron'].reduce((sum,k)=>sum+Math.max(0,num(cost[k])),0);
     const lost=Object.values(troops).reduce((sum,v)=>sum+Math.max(0,num(v)),0);
@@ -2771,6 +2774,9 @@ let queueKindSelected='building';
         config.enabled=false;
       }
       setPath(t.dataset.setting,t.type==='checkbox'?t.checked:t.type==='number'?num(t.value):t.value);
+      if(t.dataset.setting==='quests.autoObjectives'&&t.checked){
+        config.modules.quests=true;nextRun.quests=0;save();
+      }
       if(t.dataset.setting.startsWith('autoReload.'))reloadSchedule(true);
       if(t.dataset.setting.startsWith('smartQueue.'))nextRun.smartQueue=0;
       if(t.dataset.setting.startsWith('trade.')){
