@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GrepoPilot - Painel de Automacao
 // @namespace    https://grepolis.com/
-// @version      0.9.3
+// @version      0.9.4
 // @updateURL    https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.meta.js
 // @downloadURL  https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.user.js
 // @homepageURL  https://github.com/Jugo26/automatic-enigma/tree/grepopilot-updates
@@ -123,7 +123,8 @@
     sync: {role:'primary'},
     security: {notify:true,resumeAfterSeconds:5},
     autoReload: {enabled:true,minutes:30,safeWindowSeconds:180},
-    ui: {x:null,y:90,tab:'INÍCIO',collapsed:false}
+    onboarding: {completed:false},
+    ui: {x:null,y:90,tab:'COMEÇAR',collapsed:false}
   };
   const clone = v => JSON.parse(JSON.stringify(v));
   const merge = (a,b) => {
@@ -135,7 +136,13 @@
     }
     return a;
   };
-  let scope = `${location.host}:${W.Game?.player_id || 'unknown'}`;
+  // Nunca reutilizar metas ou runtime de outra conta, mesmo no mesmo navegador.
+  const currentPlayerId=()=>{
+    const id=Number(W.Game?.player_id);
+    return Number.isSafeInteger(id)&&id>0?id:0;
+  };
+  const currentScope=()=>`${location.host}:${currentPlayerId()||'unknown'}`;
+  let scope=currentScope();
   let STORE = `grepopilot:config:${scope}`;
   let LOCK = `grepopilot:lock:${scope}`;
   let FIRED = `grepopilot:fired:${scope}`;
@@ -151,6 +158,7 @@
     if(cfg?.ui?.tab==='CONFIG')cfg.ui.tab='AJUSTES';
     if(cfg?.ui?.tab==='PRESENÇA')cfg.ui.tab='INÍCIO';
     delete cfg.presence;
+    if(raw&&Object.keys(raw).length>0&&raw.onboarding===undefined)cfg.onboarding={completed:true};
     return cfg;
   };
   let config = migrate(merge(clone(BASE),old),old);
@@ -162,11 +170,12 @@
   let rendered = false;
   const health={startedAt:Date.now(),lastHeartbeat:0,lastClientReadyAt:0,lastTickResult:'aguardando primeiro ciclo',mountErrors:0,lastMountError:'',lastRenderError:'',storageCache:null};
   function rescope(){
-    const newScope = `${location.host}:${W.Game?.player_id || 'unknown'}`;
+    const newScope=currentScope();
     if(newScope===scope)return;
     scope=newScope;STORE=`grepopilot:config:${scope}`;LOCK=`grepopilot:lock:${scope}`;FIRED=`grepopilot:fired:${scope}`;RUNTIME=`grepopilot:runtime:${scope}`;DODGE_STORE=`grepopilot:dodge:${scope}`;DODGE_LOCK=`grepopilot:dodge-lock:${scope}`;TEST_STORE=`grepopilot:attacktest:${scope}`;
     try{const raw=JSON.parse(localStorage.getItem(STORE)||'{}');config=migrate(merge(clone(BASE),raw),raw);}catch{config=clone(BASE);}
     nextRun={};seenAttacks=new Set();
+    selectedCity='';
     log(`Conta/mundo detectado: ${scope}`);render();
   }
   const instanceId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -174,6 +183,7 @@
   const num = (v,def=0) => Number.isFinite(Number(v)) ? Number(v) : def;
   const tName = t => t?.getName?.() || t?.name || `Cidade ${t?.id}`;
   const save = () => {
+    if(!currentPlayerId()||scope!==currentScope())return;
     try{localStorage.setItem(STORE,JSON.stringify(config));}
     catch(e){health.lastMountError='Falha ao salvar configurações: '+e.message;console.error('[GrepoPilot] '+health.lastMountError);}
   };
@@ -221,7 +231,7 @@
     if (config.ui.tab === 'LOG') render();
   };
   const delay = ms => new Promise(r=>setTimeout(r,ms));
-  const connected = () => Boolean(W.Game?.player_id && W.ITowns?.towns && typeof W.MM?.getModels==='function' && typeof W.MM?.getOnlyCollectionByName==='function' && typeof W.gpAjax?.ajaxPost==='function');
+  const connected = () => Boolean(currentPlayerId() && W.ITowns?.towns && typeof W.MM?.getModels==='function' && typeof W.MM?.getOnlyCollectionByName==='function' && typeof W.gpAjax?.ajaxPost==='function');
   const towns = () => connected()? Object.values(W.ITowns.towns).filter(t=>t && t.id): [];
   const townBy = id => W.ITowns?.towns?.[id] || W.ITowns?.getTown?.(id);
   const models = key => {
@@ -230,6 +240,7 @@
   const resource = t => t?.resources?.() || {};
   let inFlightActions=0;
   const action = async (controller,method,data,forceLive=false) => {
+    if(!currentPlayerId()||scope!==currentScope())throw Error('Conta/mundo em transição: ação bloqueada');
     if(securityWatch())throw new Error('CAPTCHA ativo: comando suspenso até a verificação ser resolvida');
     if (config.dryRun && !forceLive) {log(`SIMULACAO ${controller}/${method} ${JSON.stringify(data).slice(0,160)}`);return {dryRun:true};}
     if (!connected()) throw new Error('Cliente Grepolis indisponível.');
@@ -358,7 +369,7 @@
     return false;
   }
   const securityBlocked=()=>securityState.active;
-  const canRun = () => config.enabled && syncRole()==='primary' && connected() && !securityWatch();
+  const canRun = () => config.enabled && syncRole()==='primary' && connected() && scope===currentScope() && !securityWatch();
   const notify = text => {
     log(text,'ALERT');
     if(config.alerts.desktop && 'Notification' in window && Notification.permission==='granted') new Notification('GrepoPilot',{body:text});
@@ -1293,6 +1304,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
   }else log('Teste simulado interrompido');
 }
   function testTick(){
+  if(scope!==currentScope())return;
   const st=testRead(),a=st.active;
   if(!a||a.state!=='active')return;
   const now=dodgeNow(),last=Math.max(a.impactMs,a.secondMs||0),after=last+a.returnDelay*1000;
@@ -1558,7 +1570,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     if(dirty)dodgeWrite(store);
   }
   async function dodgePulse(){
-    if(dodgeBusy||securityWatch()||!dodgeCanOperate())return;
+    if(scope!==currentScope()||dodgeBusy||securityWatch()||!dodgeCanOperate())return;
     if((!config.enabled||!config.modules.dodge)&&!dodgeTracked(dodgeRead()).length&&!testActive())return;
     if(!dodgeLeader())return;
     dodgeBusy=true;
@@ -1869,7 +1881,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     return '';
   }
   function autoReloadPulse(){
-    if(config.autoReload?.enabled!==true||!config.enabled||syncRole()!=='primary')return false;
+    if(scope!==currentScope()||config.autoReload?.enabled!==true||!config.enabled||syncRole()!=='primary')return false;
     const state=reloadSchedule(),now=Date.now();
     if(now<Number(state.nextAt))return false;
     const reason=reloadBlockReason(now);
@@ -1921,12 +1933,15 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const ajaxOK=typeof W.gpAjax?.ajaxPost==='function';
     const role=syncRole();
     const checks=[
-      healthCheck('script','GrepoPilot carregado','ok','v0.9.3 · inicialização em '+new Date(health.startedAt).toLocaleTimeString('pt-BR')),
+      healthCheck('script','GrepoPilot carregado','ok','v0.9.4 · inicialização em '+new Date(health.startedAt).toLocaleTimeString('pt-BR')),
       healthCheck('page','Página do Grepolis',location.protocol==='https:'&&/^\/game(?:\/|$)/.test(location.pathname)?'ok':'error',
         String(location.host)+String(location.pathname||''),'Abra a página do jogo em https://SEU-MUNDO.grepolis.com/game/'),
       healthCheck('api','Acesso aos dados do jogo',W!==window?'ok':'warn',
         W!==window?'Ponte com a página disponível':'Usando contexto do próprio script; dados do jogo podem ficar isolados',
         'No Tampermonkey, confira se a extensão pode executar scripts nesta página'),
+      healthCheck('scope','Perfil exclusivo da conta',player>0&&scope===currentScope()?'ok':'warn',
+        player>0&&scope===currentScope()?'Conta e mundo isolados: '+scope:'Aguardando troca segura de perfil',
+        'Aguarde o carregamento ou abra VERIFICAR novamente'),
       healthCheck('player','Conta identificada',player>0?'ok':'error',
         player>0?'Jogador #'+player:'Aguardando Game.player_id do Grepolis',
         'Entre no mundo e aguarde terminar o carregamento; depois clique em Verificar novamente'),
@@ -1970,7 +1985,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const critical=checks.filter(x=>x.status==='error');
     const warnings=checks.filter(x=>x.status==='warn');
     const active=ready&&critical.length===0&&config.enabled&&role==='primary'&&!config.dryRun&&!securityBlocked()&&n>0;
-    return {version:'0.9.3',time:new Date(now).toISOString(),world:location.host,
+    return {version:'0.9.4',time:new Date(now).toISOString(),world:location.host,
       playerId:player||null,userAgent:typeof navigator!=='undefined'?navigator.userAgent:'',
       active,critical:critical.length,warnings:warnings.length,
       runtime:{uptimeSeconds:Math.floor((now-health.startedAt)/1000),
@@ -2239,7 +2254,7 @@ let queueKindSelected='building';
         '<div class="tools"><button data-tab="VERIFICAR">Abrir verificação</button></div>';
     }
     shadow.querySelector('#gp-app').innerHTML=`
-      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.9.3</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
+      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.9.4</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
       ${config.ui.collapsed?'':`<div class="status"><i class="dot ${config.enabled?(config.dryRun?'sim':'live'):''}"></i>${cleanStr(STATUS())}</div>
       <div class="tabs">${['INÍCIO','CIDADES','FILA','ALDEIAS','TROPAS','COMBATE','ESQUIVA','TESTE','DIAG','VERIFICAR','ECONOMIA','MISSÕES','AJUSTES','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
       <div class="body">${body}</div><div class="foot"><button class="${config.enabled?'stop':'go'}" data-action="toggle">${config.enabled?'■ PARAR TUDO':'▶ INICIAR'}</button><span>${Object.values(config.modules).filter(Boolean).length} módulos ativos</span></div>`}`;
@@ -2299,7 +2314,7 @@ let queueKindSelected='building';
         case 'healthDownload':download('GrepoPilot-verificacao-'+location.host+'.json',JSON.stringify(healthSnapshot(),null,2));break;
         case 'diagRefresh':log('Diagnóstico: condições reavaliadas');break;
         case 'diagExport':download('GrepoPilot-diagnostico-'+location.host+'.json',JSON.stringify({
-          version:'0.9.3',world:location.host,at:new Date().toISOString(),summary:diagSnapshot()},null,2));break;
+          version:'0.9.4',world:location.host,at:new Date().toISOString(),summary:diagSnapshot()},null,2));break;
         case 'diagReset':{
           const rt=readRuntime();delete rt.diagnostics;writeRuntime(rt);log('Diagnóstico: contadores reiniciados');break;
         }
