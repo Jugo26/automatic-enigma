@@ -244,7 +244,7 @@
     return output;
   };
   const templatePayload=()=>({
-    format:'grepopilot-template',schema:1,version:'0.9.7',
+    format:'grepopilot-template',schema:1,version:'0.9.8',
     exportedAt:new Date().toISOString(),settings:templateSettings()
   });
   const templateExport=()=>JSON.stringify(templatePayload(),null,2);
@@ -1784,6 +1784,17 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     for(const key of fields)if(a[key]!==undefined)consume(a[key],key);
     return {names:[...names].slice(0,15),stats:stats.slice(0,15)};
   }
+  function dodgeSpeedCandidates(nativeSpeed,worldSpeed,multiplier){
+    if(!Number.isFinite(nativeSpeed)||!Number.isFinite(worldSpeed))return [];
+    return Object.entries(W.GameData?.units||{}).flatMap(([key,definition])=>{
+      const speed=dodgeNumber(definition?.speed??definition?.movement_speed);
+      if(!Number.isFinite(speed))return [];
+      const expected=speed*worldSpeed*multiplier;
+      const difference=Math.abs(nativeSpeed-expected)/expected;
+      if(difference>0.12)return [];
+      return [{key,expected:Number(expected.toFixed(2)),difference:Number((difference*100).toFixed(1))}];
+    }).sort((a,b)=>a.difference-b.difference).slice(0,8);
+  }
   const dodgeUnitSpeed=()=>{
     const raw=[W.Game?.unit_speed,W.Game?.world?.unit_speed,
       W.GameData?.world?.unit_speed,W.GameData?.world_settings?.unit_speed,
@@ -1821,6 +1832,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const expectedShipSpeed=3*unitSpeed*multiplier;
     // Velocidade 3 corresponde ao CS em mundos com fator 1.
     // Velocidades dos outros navios e bônus ocultos podem coincidir; indício apenas.
+    const candidates=dodgeSpeedCandidates(nativeSpeed,unitSpeed,multiplier);
     const speedCompatible=Number.isFinite(nativeSpeed)&&Number.isFinite(expectedShipSpeed)&&
       Math.abs(nativeSpeed-expectedShipSpeed)/expectedShipSpeed<=0.12;
     if(speedCompatible&&!confirmed)signals.push('Velocidade compatível com CS, não conclusiva');
@@ -1841,6 +1853,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
       durationMs:Number.isFinite(elapsed)?elapsed:null,
       unitSpeed:Number.isFinite(unitSpeed)?unitSpeed:null,
       nativeSpeed:Number.isFinite(nativeSpeed)?nativeSpeed:null,
+      candidateUnits:candidates,
       multiplier,originTownId:Number.isSafeInteger(source)&&source>0?source:null,
       arrivalMs,townId,id,type,subtype,
       speedNote:'ETA do servidor prevalece; bônus desconhecidos não são estimados como constantes'};
@@ -1852,8 +1865,10 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     if(policy==='all')return {allow:true,reason:'Esquivar de todos os ataques'};
     if(['confirmed','manual_colony'].includes(status))
       return {allow:false,reason:'Ataque de colonização: manter tropas até revisão'};
-    if(policy==='review'&&status==='suspected')
+    if(['review','strict'].includes(policy)&&status==='suspected')
       return {allow:false,reason:'Possível colonizador: verifique e classifique o movimento'};
+    if(policy==='strict'&&status==='unknown')
+      return {allow:false,reason:'Ataque sem classificação confiável: aguardar revisão'};
     return {allow:true,reason:status==='unknown'?'Ataque não identificado; defesa padrão':'Ataque comum/revolta'};
   }
   const dodgeConflictWindow=()=>Math.max(60,Math.min(600,
@@ -2232,7 +2247,8 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
         <div class="smallnote">#${id} · chegada ${new Date(a.arrivalMs).toLocaleTimeString('pt-BR',{hour12:false})} · em ${Math.max(0,Math.ceil((a.arrivalMs-now)/1000))}s</div>
         <div class="smallnote">Origem #${cleanStr(i?.originTownId??'?')} · saída ${started} · duração ${duration}</div>
         <div class="smallnote">Velocidade: ${Number.isFinite(i?.nativeSpeed)?i.nativeSpeed:'não exposta'} · fator do mundo: ${i?.unitSpeed??'não informado'} · bônus explícito: ${i?.multiplier??1}x</div>
-        ${i?.effects.names.length?`<div class="smallnote">Efeitos observados: ${cleanStr(i.effects.names.join(', '))}</div>`:''}
+        ${i?.effects.names.length||i?.effects.stats.length?`<div class="smallnote">Efeitos observados: ${cleanStr([...i.effects.names,...i.effects.stats].join(', '))}</div>`:''}
+        ${i?.candidateUnits?.length?`<div class="smallnote">Velocidades-base compatíveis (não confirmam unidades): ${cleanStr(i.candidateUnits.map(x=>x.key+' ~'+x.expected).join(', '))}</div>`:''}
         <div class="smallnote">${cleanStr(decision.reason)}</div>
         <div class="formrow compact"><span>Classificar:</span>
           <button data-action="dodgeMarkAttack" data-attack="${id}" data-mark="colony">É colono</button>
@@ -2260,6 +2276,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
       <div class="formrow"><span>Como tratar possíveis colonizadores</span>
         <select data-setting="dodge.colonizationPolicy">${optionList([
           ['review','Conservador: aguardar confirmação e não esquivar de suspeitos'],
+          ['strict','Máxima cautela: aguardar até quando o tipo for desconhecido'],
           ['confirmed','Pausar apenas colonizadores confirmados'],
           ['all','Esquivar de todos, inclusive colonizadores']
         ],config.dodge.colonizationPolicy||'review')}</select></div>
@@ -2529,7 +2546,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const ajaxOK=typeof W.gpAjax?.ajaxPost==='function';
     const role=syncRole();
     const checks=[
-      healthCheck('script','GrepoPilot carregado','ok','v0.9.7 · inicialização em '+new Date(health.startedAt).toLocaleTimeString('pt-BR')),
+      healthCheck('script','GrepoPilot carregado','ok','v0.9.8 · inicialização em '+new Date(health.startedAt).toLocaleTimeString('pt-BR')),
       healthCheck('page','Página do Grepolis',location.protocol==='https:'&&/^\/game(?:\/|$)/.test(location.pathname)?'ok':'error',
         String(location.host)+String(location.pathname||''),'Abra a página do jogo em https://SEU-MUNDO.grepolis.com/game/'),
       healthCheck('api','Acesso aos dados do jogo',W!==window?'ok':'warn',
@@ -2581,7 +2598,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const critical=checks.filter(x=>x.status==='error');
     const warnings=checks.filter(x=>x.status==='warn');
     const active=ready&&critical.length===0&&config.enabled&&role==='primary'&&!config.dryRun&&!securityBlocked()&&n>0;
-    return {version:'0.9.7',time:new Date(now).toISOString(),world:location.host,
+    return {version:'0.9.8',time:new Date(now).toISOString(),world:location.host,
       playerId:player||null,userAgent:typeof navigator!=='undefined'?navigator.userAgent:'',
       active,critical:critical.length,warnings:warnings.length,
       runtime:{uptimeSeconds:Math.floor((now-health.startedAt)/1000),
@@ -2967,7 +2984,7 @@ let queueKindSelected='building';
             startedAt:dodgeStarted(m.data),arrivalAt:dodgeArrival(m.data)
           }));
           download('GrepoPilot-esquiva-'+location.host+'.json',JSON.stringify({
-            version:'0.9.7',world:location.host,at:new Date().toISOString(),
+            version:'0.9.8',world:location.host,at:new Date().toISOString(),
             clock:dodgeClock,settings:config.dodge,attacks:dodgeIncoming(),
             movementFields:dodgeMovements().map(m=>({keys:Object.keys(m.data||{}),
               details:Object.fromEntries(Object.entries(m.data||{}).filter(([k])=>/(?:speed|modifier|power|spell|effect|hero|conquest|colon|takeover|revolt|unit|time|arriv|start)/i.test(k)).slice(0,25))})),
@@ -2999,7 +3016,7 @@ let queueKindSelected='building';
         }
         case 'diagRefresh':log('Diagnóstico: condições reavaliadas');break;
         case 'diagExport':download('GrepoPilot-diagnostico-'+location.host+'.json',JSON.stringify({
-          version:'0.9.7',world:location.host,at:new Date().toISOString(),summary:diagSnapshot()},null,2));break;
+          version:'0.9.8',world:location.host,at:new Date().toISOString(),summary:diagSnapshot()},null,2));break;
         case 'diagReset':{
           const rt=readRuntime();delete rt.diagnostics;writeRuntime(rt);log('Diagnóstico: contadores reiniciados');break;
         }
