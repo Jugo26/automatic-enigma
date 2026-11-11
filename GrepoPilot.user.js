@@ -1857,12 +1857,13 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const multiplier=dodgeNumber(movement.speed_multiplier??movement.unit_speed_multiplier??movement.speed_factor);
     return {items:out.slice(0,5),nativeMultiplier:multiplier>0&&multiplier<=5?multiplier:null};
   }
-  function colonyScenarioFactors(movement={}){
+  function colonyScenarioFactors(movement={},unitType='colony'){
     const observed=colonyObservedBonuses(movement);
     const variable=observed.items.slice(0,3);
     const options=[];
     for(let mask=0;mask<(1<<colonyBonusCatalog.length);mask++){
-      const fixed=colonyBonusCatalog.filter((_,i)=>mask&(1<<i));
+      const fixed=colonyBonusCatalog.filter((bonus,i)=>(mask&(1<<i))&&
+        (unitType==='colony'||bonus.scope!=='colony'));
       // Simula Atalanta ausente ou em cada um de seus 20 níveis; não presume que ela está.
       for(let level=0;level<=20;level++){
         const hero=level?{id:'atalanta',name:'Atalanta nível '+level,
@@ -1999,13 +2000,14 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
         matches:[],alternatives:[],compatibleOnly:false};
     }
     const speed=Number(W.GameData?.units?.colonize_ship?.speed)||3;
-    const configs=colonyScenarioFactors(movement);
+    const configs=colonyScenarioFactors(movement,'colony');
+    const otherConfigs=colonyScenarioFactors(movement,'naval');
     const tolerance=Math.max(30,Number.isFinite(observedSeconds)?
       observedSeconds*Math.max(colonyTolerance(),auto&&(!Number.isFinite(stored)||stored<1)?
         auto.uncertainty:0):baseSeconds*colonyTolerance());
-    const build=(unit,baseSpeed)=>{
+    const build=(unit,baseSpeed,options)=>{
       const speedRatio=speed/baseSpeed;
-      return configs.map(c=>{
+      return options.map(c=>{
         const seconds=baseSeconds*speedRatio/c.factor;
         return {unit,seconds:Math.round(seconds),factor:Number(c.factor.toFixed(4)),
           method:c.method,effects:c.effects,conditional:c.conditional,
@@ -2013,9 +2015,9 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
             Math.round(Math.abs(seconds-observedSeconds)):null};
       });
     };
-    const scenarios=build('colonize_ship',speed);
+    const scenarios=build('colonize_ship',speed,configs);
     const alternates=colonyUnitCandidates.filter(u=>u.id!=='colonize_ship')
-      .flatMap(unit=>build(unit.id,Number(W.GameData?.units?.[unit.id]?.speed)||unit.speed));
+      .flatMap(unit=>build(unit.id,Number(W.GameData?.units?.[unit.id]?.speed)||unit.speed,otherConfigs));
     const match=scenarios.filter(x=>Number.isFinite(observedSeconds)&&
       x.differenceSeconds<=tolerance);
     const alternativeMatch=alternates.filter(x=>Number.isFinite(observedSeconds)&&
@@ -2037,7 +2039,8 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
       scenarioCount:scenarios.length,reason:Number.isFinite(observedSeconds)?
         match.length?'Duração total compatível com combinações de bônus do colono.':
           'Nenhum cenário testado coincide com a duração total.':
-        'Só o tempo restante está disponível: compatibilidade não confirma colono.'};
+        compatibleOnly?'Tempo restante cabe em cenários de CS, mas não prova quando partiu.':
+          'Tempo restante excede os cenários calculados de CS sem efeitos desconhecidos.'};
   }
   function dodgeAttackIntel(a,model,townId,source,arrivalMs,id){
     const type=String(a.type??a.command_type??a.movement_type??'').toLowerCase();
