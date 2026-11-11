@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GrepoPilot - Painel de Automacao
 // @namespace    https://grepolis.com/
-// @version      0.9.8
+// @version      0.9.9
 // @updateURL    https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.meta.js
 // @downloadURL  https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.user.js
 // @homepageURL  https://github.com/Jugo26/automatic-enigma/tree/grepopilot-updates
@@ -120,7 +120,7 @@
     cave: {minIron:15000,keepIron:5000},
     commands: {jobs:[]},
     alerts: {desktop:true,checkAll:true},
-    dodge: {version:2,leadSeconds:60,returnAfterSeconds:15,waveGapSeconds:12,land:true,naval:true,targets:{},colonizationPolicy:'review',colonyConflictWindowSeconds:180,attackMarks:{}},
+    dodge: {version:2,leadSeconds:60,returnAfterSeconds:15,waveGapSeconds:12,land:true,naval:true,targets:{},colonizationPolicy:'review',colonyConflictWindowSeconds:180,attackMarks:{},colonyBaselineMinutes:{},colonyTimeTolerancePercent:5},
     attackTest: {delay:120,wave:0,mode:'preview'},
     sync: {role:'primary'},
     security: {notify:true,resumeAfterSeconds:5,pacingEnabled:true,minActionIntervalSeconds:15,maxActionsPerHour:100,postCaptchaCooldownMinutes:15},
@@ -1801,6 +1801,166 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
       W.Game?.unit_speed_factor,W.GameData?.unit_speed];
     return raw.map(dodgeNumber).find(Number.isFinite)||NaN;
   };
+
+  // Velocidades e bônus documentados:
+  // CS 3; Cartografia +10%; Velas ao Vento +10% CS; Farol +15%;
+  // templo Ares no Olimpo +15%; Atalanta 13.2% (nível 1) até 36% (nível 20).
+  // Meteorologia (+10% terrestre) e Elmo de Hades (invisibilidade)
+  // não alteram diretamente a velocidade-base do navio colonizador.
+  const colonyBonusCatalog=Object.freeze([
+    {id:'cartography',name:'Cartografia',percent:10,scope:'naval'},
+    {id:'set_sail',name:'Velas ao Vento',percent:10,scope:'colony'},
+    {id:'lighthouse',name:'Farol',percent:15,scope:'naval'},
+    {id:'olympus_ares',name:'Templo de Ares (Olimpo)',percent:15,scope:'all',conditional:true}
+  ]);
+  const colonyUnitCandidates=Object.freeze([
+    {id:'colonize_ship',label:'Navio colonizador',speed:3},
+    {id:'transport_ship',label:'Transporte comum',speed:8},
+    {id:'light_ship',label:'Navio ligeiro',speed:13},
+    {id:'bireme',label:'Birreme',speed:15},
+    {id:'trireme',label:'Trirreme',speed:15},
+    {id:'fast_transport_ship',label:'Transporte rápido',speed:15}
+  ]);
+  const colonyBaselineKey=(source,dest)=>Number(source)>0&&Number(dest)>0?
+    String(source)+':'+String(dest):'';
+  const colonyTolerance=()=>Math.max(1,Math.min(15,
+    Math.floor(num(config.dodge?.colonyTimeTolerancePercent,5))))/100;
+  const colonyBonusPercent=value=>{
+    const n=Number(value);return Number.isFinite(n)&&n>0&&n<=150?n:NaN;
+  };
+  function colonyObservedBonuses(movement){
+    const seen=new Set(),out=[];
+    const add=(id,label,value)=>{
+      const pct=colonyBonusPercent(value),key=String(id||label);
+      if(!Number.isFinite(pct)||seen.has(key))return;
+      seen.add(key);out.push({id:key,label:String(label||key),percent:pct,scope:'all',observed:true});
+    };
+    for(const key of ['speed_bonus_percent','movement_speed_bonus_percent',
+        'travel_speed_bonus_percent','quest_speed_bonus_percent','temporary_speed_bonus_percent']){
+      if(movement[key]!==undefined)add(key,key.replace(/_/g,' '),movement[key]);
+    }
+    for(const key of ['effects','active_effects','powers','speed_modifiers','bonuses']){
+      const raw=movement[key];
+      if(!raw)continue;
+      const items=Array.isArray(raw)?raw:Object.entries(raw).map(([name,v])=>
+        typeof v==='object'&&v?{id:name,...v}:{id:name,value:v});
+      for(const effect of items.slice(0,30)){
+        if(!effect||typeof effect!=='object')continue;
+        const id=String(effect.id??effect.name??effect.type??'').toLowerCase();
+        if(!/(?:speed|veloc|travell?|movement|quest|buff|boost)/i.test(id))continue;
+        const v=effect.speed_bonus_percent??effect.movement_speed_bonus_percent??
+          effect.travel_speed_percent??effect.bonus_percent??effect.percent;
+        add(id,id,v);
+      }
+    }
+    // Não somar multiplier nativo com bônus que já possam estar embutidos nele.
+    const multiplier=dodgeNumber(movement.speed_multiplier??movement.unit_speed_multiplier??movement.speed_factor);
+    return {items:out.slice(0,5),nativeMultiplier:multiplier>0&&multiplier<=5?multiplier:null};
+  }
+  function colonyScenarioFactors(movement={}){
+    const observed=colonyObservedBonuses(movement);
+    const variable=observed.items.slice(0,3);
+    const options=[];
+    for(let mask=0;mask<(1<<colonyBonusCatalog.length);mask++){
+      const fixed=colonyBonusCatalog.filter((_,i)=>mask&(1<<i));
+      // Simula Atalanta ausente ou em cada um de seus 20 níveis; não presume que ela está.
+      for(let level=0;level<=20;level++){
+        const hero=level?{id:'atalanta',name:'Atalanta nível '+level,
+          percent:Number((13.2+(level-1)*1.2).toFixed(1)),scope:'all'}:null;
+        const base=fixed.concat(hero?[hero]:[]);
+        const named=base.map(x=>x.name);
+        // Dois modelos de acumulação, porque a fórmula exata de empilhamento
+        // não é observável a partir de um ataque inimigo.
+        for(const method of ['multiplicative','additive']){
+          let factor=method==='multiplicative'?
+            base.reduce((v,x)=>v*(1+x.percent/100),1):
+            1+base.reduce((v,x)=>v+x.percent/100,0);
+          const notes=[...named],seen=new Set(base.map(x=>x.id));
+          if(observed.nativeMultiplier&&observed.nativeMultiplier!==1){
+            // Quando o servidor informa o multiplicador total, é uma hipótese
+            // completa e exclusiva, NÃO outra melhoria combinável.
+            options.push({factor:observed.nativeMultiplier,
+              effects:['Multiplicador exposto no movimento'],method:'native',conditional:false});
+          }
+          // Bônus adicionais variáveis, somente quando seus valores estão no modelo.
+          if(variable.length){
+            for(const x of variable)if(!seen.has(x.id)){
+              factor=method==='multiplicative'?factor*(1+x.percent/100):factor+x.percent/100;
+              notes.push(x.label+' +'+x.percent+'% (observado)');
+            }
+          }
+          if(factor>0&&factor<=5)options.push({factor,
+            effects:notes,method,conditional:fixed.some(x=>x.conditional)});
+        }
+      }
+    }
+    const unique=new Map();
+    for(const opt of options){
+      const key=opt.factor.toFixed(5)+':'+opt.method;
+      const before=unique.get(key);
+      if(!before||opt.effects.length<before.effects.length)unique.set(key,opt);
+    }
+    return [...unique.values()].sort((a,b)=>a.factor-b.factor);
+  }
+  function colonyTimeModel(movement,source,dest,arrivalMs,startedAt,id){
+    const explicit=moving=>{
+      const raw=moving?.colony_ship_base_duration_seconds??
+        moving?.colonize_ship_base_seconds??moving?.colony_ship_normal_duration;
+      const n=Number(raw);
+      return Number.isFinite(n)&&n>=60&&n<=172800?n:NaN;
+    };
+    const route=colonyBaselineKey(source,dest);
+    const direct=explicit(movement);
+    const stored=Number(config.dodge?.colonyBaselineMinutes?.[route]);
+    const baseSeconds=Number.isFinite(direct)?direct:
+      Number.isFinite(stored)&&stored>=1&&stored<=2880?stored*60:NaN;
+    const observedSeconds=Number.isFinite(startedAt)&&startedAt<=arrivalMs?
+      (arrivalMs-startedAt)/1000:NaN;
+    if(!Number.isFinite(baseSeconds)){
+      return {available:false,route,reason:route?
+        'Cadastre a duração-base do CS nesse trajeto, sem bônus, consultando o simulador de ataque do Grepolis.':
+        'Origem desconhecida: não é possível calcular o trajeto do CS.',
+        baseSeconds:null,observedSeconds:Number.isFinite(observedSeconds)?observedSeconds:null,
+        matches:[],alternatives:[],compatibleOnly:false};
+    }
+    const speed=Number(W.GameData?.units?.colonize_ship?.speed)||3;
+    const configs=colonyScenarioFactors(movement);
+    const tolerance=Math.max(30,Number.isFinite(observedSeconds)?
+      observedSeconds*colonyTolerance():baseSeconds*colonyTolerance());
+    const build=(unit,baseSpeed)=>{
+      const speedRatio=speed/baseSpeed;
+      return configs.map(c=>{
+        const seconds=baseSeconds*speedRatio/c.factor;
+        return {unit,seconds:Math.round(seconds),factor:Number(c.factor.toFixed(4)),
+          method:c.method,effects:c.effects,conditional:c.conditional,
+          differenceSeconds:Number.isFinite(observedSeconds)?
+            Math.round(Math.abs(seconds-observedSeconds)):null};
+      });
+    };
+    const scenarios=build('colonize_ship',speed);
+    const alternates=colonyUnitCandidates.filter(u=>u.id!=='colonize_ship')
+      .flatMap(unit=>build(unit.id,Number(W.GameData?.units?.[unit.id]?.speed)||unit.speed));
+    const match=scenarios.filter(x=>Number.isFinite(observedSeconds)&&
+      x.differenceSeconds<=tolerance);
+    const alternativeMatch=alternates.filter(x=>Number.isFinite(observedSeconds)&&
+      x.differenceSeconds<=tolerance);
+    const sortMatches=x=>x.sort((a,b)=>a.differenceSeconds-b.differenceSeconds||
+      a.effects.length-b.effects.length);
+    const minSeconds=Math.min(...scenarios.map(x=>x.seconds));
+    const maxSeconds=Math.max(...scenarios.map(x=>x.seconds));
+    const remaining=Math.max(0,(arrivalMs-dodgeNow())/1000);
+    const compatibleOnly=!Number.isFinite(observedSeconds)&&remaining<=maxSeconds+tolerance;
+    return {available:true,route,source:Number.isFinite(direct)?'modelo do jogo':'duração informada pelo jogador',
+      baseSeconds:Math.round(baseSeconds),observedSeconds:Number.isFinite(observedSeconds)?Math.round(observedSeconds):null,
+      remainingSeconds:Math.round(remaining),toleranceSeconds:Math.round(tolerance),
+      minSeconds,maxSeconds,compatibleOnly,
+      matches:sortMatches(match).slice(0,8),
+      alternatives:sortMatches(alternativeMatch).slice(0,8),
+      scenarioCount:scenarios.length,reason:Number.isFinite(observedSeconds)?
+        match.length?'Duração total compatível com combinações de bônus do colono.':
+          'Nenhum cenário testado coincide com a duração total.':
+        'Só o tempo restante está disponível: compatibilidade não confirma colono.'};
+  }
   function dodgeAttackIntel(a,model,townId,source,arrivalMs,id){
     const type=String(a.type??a.command_type??a.movement_type??'').toLowerCase();
     const subtype=String(a.attack_type??a.subtype??a.command_subtype??a.movement_subtype??'').toLowerCase();
@@ -1833,13 +1993,17 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     // Velocidade 3 corresponde ao CS em mundos com fator 1.
     // Velocidades dos outros navios e bônus ocultos podem coincidir; indício apenas.
     const candidates=dodgeSpeedCandidates(nativeSpeed,unitSpeed,multiplier);
+    const travel=colonyTimeModel(a,source,townId,arrivalMs,startedAt,id);
+    const durationMatch=travel.available&&travel.matches.length>0;
     const speedCompatible=Number.isFinite(nativeSpeed)&&Number.isFinite(expectedShipSpeed)&&
       Math.abs(nativeSpeed-expectedShipSpeed)/expectedShipSpeed<=0.12;
     if(speedCompatible&&!confirmed)signals.push('Velocidade compatível com CS, não conclusiva');
+    if(durationMatch&&!confirmed)signals.push('Duração e bônus compatíveis com navio colonizador: '+
+      travel.matches.length+' cenário(s)');
     if(Number.isFinite(elapsed))signals.push('Duração informada pelo cliente: '+Math.round(elapsed/1000)+'s');
 
     const mark=String(config.dodge?.attackMarks?.[id]||'');
-    let classification=confirmed?'confirmed':speedCompatible?'suspected':revolt?'revolt':'unknown';
+    let classification=confirmed?'confirmed':speedCompatible||durationMatch?'suspected':revolt?'revolt':'unknown';
     if(mark==='colony')classification='manual_colony';
     else if(mark==='normal')classification='manual_normal';
     const reasons={confirmed:'Colonização confirmada por dados explícitos',
@@ -1853,7 +2017,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
       durationMs:Number.isFinite(elapsed)?elapsed:null,
       unitSpeed:Number.isFinite(unitSpeed)?unitSpeed:null,
       nativeSpeed:Number.isFinite(nativeSpeed)?nativeSpeed:null,
-      candidateUnits:candidates,
+      candidateUnits:candidates,travel,
       multiplier,originTownId:Number.isSafeInteger(source)&&source>0?source:null,
       arrivalMs,townId,id,type,subtype,
       speedNote:'ETA do servidor prevalece; bônus desconhecidos não são estimados como constantes'};
@@ -2240,7 +2404,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const destinations=src?dodgeDestinations(src.id,incoming):[];
     const selected=num(config.dodge.targets?.[src?.id]||0);
     const listed=incoming.filter(x=>x.arrivalMs>now).slice(0,12).map(a=>{
-      const i=a.intel,decision=dodgeAttackDecision(a),id=cleanStr(a.id);
+      const i=a.intel,decision=dodgeAttackDecision(a),id=cleanStr(a.id),travel=i?.travel;
       const started=i?.startedAt?new Date(i.startedAt).toLocaleTimeString('pt-BR',{hour12:false}):'não informado';
       const duration=i?.durationMs?Math.round(i.durationMs/60000)+' min':'desconhecida';
       return `<div class="city"><b>${cleanStr(tName(townBy(a.townId)))}</b> · ${dodgeClassificationLabel(a)}
@@ -2249,6 +2413,15 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
         <div class="smallnote">Velocidade: ${Number.isFinite(i?.nativeSpeed)?i.nativeSpeed:'não exposta'} · fator do mundo: ${i?.unitSpeed??'não informado'} · bônus explícito: ${i?.multiplier??1}x</div>
         ${i?.effects.names.length||i?.effects.stats.length?`<div class="smallnote">Efeitos observados: ${cleanStr([...i.effects.names,...i.effects.stats].join(', '))}</div>`:''}
         ${i?.candidateUnits?.length?`<div class="smallnote">Velocidades-base compatíveis (não confirmam unidades): ${cleanStr(i.candidateUnits.map(x=>x.key+' ~'+x.expected).join(', '))}</div>`:''}
+        ${travel?.available?`<div class="smallnote">CS sem bônus: ${Math.round(travel.baseSeconds/60)} min · CS em cenários: ${Math.round(travel.minSeconds/60)}–${Math.round(travel.maxSeconds/60)} min · ${travel.scenarioCount} variações</div>
+        <div class="smallnote">${cleanStr(travel.reason)} ${travel.observedSeconds!==null?'Duração observada: '+Math.round(travel.observedSeconds/60)+' min.':'Tempo restante não informa o instante de envio.'}</div>
+        ${travel.matches?.length?`<div class="smallnote"><b>Cenários compatíveis:</b> ${cleanStr(travel.matches.slice(0,3).map(m=>Math.round(m.seconds/60)+'min ('+(m.effects.join(' + ')||'sem bônus')+', '+m.method+')').join(' | '))}</div>`:''}
+        ${travel.alternatives?.length?`<div class="smallnote">Outras tropas também compatíveis: ${cleanStr([...new Set(travel.alternatives.map(x=>x.unit))].join(', '))}</div>`:''}`:
+        `<div class="smallnote">${cleanStr(travel?.reason||'Sem duração-base de CS para este trajeto.')}</div>`}
+        ${i?.originTownId?`<div class="formrow compact"><span>Tempo-base do CS sem bônus (minutos)</span>
+          <input type="number" id="dodgeColonyBase-${id}" min="1" max="2880" step="0.1"
+            value="${config.dodge?.colonyBaselineMinutes?.[travel?.route]??''}" placeholder="Ex.: 100">
+          <button data-action="dodgeSaveColonyBase" data-attack="${id}">Calcular cenários</button></div>`:''}
         <div class="smallnote">${cleanStr(decision.reason)}</div>
         <div class="formrow compact"><span>Classificar:</span>
           <button data-action="dodgeMarkAttack" data-attack="${id}" data-mark="colony">É colono</button>
@@ -2280,7 +2453,8 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
           ['confirmed','Pausar apenas colonizadores confirmados'],
           ['all','Esquivar de todos, inclusive colonizadores']
         ],config.dodge.colonizationPolicy||'review')}</select></div>
-      <p class="smallnote">O classificador compara tipo de comando, dados explícitos de conquista, presença de navio colonizador nas unidades disponíveis, ataques de revolta e velocidade informada pelo jogo. Bônus de farol, cartografia, heróis, poderes, templos, pesquisas, eventos e missões só são lidos quando presentes nos dados visíveis. A ETA é sempre a chegada do servidor: nunca é recalculada por um bônus presumido. Uma suspeita não confirma colono.</p>
+      <p class="smallnote">Novo cálculo por cenários: Cartografia +10%, Velas ao Vento +10%, Farol +15%, Templo de Ares +15% (somente Olimpo), Atalanta nível 1–20 (+13,2% a +36%), e bônus temporários com percentual explicitamente presente nos dados do movimento. Simula combinações, somas e multiplicações de bônus. Meteorologia é terrestre e o Elmo de Hades oculta tropas, não os acelera.</p>
+      <p class="smallnote">Para comparar durações, informe uma vez o tempo-base do navio colonizador entre a cidade de origem e a cidade atacada, sem bônus, usando o tempo mostrado no jogo. O valor fica associado ao trajeto e pode ser reutilizado. Se a partida do ataque não estiver exposta, somente o tempo restante não prova a presença do navio. O horário de impacto continua sendo o do servidor.</p>
       <p class="smallnote">Se um colono confirmado ou suspeito chegar próximo de um ataque de limpeza, a esquiva automática aguarda revisão para não retirar a defesa. Um colono identificado após envio de apoio provoca tentativa de cancelamento antecipado, com alerta se não houver tempo suficiente de retorno.</p>
       ${section('Destino do apoio')}
       <div class="formrow"><span>Cidade protegida</span>${selectTown('dodgeSource',src?.id)}</div>
@@ -2892,7 +3066,7 @@ let queueKindSelected='building';
         '<div class="tools"><button data-tab="VERIFICAR">Abrir verificação</button></div>';
     }
     shadow.querySelector('#gp-app').innerHTML=`
-      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.9.8</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
+      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.9.9</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
       ${config.ui.collapsed?'':`<div class="status"><i class="dot ${config.enabled?(config.dryRun?'sim':'live'):''}"></i>${cleanStr(STATUS())}</div>
       <div class="tabs">${['COMEÇAR','INÍCIO','CIDADES','FILA','ALDEIAS','TROPAS','COMBATE','ESQUIVA','TESTE','DIAG','VERIFICAR','ECONOMIA','MISSÕES','AJUSTES','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
       <div class="body">${body}</div><div class="foot"><button class="${config.enabled?'stop':'go'}" data-action="toggle">${config.enabled?'■ PARAR TUDO':'▶ INICIAR'}</button><span>${Object.values(config.modules).filter(Boolean).length} módulos ativos</span></div>`}`;
@@ -2955,6 +3129,19 @@ let queueKindSelected='building';
           log('Modelo público exportado sem cidades ou metas pessoais');break;
         }
         case 'templateImport':templateImport(el('templateImportText')?.value||'');break;
+        case 'dodgeSaveColonyBase':{
+          const id=String(trg.dataset.attack||'');
+          const attack=dodgeIncoming().find(x=>x.id===id);
+          if(!attack?.intel?.originTownId)throw Error('Ataque não encontrado ou origem indisponível');
+          const route=colonyBaselineKey(attack.intel.originTownId,attack.townId);
+          const input=shadow?.getElementById('dodgeColonyBase-'+id);
+          const minutes=Number(input?.value);
+          if(!Number.isFinite(minutes)||minutes<1||minutes>2880)
+            throw Error('Informe o tempo-base do CS em minutos (1–2880), sem bônus');
+          config.dodge.colonyBaselineMinutes??={};
+          config.dodge.colonyBaselineMinutes[route]=Number(minutes.toFixed(2));
+          save();log('Análise de colono: trajeto '+route+' com duração-base '+minutes+' minutos');break;
+        }
         case 'dodgeMarkAttack':{
           const id=String(trg.dataset.attack||''),mark=String(trg.dataset.mark||'');
           if(!id||id.length>128||!['colony','normal','clear'].includes(mark))throw Error('Classificação inválida');
