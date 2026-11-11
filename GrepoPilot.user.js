@@ -1904,6 +1904,23 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     return [...unique.values()].sort((a,b)=>a.factor-b.factor);
   }
 
+  function colonyFindTown(id){
+    const known=townBy(id);
+    if(known)return known;
+    try{
+      const models=W.MM?.getModels?.();
+      for(const name of ['Town','Towns']){
+        const raw=models?.[name];
+        if(!raw)continue;
+        const exact=raw[id]??raw[String(id)];
+        if(exact)return exact;
+        const found=(Array.isArray(raw)?raw:Object.values(raw)).find(t=>
+          Number(t?.id??t?.attributes?.id??t?.getId?.())===Number(id));
+        if(found)return found;
+      }
+    }catch{}
+    return null;
+  }
   function colonyTownCoordinates(t){
     if(!t)return null;
     const attrs=t.attributes||{};
@@ -1916,7 +1933,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
   function colonyMovementGeometry(a){
     const sourceId=dodgeSrcId(a),destId=dodgeDstId(a);
     const coords=(id,origin)=>{
-      const town=townBy(id);
+      const town=colonyFindTown(id);
       const known=colonyTownCoordinates(town);
       if(known)return known;
       const m=origin?'origin':'destination';
