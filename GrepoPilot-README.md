@@ -447,3 +447,47 @@ Foram simulados e aprovados:
 - comparação com velocidades de unidades oferecidas pelo cliente.
 
 Sem teste de compatibilidade com todos os mundos reais nem garantia de identificação de ataques cujos dados estejam ocultos.
+
+## GrepoPilot v0.9.9 — Simulação combinatória da velocidade de colonizadores
+
+A análise da aba **ESQUIVA** deixou de depender apenas de comparar a velocidade nativa do movimento com velocidade-base 3. Agora avalia **tempos completos possíveis de viagem de um navio colonizador** sob combinações de bônus e também compara navios alternativos.
+
+### Bônus conhecidos incorporados ao cálculo
+
+| Fator | Variação | Aplicação | Fonte |
+| --- | ---: | --- | --- |
+| Velocidade do mundo | Configuração do servidor | Acelera unidades conforme multiplicador do mundo | [Unidades](https://support.innogames.com/kb/Grepolis/pt_BR/3371) |
+| Cartografia | +10% | Navios | [Árvore de pesquisas](https://support.innogames.com/kb/Grepolis/en_DK/3503) |
+| Velas ao Vento (Set Sail) | +10% | Apenas navios colonizadores | [Árvore de pesquisas](https://support.innogames.com/kb/Grepolis/en_DK/3503) |
+| Farol | +15% | Frotas navais | [Farol](https://support.innogames.com/kb/Grepolis/pt_BR/3320) |
+| Templo de Ares | +15% | Movimentos em mundos com o modo Olimpo e o bônus da aliança | [Olimpo](https://support.innogames.com/kb/Grepolis/en_DK/4482) |
+| Atalanta | +13,2% (nível 1) a +36% (nível 20) | Exércitos acompanhados por ela | [Heróis](https://support.innogames.com/kb/Grepolis/en_DK/3578) |
+| Bônus temporários de missões, eventos, magia ou movimento | Valor variável | Só usa percentuais efetivamente informados pelo cliente | [Como conquistar cidades](https://support.innogames.com/kb/Grepolis/en_DK/372) |
+
+**Exclusões importantes:** Meteorologia melhora o deslocamento de tropas de quartel em 10%, mas não é um bônus naval do CS; Elmo de Hades oculta a marcha durante os primeiros 10% da viagem, **sem aumentar sua velocidade**; Vento Favorável de Zeus é bônus **de força de ataque naval**, e não de velocidade. Por isso, esses efeitos não são somados à velocidade do colonizador.
+
+### Como funciona o novo cálculo
+
+1. Identifica cidade de origem e destino, velocidade do mundo e horário de chegada retornado pelo jogo.
+2. Obtém uma **duração-base do CS sem bônus** para essa rota por três caminhos:
+   - um tempo-base explicitamente fornecido pelo próprio modelo do movimento, quando disponível;
+   - uma duração em minutos informada no painel da ESQUIVA, obtida na janela de ataque do Grepolis; salva por **origem:destino**;
+   - **calibração aproximada automática**: quando houver coordenadas das cidades e pelo menos três movimentos próprios com horários de partida, chegada e velocidade efetiva conhecidos, ajusta uma relação entre distância, velocidade e duração. Rejeita dados insuficientes ou inconsistentes; não inventa constantes de viagem do servidor.
+3. Gera cenários sem bônus e com cada subconjunto de **Cartografia / Velas ao Vento / Farol / Ares**, combinados com **Atalanta ausente ou níveis 1–20**. Inclui efeitos com percentual conhecido no modelo do movimento. Por cautela, compara modelos **aditivo e multiplicativo**: não presume conhecer exatamente a ordem de empilhamento do servidor.
+4. Compara a **duração total observada** (chegada menos saída informada pelo cliente) com cada duração teórica, usando tolerância configurável (padrão 5%; calibração automática tem tolerância adicional por ser aproximada). Exibe até os três melhores cenários e outros navios cujos tempos também encaixem.
+5. Sem horário de partida, **o tempo restante não é a duração total**. O programa mostra apenas se o CS *ainda poderia* cumprir o limite observado, sem declarar colono provável apenas por esse dado. Se houver unidade colonizadora explícita, o status confirmado continua prevalecendo.
+6. A hora de impacto usada para **esquiva e cancelamento** continua vindo do servidor, sem substituição por estimativas de velocidade.
+
+**Exemplo:** um CS com referência de **100 minutos** pode percorrer uma rota em aproximadamente **90,9 minutos** com um bônus de velocidade de +10% no modelo multiplicativo. Com Cartografia +10% e Farol +15%, a duração teórica é **100 ÷ (1,10 × 1,15) ≈ 79,1 minutos**. Esse encaixe torna o colono possível, mas não confirma sua presença; outros navios e efeitos não revelados podem produzir tempos semelhantes.
+
+### Interface
+
+Na lista de ataques, o GrepoPilot informa: origem, destino, saída e chegada conhecidas; duração completa ou somente tempo restante; velocidade nativa (quando disponível), efeitos observados, duração-base de CS, faixa de tempos das combinações e os três melhores encaixes. O campo **Tempo-base do CS sem bônus (minutos)** e o botão **Calcular cenários** permitem fornecer o tempo exibido no Grepolis quando não houver dados automáticos confiáveis.
+
+A aba mantém as políticas **Conservador**, **Máxima cautela**, **Apenas confirmados** e **Todos**. Identificação por duração exata gera status **possível colono**, não **colono confirmado**. A configuração é individual por mundo e jogador.
+
+### Testes
+
+Testes em cliente simulado passaram para: duração-base 100 min versus ataque completo de 90 min; composição Cartografia + Farol; efeitos percentuais temporários; exclusão de Velas ao Vento para navios comuns; não classificar pelo tempo restante sem partida; calibração de rota a partir de três movimentos reais simulados com distâncias diferentes; prioridade da duração de referência do jogador sobre aproximação estatística; comportamento com origem sem coordenadas; interface de diagnóstico; preservação do script anterior.
+
+**A validação em sessão real do Grepolis permanece pendente.** As propriedades de partida, velocidade, posição e bônus do inimigo podem estar ocultas; nenhuma comparação temporal oferece identificação garantida de colonizador.
