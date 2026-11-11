@@ -1984,9 +1984,9 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     };
     const route=colonyBaselineKey(source,dest);
     const direct=explicit(movement);
+    const stored=Number(config.dodge?.colonyBaselineMinutes?.[route]);
     const auto=Number.isFinite(direct)||Number.isFinite(stored)&&stored>=1&&stored<=2880?
       null:colonyAutoBaseline(movement);
-    const stored=Number(config.dodge?.colonyBaselineMinutes?.[route]);
     const baseSeconds=Number.isFinite(direct)?direct:
       Number.isFinite(stored)&&stored>=1&&stored<=2880?stored*60:
       auto?.seconds??NaN;
