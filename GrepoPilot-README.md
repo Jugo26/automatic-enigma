@@ -327,3 +327,27 @@ A nova lista **Objetivos detectados** mostra a situação e a próxima etapa pre
 Testes em cliente simulado passaram para: escolha de herói atribuído e saudável; exclusão de heróis feridos; envio sem herói quando ausente/desativado; manutenção da composição de tropas; programação de construção/pesquisa/recrutamento; preservação de metas mais elevadas; espera de missão; recompensa após satisfação; ação explícita de escolha; preferência de Sabedoria/Guerra; limite de recursos e sacrifício de tropas; bloqueio de comandos desconhecidos; exibição dos controles.
 
 **Pendente:** teste das APIs reais de seleção de herói e ações de missões em um mundo Grepolis. As capacidades efetivas dependem dos dados fornecidos pelo cliente.
+
+## GrepoPilot v0.9.6 — Controle conservador de solicitações e pausa de proteção
+
+A v0.9.6 melhora o comportamento do GrepoPilot diante de requisições frequentes e verificações CAPTCHA. **Não resolve, suprime nem burla desafios CAPTCHA, e não promete impedir sua exibição.** A decisão de apresentar uma verificação é do Grepolis.
+
+Em **AJUSTES → Proteção durante CAPTCHA → Controle de solicitações**:
+
+- **Limitar ações de rotina:** ativo por padrão. Espaça chamadas de automação de rotina sem alterar as metas configuradas.
+- **Intervalo mínimo entre envios:** padrão **15 segundos**, configurável entre 5 e 120 segundos.
+- **Máximo de solicitações por hora:** padrão **100**; configurável de 10 a 300. O contador usa uma janela móvel local de 60 minutos, incluídas as ações de horário crítico.
+- **Pausa após resolver CAPTCHA:** padrão **15 minutos**, configurável entre 0 e 120. A retomada ocorre após a confirmação de que o desafio desapareceu e o período de pausa adicional terminou.
+- **Resposta de excesso de requisições (HTTP 429 ou mensagem equivalente):** o GrepoPilot aguarda **20 minutos** antes de voltar a enviar solicitações de rotina.
+- **F5 automático:** também é adiado enquanto houver uma pausa após CAPTCHA ou erro de excesso de requisições.
+- **Diagnóstico:** o motor indica quando ações aguardam limite de solicitações. A aba AJUSTES mostra quantas chamadas foram feitas na última hora e quanto falta até a próxima ação de rotina.
+
+Ataques e apoios programados e cancelamentos de comandos cronometrados continuam prioritários para não perder janelas críticas, **mas nunca são enviados durante um CAPTCHA visível**. São contabilizados na janela de solicitações. Esta exceção preserva a lógica de combate, sem garantir redução de verificações de segurança.
+
+O estado das tentativas e da pausa fica salvo no navegador, por **conta e mundo**, e persiste após atualização da página. Configurações novas seguem os limites conservadores; usuários anteriores recebem os novos valores via migração, mantendo suas demais preferências.
+
+### Testes simulados
+
+Passaram os testes de: bloqueio de solicitações consecutivas; liberação após 15 segundos; teto da janela móvel de uma hora; descarte de tentativas antigas; bloqueio de comandos mesmo prioritários durante CAPTCHA; pausa de 15 minutos após resolução; retomada ao terminar o tempo; persistência dos contadores após F5; resposta simulada 429; adiamento do F5 no período de pausa; manutenção dos controles da interface.
+
+**Limite da validação:** os testes não confirmam frequência real de CAPTCHAs nem políticas internas de detecção do Grepolis. A verificação com servidor real permanece pendente.
