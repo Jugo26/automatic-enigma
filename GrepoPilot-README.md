@@ -379,3 +379,71 @@ O suporte oficial explica que uma ordem de apoio/ataque só pode ser cancelada n
 **Testes simulados aprovados:** detecção de ataque; apoio único com tropas terrestres/navios; ID por `model.id`; nenhuma duplicação de envios/cancelamentos; espera da margem de 15 segundos; cancelamento da última onda; troca de destino ameaçado; nenhum destino seguro; migração de perfis existentes; registro de movimento não identificado; até três tentativas de cancelamento; retorno pendente com bot pausado; persistência e recuperação após F5; histórico recente e controles do painel.
 
 **Validação pendente:** execução real em servidor Grepolis para confirmar esquemas dos movimentos, aceitação dos comandos e latência efetiva. O navegador deve permanecer com a aba ativa para melhor precisão; suspensão da aba, CAPTCHA, conexão lenta e mudanças do cliente podem atrasar ou inviabilizar a esquiva.
+
+## GrepoPilot v0.9.8 — Classificação de ataques e análise conservadora de navio colonizador
+
+Nova análise na aba **ESQUIVA**, sem alterar o mecanismo de comandos de apoio/cancelamento da versão v0.9.7.
+
+### Tipos reconhecidos
+
+- **Colono confirmado:** o modelo do movimento declara explicitamente unidade `colonize_ship` ou variante, tipo de conquista/takeover/colonização, ou sinalizador de presença do navio. Não deduz a confirmação por duração ou velocidade.
+- **Possível colono:** a velocidade efetiva é compatível com a velocidade-base 3 do navio colonizador (multiplicada pela velocidade de unidades do mundo e por multiplicador explícito do próprio comando). Essa comparação usa uma margem de 12% e **não significa confirmação**.
+- **Revolta:** identifica `revolt`/rebellion como ataque de revolta, **sem classificá-lo automaticamente como presença de colono**.
+- **Desconhecido:** dados insuficientes para identificar unidades ou tipo do movimento.
+- **Classificação manual:** botões **É colono**, **Não é colono** e **Limpar**, individualmente para cada ataque identificado. A escolha é guardada somente para a conta/mundo do usuário.
+
+O classificador lê campos conhecidos de tipo, subtipo, unidades (inclusive quantidades estruturadas), origem, destino, tempo de partida, chegada, velocidade informada pelo cliente, multiplicadores e indicadores de conquista.
+
+### Duração, velocidade e efeitos
+
+- **Horário de chegada** é sempre o retornado pelo modelo de movimentos do Grepolis. O GrepoPilot não recalcula o impacto com uma estimativa de velocidade, evitando antecipações indevidas quando existem bônus não expostos ao defensor.
+- **Duração total da viagem** só é calculada quando o cliente revela saída e chegada; sem hora de saída, permanece como não informada.
+- **Velocidades candidatas:** quando o cliente fornece uma velocidade efetiva e o fator de velocidade do mundo, o programa compara as velocidades do catálogo de unidades fornecido pelo próprio `GameData.units`; apenas lista unidades *compatíveis*, não composição confirmada.
+- **Bônus e efeitos:** consulta campos disponíveis do próprio movimento para farol, cartografia, poder/magia, herói, pesquisas, missões de ilha, templo, evento, velocidade de unidades e multiplicadores de viagem. Mostra nomes e valores que o jogo efetivamente expõe. A ausência de informação **não significa ausência de bônus**.
+- **Elmo de Hades:** tratado como ocultação/invisibilidade da marcha, **não** como bônus de velocidade.
+- **Exemplos oficiais:** Navio Colonizador velocidade 3 no mundo de unidade 1; Farol +15% de velocidade naval; templo grande de Ares no mundo Olimpo concede +15% de velocidade de movimento; bônus temporários de missões e habilidades de heróis podem afetar a análise. Nenhum valor desses é somado à ETA mostrada pelo servidor.
+
+Fontes de mecânica do jogo:
+- https://support.innogames.com/kb/Grepolis/pt_BR/3353
+- https://support.innogames.com/kb/Grepolis/pt_BR/3422
+- https://support.innogames.com/kb/Grepolis/pt_BR/3320
+- https://support.innogames.com/kb/Grepolis/en_DK/4482
+- https://support.innogames.com/kb/Grepolis/en_DK/372
+
+### Decisão de esquiva para proteger a cidade
+
+Na aba **ESQUIVA → Análise de colonização**:
+
+1. **Conservador (padrão):** não retira tropas diante de colono confirmado nem ataque com indício de velocidade compatível; aguarda revisão desses movimentos. Outros ataques desconhecidos seguem a regra normal.
+2. **Máxima cautela:** também suspende a esquiva de ataques de tipo desconhecido até análise manual.
+3. **Apenas confirmados:** não retira tropas diante de colono confirmado; suspeitos continuam elegíveis.
+4. **Todos:** mantém a esquiva anterior, mesmo quando a ameaça estiver classificada como colonização.
+
+Uma janela de conflito, padrão **180 segundos** e configurável entre **60 e 600 segundos**, impede a retirada automática de defesa se um colono suspeito/confirmado estiver chegando logo após um ataque comum (por exemplo, ataques de limpeza antes de navio colonizador).
+
+Quando surge um colono suspeito/confirmado depois que um apoio já foi enviado, o bot solicita **cancelamento antecipado do apoio** e informa se o retorno previsto não tem margem confirmada para anteceder o impacto. O retorno depende do servidor, da duração da viagem, do limite de cancelamento e de o comando estar identificado.
+
+O painel alerta sobre movimentos identificados como colono até **6 horas** antes da chegada (quando visíveis no modelo), sem repetir indefinidamente o mesmo aviso.
+
+### Diagnóstico e limitações
+
+O botão **Exportar diagnóstico da esquiva** inclui a classificação, os sinais de detecção, velocidades candidatas e nomes/valores dos modificadores presentes nos objetos do cliente.
+
+**Limitação técnica importante:** quando o Grepolis oculta a composição, a hora de partida, a velocidade efetiva ou parte dos efeitos, **não existe método confiável para garantir se há um navio colonizador usando apenas a duração restante**. Uma movimentação lenta pode ser armadilha ou tropa diferente; magias e poderes podem tornar colonos mais rápidos. O módulo não inventa essas informações nem garante 100% de acerto.
+
+### Testes simulados
+
+Foram simulados e aprovados:
+- identificação de unidade colonizadora explícita e marcadores de conquista;
+- distinção entre revolta e colono;
+- velocidade nominal 3 e velocidade com multiplicador explícito de farol;
+- duração real com saída e chegada observadas, sem alterar ETA;
+- efeitos do farol, bônus temporários e Elmo de Hades;
+- classificação manual e três políticas de decisão mais modo máxima cautela;
+- alerta antecipado sem enviar tropas;
+- retenção de tropas diante de colono suspeito/confirmado;
+- ataque de limpeza antes de navio colonizador;
+- cancelamento antecipado ao aparecer CS após apoio já enviado;
+- comparação com velocidades de unidades oferecidas pelo cliente.
+
+Sem teste de compatibilidade com todos os mundos reais nem garantia de identificação de ataques cujos dados estejam ocultos.
