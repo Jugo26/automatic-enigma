@@ -351,3 +351,31 @@ O estado das tentativas e da pausa fica salvo no navegador, por **conta e mundo*
 Passaram os testes de: bloqueio de solicitações consecutivas; liberação após 15 segundos; teto da janela móvel de uma hora; descarte de tentativas antigas; bloqueio de comandos mesmo prioritários durante CAPTCHA; pausa de 15 minutos após resolução; retomada ao terminar o tempo; persistência dos contadores após F5; resposta simulada 429; adiamento do F5 no período de pausa; manutenção dos controles da interface.
 
 **Limite da validação:** os testes não confirmam frequência real de CAPTCHAs nem políticas internas de detecção do Grepolis. A verificação com servidor real permanece pendente.
+
+## GrepoPilot v0.9.7 — Retrabalho completo da esquiva de tropas
+
+Revisão da aba **ESQUIVA**, da detecção de movimentos, do envio de apoio e do cancelamento, mantendo as demais funções existentes.
+
+### Mudanças de comportamento
+
+- **Saída antecipada:** o padrão antigo enviava de 1 a 5 segundos antes do ataque. O novo padrão prepara a saída **60 segundos antes** (configurável de 20 a 180 segundos).
+- **Margem após a última onda:** em vez de cancelar o apoio durante a viagem para tentar que retorne exatamente 1 segundo após a batalha, solicita o cancelamento **15 segundos depois da última onda identificada** (configurável entre 10 e 90 segundos). **As tropas retornarão mais tarde**; não há promessa de precisão no segundo da chegada.
+- **Único apoio por cidade/onda:** combina as unidades terrestres e navios habilitados em um envio de apoio, reduzindo o risco de perder a segunda parte do exército entre requisições.
+- **Detecção ampliada:** aceita campos usuais de origem, destino, início e chegada e identifica o comando tanto por `attributes.command_id` como por `attributes.id`, `model.id` ou `getId()`, caso existam.
+- **Onda múltipla:** estende o cancelamento ao detectar uma nova chegada dentro da janela de agrupamento configurada.
+- **Destino seguro:** escolhe outra cidade própria da mesma ilha sem ataques conhecidos na janela próxima. Se o destino configurado estiver ameaçado, tenta outra cidade própria segura; caso não haja, não envia apoio e registra aviso.
+- **Janela do jogo:** respeita o limite oficial de 10 minutos para cancelar um apoio. Se o apoio chegar cedo ao destino, tenta um cancelamento antecipado e sinaliza a limitação.
+- **Repetições controladas:** o pedido de cancelamento é feito até três vezes com espera progressiva quando o servidor o rejeita. Falha persistente, movimento não identificado ou janela vencida resultam em status `needs_attention` na aba e no diagnóstico; não reenvia tropas às cegas.
+- **Recuperação após F5:** os registros pendentes são mantidos por conta/mundo no armazenamento local; o módulo continua acompanhando cancelamentos mesmo se o usuário pausar o bot depois de enviar apoio.
+- **Cancelamento manual de emergência:** botão **Cancelar este apoio agora** em apoios com ID identificado, inclusive após uma falha de confirmação. Não afeta apoios sem identificação.
+- **Diagnóstico exportável:** botão **Exportar diagnóstico da esquiva** gera arquivo JSON com os campos disponíveis dos movimentos e o status dos pedidos, para analisar diferenças entre versões e mundos do Grepolis.
+
+### Migração e testes
+
+Perfis anteriores com a janela antiga de 1–5 segundos e retorno de 1 segundo são migrados para a janela padrão de 60/15 segundos; a configuração atual de outras funcionalidades é preservada. O modo de teste prático usa agora uma duração inicial de 120 segundos e verifica se há tempo suficiente para saída e cancelamento. O teste virtual também espelha a regra de cancelamento posterior à onda.
+
+O suporte oficial explica que uma ordem de apoio/ataque só pode ser cancelada nos primeiros **10 minutos** da viagem: https://support.innogames.com/kb/Grepolis/pt_BR/3347 . Outro artigo oficial explica o desvio variável dos horários de chegada no mundo: https://support.innogames.com/kb/Grepolis/en_DK/457 .
+
+**Testes simulados aprovados:** detecção de ataque; apoio único com tropas terrestres/navios; ID por `model.id`; nenhuma duplicação de envios/cancelamentos; espera da margem de 15 segundos; cancelamento da última onda; troca de destino ameaçado; nenhum destino seguro; migração de perfis existentes; registro de movimento não identificado; até três tentativas de cancelamento; retorno pendente com bot pausado; persistência e recuperação após F5; histórico recente e controles do painel.
+
+**Validação pendente:** execução real em servidor Grepolis para confirmar esquemas dos movimentos, aceitação dos comandos e latência efetiva. O navegador deve permanecer com a aba ativa para melhor precisão; suspensão da aba, CAPTCHA, conexão lenta e mudanças do cliente podem atrasar ou inviabilizar a esquiva.
