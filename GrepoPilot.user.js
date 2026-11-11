@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GrepoPilot - Painel de Automacao
 // @namespace    https://grepolis.com/
-// @version      0.9.7
+// @version      0.9.8
 // @updateURL    https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.meta.js
 // @downloadURL  https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.user.js
 // @homepageURL  https://github.com/Jugo26/automatic-enigma/tree/grepopilot-updates
@@ -120,7 +120,7 @@
     cave: {minIron:15000,keepIron:5000},
     commands: {jobs:[]},
     alerts: {desktop:true,checkAll:true},
-    dodge: {version:2,leadSeconds:60,returnAfterSeconds:15,waveGapSeconds:12,land:true,naval:true,targets:{}},
+    dodge: {version:2,leadSeconds:60,returnAfterSeconds:15,waveGapSeconds:12,land:true,naval:true,targets:{},colonizationPolicy:'review',attackMarks:{}},
     attackTest: {delay:120,wave:0,mode:'preview'},
     sync: {role:'primary'},
     security: {notify:true,resumeAfterSeconds:5,pacingEnabled:true,minActionIntervalSeconds:15,maxActionsPerHour:100,postCaptchaCooldownMinutes:15},
@@ -1733,6 +1733,136 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
   const dodgeDstId=a=>Number(a?.destination_town_id??a?.target_town_id??a?.to_town_id??a?.target_id);
   const dodgeArrival=a=>dodgeEpochMs(a?.arrival_at??a?.arrival_time??a?.time_of_arrival??a?.arrival);
   const dodgeStarted=a=>dodgeEpochMs(a?.started_at??a?.start_time??a?.sent_at??a?.departed_at);
+
+  // A hora de chegada vem sempre do modelo de movimentos do jogo. NÃO recalcular
+  // a chegada com velocidades teóricas: heróis, pesquisas, farol, mundo e bônus
+  // temporários do atacante podem estar ocultos ao defensor.
+  const colonyUnitKeys=new Set(['colonize_ship','colonization_ship','colonisation_ship','colony_ship','colonizer_ship','coloniser_ship']);
+  const colonyTerms=/(?:coloniz|colonis|colony.ship|colono|conquest|takeover|conquer)/i;
+  const speedRelated=/(?:speed|veloc|movement|move.?speed|travel|viagem|cartograph|cartograf|lighthouse|farol|quest|power|spell|hero|heroi|heró|temple|templo|bonus|bônus|research|pesquis|wind|vento)/i;
+  const speedEffectsKnown={
+    lighthouse:'Farol (naval +15%)',farol:'Farol (naval +15%)',
+    cartography:'Cartografia',cartografia:'Cartografia',
+    olympus_ares:'Templo de Ares no Olimpo (+15%)',
+    hades_helmet:'Elmo de Hades (invisibilidade; não aumenta a velocidade)',
+    helmet_of_invisibility:'Elmo de Hades (invisibilidade; não aumenta a velocidade)'
+  };
+  const dodgeNumber=value=>{
+    const num=Number(value);
+    return Number.isFinite(num)&&num>0?num:NaN;
+  };
+  function dodgeMovementEffects(a){
+    const names=new Set(),stats=[];
+    const fields=['powers','spells','power','spell','effects','active_effects','modifiers',
+      'bonuses','speed_modifiers','speed_bonuses','hero','hero_bonus','hero_speed_bonus',
+      'researches','research','buildings','building','movement_buffs','quest_bonuses',
+      'travel_speed_bonus','unit_speed_bonus','speed_multiplier','speed_factor',
+      'unit_speed_multiplier','world_speed','unit_speed'];
+    const consume=(value,path,depth=0)=>{
+      if(depth>3||value===null||value===undefined)return;
+      if(['string','number','boolean'].includes(typeof value)){
+        const name=String(path.split('.').at(-1)||'').toLowerCase();
+        if(typeof value==='string'&&value.length<160&&speedRelated.test(value)){
+          names.add(speedEffectsKnown[value.toLowerCase()]||value);
+        }else if((typeof value==='number'||typeof value==='boolean')&&speedRelated.test(name)){
+          stats.push(path+'='+String(value));
+        }
+        return;
+      }
+      if(Array.isArray(value)){
+        for(const entry of value.slice(0,20))consume(entry,path,depth+1);
+        return;
+      }
+      if(typeof value==='object'){
+        for(const [key,val] of Object.entries(value).slice(0,24)){
+          if((typeof val==='boolean'&&val===true||typeof val==='number'&&val>0)&&speedRelated.test(key))
+            names.add(speedEffectsKnown[key.toLowerCase()]||key);
+          consume(val,path+'.'+key,depth+1);
+        }
+      }
+    };
+    for(const key of fields)if(a[key]!==undefined)consume(a[key],key);
+    return {names:[...names].slice(0,15),stats:stats.slice(0,15)};
+  }
+  const dodgeUnitSpeed=()=>{
+    const raw=[W.Game?.unit_speed,W.Game?.world?.unit_speed,
+      W.GameData?.world?.unit_speed,W.GameData?.world_settings?.unit_speed,
+      W.Game?.unit_speed_factor,W.GameData?.unit_speed];
+    return raw.map(dodgeNumber).find(Number.isFinite)||NaN;
+  };
+  function dodgeAttackIntel(a,model,townId,source,arrivalMs,id){
+    const type=String(a.type??a.command_type??a.movement_type??'').toLowerCase();
+    const subtype=String(a.attack_type??a.subtype??a.command_subtype??a.movement_subtype??'').toLowerCase();
+    const explicitFields=[type,subtype,String(a.colonization_type??'')];
+    const effects=dodgeMovementEffects(a),signals=[];
+    const startedAt=dodgeStarted(a);
+    const elapsed=Number.isFinite(startedAt)&&startedAt<=arrivalMs?arrivalMs-startedAt:NaN;
+    const unitSamples=[a.units,a.unit_counts,a.troops,a.unit_data,a.units_sent].filter(x=>x&&typeof x==='object'&&!Array.isArray(x));
+    let explicitShip=false;
+    for(const units of unitSamples){
+      for(const [key,value] of Object.entries(units)){
+        if(colonyUnitKeys.has(String(key).toLowerCase())&&Number(value)>0)explicitShip=true;
+      }
+    }
+    const conquestFlag=a.is_colonization===true||a.is_colonisation===true||a.is_conquest===true||
+      a.is_takeover===true||a.has_colony_ship===true||a.contains_colony_ship===true;
+    const revolt=explicitFields.some(t=>/(?:revolt|rebellion)/.test(t))||a.is_revolt===true;
+    const confirmed=explicitShip||conquestFlag||
+      explicitFields.some(t=>colonyTerms.test(t)&&!/(?:revolt|rebellion)/.test(t));
+    if(explicitShip)signals.push('Navio colonizador declarado nas unidades');
+    if(conquestFlag)signals.push('Marcador de conquista no movimento');
+    if(confirmed&&!signals.length)signals.push('Tipo explícito do comando: '+(subtype||type));
+    if(revolt&&!confirmed)signals.push('Ataque de revolta, não confirma navio colonizador');
+
+    const nativeSpeed=dodgeNumber(a.effective_unit_speed??a.movement_unit_speed??a.unit_speed);
+    const unitSpeed=dodgeUnitSpeed();
+    const multiplier=dodgeNumber(a.speed_multiplier??a.unit_speed_multiplier??a.speed_factor)||1;
+    const expectedShipSpeed=3*unitSpeed*multiplier;
+    // Velocidade 3 corresponde ao CS em mundos com fator 1.
+    // Velocidades dos outros navios e bônus ocultos podem coincidir; indício apenas.
+    const speedCompatible=Number.isFinite(nativeSpeed)&&Number.isFinite(expectedShipSpeed)&&
+      Math.abs(nativeSpeed-expectedShipSpeed)/expectedShipSpeed<=0.12;
+    if(speedCompatible&&!confirmed)signals.push('Velocidade compatível com CS, não conclusiva');
+    if(Number.isFinite(elapsed))signals.push('Duração informada pelo cliente: '+Math.round(elapsed/1000)+'s');
+
+    const mark=String(config.dodge?.attackMarks?.[id]||'');
+    let classification=confirmed?'confirmed':speedCompatible?'suspected':revolt?'revolt':'unknown';
+    if(mark==='colony')classification='manual_colony';
+    else if(mark==='normal')classification='manual_normal';
+    const reasons={confirmed:'Colonização confirmada por dados explícitos',
+      suspected:'Possível colonizador: somente indício de velocidade',
+      revolt:'Ataque de revolta — colono não confirmado',
+      unknown:'Tipo não identificado — dados insuficientes',
+      manual_colony:'Marcado manualmente como colonizador',
+      manual_normal:'Marcado manualmente como ataque comum'};
+    return {classification,reason:reasons[classification],
+      signals,effects,startedAt:Number.isFinite(startedAt)?startedAt:null,
+      durationMs:Number.isFinite(elapsed)?elapsed:null,
+      unitSpeed:Number.isFinite(unitSpeed)?unitSpeed:null,
+      nativeSpeed:Number.isFinite(nativeSpeed)?nativeSpeed:null,
+      multiplier,originTownId:Number.isSafeInteger(source)&&source>0?source:null,
+      arrivalMs,townId,id,type,subtype,
+      speedNote:'ETA do servidor prevalece; bônus desconhecidos não são estimados como constantes'};
+  }
+  function dodgeAttackDecision(attack){
+    if(attack.simulated)return {allow:true,reason:'Teste prático'};
+    const status=attack.intel?.classification||'unknown';
+    const policy=String(config.dodge?.colonizationPolicy||'review');
+    if(policy==='all')return {allow:true,reason:'Esquivar de todos os ataques'};
+    if(['confirmed','manual_colony'].includes(status))
+      return {allow:false,reason:'Ataque de colonização: manter tropas até revisão'};
+    if(policy==='review'&&status==='suspected')
+      return {allow:false,reason:'Possível colonizador: verifique e classifique o movimento'};
+    return {allow:true,reason:status==='unknown'?'Ataque não identificado; defesa padrão':'Ataque comum/revolta'};
+  }
+  const dodgeClassificationLabel=a=>({
+    confirmed:'🚢 Colono confirmado',
+    suspected:'⚠ Possível colono',
+    revolt:'⚔ Revolta (não confirma CS)',
+    unknown:'❔ Tipo desconhecido',
+    manual_colony:'🚢 Colono marcado',
+    manual_normal:'⚔ Ataque comum (manual)'
+  }[a?.intel?.classification]||'❔ Tipo desconhecido');
   function dodgeIncoming(){
     const owned=new Set(towns().map(t=>Number(t.id)));
     const seen=new Set();
@@ -1744,7 +1874,8 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
       const id=String(a.command_id??a.id??model.id??'attack-'+townId+'-'+arrivalMs);
       if(seen.has(id))return [];
       seen.add(id);
-      return [{townId,arrivalMs,id,type}];
+      const intel=dodgeAttackIntel(a,model,townId,source,arrivalMs,id);
+      return [{townId,arrivalMs,id,type,intel}];
     });
     return real.concat(testAttacks()).sort((a,b)=>a.arrivalMs-b.arrivalMs);
   }
@@ -1926,6 +2057,10 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
       if(['cancelled','needs_attention'].includes(j.state)&&
         now-Number(j.cancelledAtMs||j.ackAtMs||j.sentAtMs)>7200000){delete store.jobs[id];changed=true;}
     }
+    const warnings=Object.entries(store.classifiedWarnings||{}).filter(([,ts])=>now-Number(ts)<21600000);
+    if(warnings.length!==Object.keys(store.classifiedWarnings||{}).length){
+      store.classifiedWarnings=Object.fromEntries(warnings);changed=true;
+    }
     const recent=Object.entries(store.handled||{}).filter(([,ts])=>now-Number(ts)<21600000);
     if(recent.length!==Object.keys(store.handled||{}).length){store.handled=Object.fromEntries(recent);changed=true;}
     if(changed)dodgeWrite(store);
@@ -2000,6 +2135,18 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
           (config.enabled&&config.modules.dodge||a.simulated));
         const first=attacks[0];
         if(!first)continue;
+        const decision=dodgeAttackDecision(first);
+        if(!decision.allow){
+          const key=first.id+':'+first.intel?.classification;
+          if(!store.classifiedWarnings?.[key]){
+            store.classifiedWarnings??={};store.classifiedWarnings[key]=now;
+            dodgeWrite(store);
+            log('Esquiva '+tName(town)+': '+decision.reason+' (#'+first.id+')','WARN');
+            if(['confirmed','manual_colony'].includes(first.intel?.classification))
+              notify('Colonização identificada contra '+tName(town)+' — defesa não será retirada automaticamente');
+          }
+          continue;
+        }
         const before=first.arrivalMs-now;
         if(before>lead||before<minLead||store.handled[first.id])continue;
         const targetId=dodgeDestination(townId,incoming);
@@ -2036,9 +2183,22 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const src=getSelected();
     const destinations=src?dodgeDestinations(src.id,incoming):[];
     const selected=num(config.dodge.targets?.[src?.id]||0);
-    const listed=incoming.filter(x=>x.arrivalMs>now).slice(0,12).map(a=>
-      `<div class="city compact"><b>⚔️ ${cleanStr(tName(townBy(a.townId)))}</b><span>${Math.max(0,((a.arrivalMs-now)/1000)).toFixed(1)} s para impacto</span></div>`
-    ).join('');
+    const listed=incoming.filter(x=>x.arrivalMs>now).slice(0,12).map(a=>{
+      const i=a.intel,decision=dodgeAttackDecision(a),id=cleanStr(a.id);
+      const started=i?.startedAt?new Date(i.startedAt).toLocaleTimeString('pt-BR',{hour12:false}):'não informado';
+      const duration=i?.durationMs?Math.round(i.durationMs/60000)+' min':'desconhecida';
+      return `<div class="city"><b>${cleanStr(tName(townBy(a.townId)))}</b> · ${dodgeClassificationLabel(a)}
+        <div class="smallnote">#${id} · chegada ${new Date(a.arrivalMs).toLocaleTimeString('pt-BR',{hour12:false})} · em ${Math.max(0,Math.ceil((a.arrivalMs-now)/1000))}s</div>
+        <div class="smallnote">Origem #${cleanStr(i?.originTownId??'?')} · saída ${started} · duração ${duration}</div>
+        <div class="smallnote">Velocidade: ${Number.isFinite(i?.nativeSpeed)?i.nativeSpeed:'não exposta'} · fator do mundo: ${i?.unitSpeed??'não informado'} · bônus explícito: ${i?.multiplier??1}x</div>
+        ${i?.effects.names.length?`<div class="smallnote">Efeitos observados: ${cleanStr(i.effects.names.join(', '))}</div>`:''}
+        <div class="smallnote">${cleanStr(decision.reason)}</div>
+        <div class="formrow compact"><span>Classificar:</span>
+          <button data-action="dodgeMarkAttack" data-attack="${id}" data-mark="colony">É colono</button>
+          <button data-action="dodgeMarkAttack" data-attack="${id}" data-mark="normal">Não é colono</button>
+          <button data-action="dodgeMarkAttack" data-attack="${id}" data-mark="clear">Limpar</button>
+        </div></div>`;
+    }).join('');
     const records=Object.values(store.jobs||{}).filter(j=>dodgeActive(j)||j.state==='needs_attention'||(j.state==='cancelled'&&now-num(j.cancelledAtMs)<900000)).slice(-12).map(j=>
       `<div class="city"><b>${cleanStr(tName(townBy(j.townId)))} → ${cleanStr(tName(townBy(j.targetId)))}</b>
       <div>${cleanStr(j.group)} · apoio #${cleanStr(j.commandId||'identificando')} · ${cleanStr(j.state)}</div>
@@ -2053,6 +2213,14 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
       <div class="formrow"><span>Cancelar após a última onda (segundos)</span><input type="number" min="10" max="90" step="5" data-setting="dodge.returnAfterSeconds" value="${dodgeAfter()/1000}"></div>
       <div class="formrow"><span>Agrupar ataques próximos (segundos)</span><input type="number" min="1" max="60" step="1" data-setting="dodge.waveGapSeconds" value="${config.dodge.waveGapSeconds}"></div>
       <div class="checks"><label><input type="checkbox" data-setting="dodge.land" ${config.dodge.land?'checked':''}> Tropas terrestres</label><label><input type="checkbox" data-setting="dodge.naval" ${config.dodge.naval?'checked':''}> Navios</label></div>
+      ${section('Análise de colonização')}
+      <div class="formrow"><span>Como tratar possíveis colonizadores</span>
+        <select data-setting="dodge.colonizationPolicy">${optionList([
+          ['review','Conservador: aguardar confirmação e não esquivar de suspeitos'],
+          ['confirmed','Pausar apenas colonizadores confirmados'],
+          ['all','Esquivar de todos, inclusive colonizadores']
+        ],config.dodge.colonizationPolicy||'review')}</select></div>
+      <p class="smallnote">Classifica por tipo de comando, indicadores de conquista, navio colonizador nas unidades visíveis, revolta e velocidade exposta pelo próprio jogo. Somente marcadores explícitos confirmam colono. Velocidade e duração são indícios, especialmente com farol, cartografia, heróis, poderes, bônus de missões e velocidade do mundo. A chegada mostrada utiliza o horário do servidor e não uma projeção da velocidade.</p>
       ${section('Destino do apoio')}
       <div class="formrow"><span>Cidade protegida</span>${selectTown('dodgeSource',src?.id)}</div>
       <div class="formrow"><span>Enviar para</span><select id="dodgeTarget"><option value="0">Automático · mesma ilha</option>${optionList(destinations.map(t=>[t.id,tName(t)]),selected)}</select><button data-action="dodgeSaveTarget">Salvar</button></div>
@@ -2663,7 +2831,7 @@ let queueKindSelected='building';
         '<div class="tools"><button data-tab="VERIFICAR">Abrir verificação</button></div>';
     }
     shadow.querySelector('#gp-app').innerHTML=`
-      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.9.7</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
+      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.9.8</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
       ${config.ui.collapsed?'':`<div class="status"><i class="dot ${config.enabled?(config.dryRun?'sim':'live'):''}"></i>${cleanStr(STATUS())}</div>
       <div class="tabs">${['COMEÇAR','INÍCIO','CIDADES','FILA','ALDEIAS','TROPAS','COMBATE','ESQUIVA','TESTE','DIAG','VERIFICAR','ECONOMIA','MISSÕES','AJUSTES','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
       <div class="body">${body}</div><div class="foot"><button class="${config.enabled?'stop':'go'}" data-action="toggle">${config.enabled?'■ PARAR TUDO':'▶ INICIAR'}</button><span>${Object.values(config.modules).filter(Boolean).length} módulos ativos</span></div>`}`;
@@ -2726,6 +2894,17 @@ let queueKindSelected='building';
           log('Modelo público exportado sem cidades ou metas pessoais');break;
         }
         case 'templateImport':templateImport(el('templateImportText')?.value||'');break;
+        case 'dodgeMarkAttack':{
+          const id=String(trg.dataset.attack||''),mark=String(trg.dataset.mark||'');
+          if(!id||id.length>128||!['colony','normal','clear'].includes(mark))throw Error('Classificação inválida');
+          if(!dodgeIncoming().some(a=>a.id===id))throw Error('Movimento não está mais visível');
+          config.dodge.attackMarks??={};
+          if(mark==='clear')delete config.dodge.attackMarks[id];
+          else config.dodge.attackMarks[id]=mark;
+          if(Object.keys(config.dodge.attackMarks).length>400)
+            config.dodge.attackMarks=Object.fromEntries(Object.entries(config.dodge.attackMarks).slice(-250));
+          save();log('Classificação manual #'+id+': '+mark);break;
+        }
         case 'dodgeForceCancel':{
           const id=trg.dataset.job,store=dodgeRead(),job=store.jobs?.[id];
           if(!job||(job.state!=='needs_attention'&&!dodgeActive(job))||!job.commandId)throw Error('Apoio não encontrado ou ainda sem ID');
@@ -2746,6 +2925,8 @@ let queueKindSelected='building';
           download('GrepoPilot-esquiva-'+location.host+'.json',JSON.stringify({
             version:'0.9.7',world:location.host,at:new Date().toISOString(),
             clock:dodgeClock,settings:config.dodge,attacks:dodgeIncoming(),
+            movementFields:dodgeMovements().map(m=>({keys:Object.keys(m.data||{}),
+              details:Object.fromEntries(Object.entries(m.data||{}).filter(([k])=>/(?:speed|modifier|power|spell|effect|hero|conquest|colon|takeover|revolt|unit|time|arriv|start)/i.test(k)).slice(0,25))})),
             jobs:dodgeRead().jobs||{},movements
           },null,2));break;
         }
