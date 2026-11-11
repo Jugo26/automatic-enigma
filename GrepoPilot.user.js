@@ -160,10 +160,10 @@
     if(cfg?.ui?.tab==='MILITAR')cfg.ui.tab='TROPAS';
     if(cfg?.ui?.tab==='CONFIG')cfg.ui.tab='AJUSTES';
     if(cfg?.ui?.tab==='PRESENÇA')cfg.ui.tab='INÍCIO';
-    if(cfg.dodge&&Number(cfg.dodge.version)!==2){
+    if(raw&&Object.keys(raw).length>0&&Number(raw?.dodge?.version)!==2){
       // Atualiza valores legados projetados para uma janela de 1–5 s, insuficiente para a margem de chegada.
-      if(numOrFinite(cfg.dodge.leadSeconds,5)<=5)cfg.dodge.leadSeconds=60;
-      if(numOrFinite(cfg.dodge.returnAfterSeconds,1)<10)cfg.dodge.returnAfterSeconds=15;
+      if(numOrFinite(raw?.dodge?.leadSeconds,5)<=5)cfg.dodge.leadSeconds=60;
+      if(numOrFinite(raw?.dodge?.returnAfterSeconds,1)<10)cfg.dodge.returnAfterSeconds=15;
       cfg.dodge.version=2;
     }
     if(raw?.attackTest?.delay===20&&raw?.dodge?.version!==2)cfg.attackTest.delay=120;
@@ -1970,8 +1970,12 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
         job.lastImpactMs=dodgeLateAttacks(job,incoming);
         const started=num(job.startedAtMs,job.sentAtMs)||num(job.sentAtMs);
         const plan=dodgeTiming(started,job.lastImpactMs);
-        job.cancelAtMs=Math.min(plan.cancelAtMs,plan.deadlineMs);
-        job.returnAtMs=job.cancelAtMs+(job.cancelAtMs-started);
+        const cancelAtMs=Math.min(plan.cancelAtMs,plan.deadlineMs);
+        const returnAtMs=cancelAtMs+(cancelAtMs-started);
+        if(job.cancelAtMs!==cancelAtMs||job.returnAtMs!==returnAtMs){
+          job.cancelAtMs=cancelAtMs;job.returnAtMs=returnAtMs;
+          dodgeSaveRecord(store,job);
+        }
         const earlyLanding=Number.isFinite(num(job.outboundArrivalMs,NaN))&&
           num(job.outboundArrivalMs)>0&&num(job.outboundArrivalMs)<=job.cancelAtMs+2500;
         if(earlyLanding){
@@ -1984,7 +1988,6 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
           job.error='Última onda supera a janela de 10 minutos; cancelamento antecipado';
           log('Esquiva: '+job.error,'WARN');
         }
-        dodgeSaveRecord(store,job);
         if(now>=job.cancelAtMs){
           await dodgeCancel(store,job,now);return;
         }
@@ -2036,12 +2039,12 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const listed=incoming.filter(x=>x.arrivalMs>now).slice(0,12).map(a=>
       `<div class="city compact"><b>⚔️ ${cleanStr(tName(townBy(a.townId)))}</b><span>${Math.max(0,((a.arrivalMs-now)/1000)).toFixed(1)} s para impacto</span></div>`
     ).join('');
-    const records=Object.values(store.jobs||{}).filter(j=>dodgeActive(j)||j.state==='needs_attention').slice(-12).map(j=>
+    const records=Object.values(store.jobs||{}).filter(j=>dodgeActive(j)||j.state==='needs_attention'||(j.state==='cancelled'&&now-num(j.cancelledAtMs)<900000)).slice(-12).map(j=>
       `<div class="city"><b>${cleanStr(tName(townBy(j.townId)))} → ${cleanStr(tName(townBy(j.targetId)))}</b>
       <div>${cleanStr(j.group)} · apoio #${cleanStr(j.commandId||'identificando')} · ${cleanStr(j.state)}</div>
       <div class="smallnote">${j.cancelAtMs?'Cancelar às '+new Date(j.cancelAtMs).toLocaleTimeString('pt-BR',{hour12:false}):'Aguardando movimento'}
       ${j.returnAtMs?' · retorno planejado '+new Date(j.returnAtMs).toLocaleTimeString('pt-BR',{hour12:false}):''}</div>
-      ${j.error?`<div class="smallnote">${cleanStr(j.error)}</div>`:''}${dodgeActive(j)&&j.commandId?`<button data-action="dodgeForceCancel" data-job="${cleanStr(j.id)}">Cancelar este apoio agora</button>`:''}</div>`
+      ${j.error?`<div class="smallnote">${cleanStr(j.error)}</div>`:''}${(dodgeActive(j)||j.state==='needs_attention')&&j.commandId?`<button data-action="dodgeForceCancel" data-job="${cleanStr(j.id)}">Cancelar este apoio agora</button>`:''}</div>`
     ).join('');
     return `${moduleNames()}
       ${section('Esquiva sincronizada por cidade')}
@@ -2096,7 +2099,13 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
       if(id==='build')return Object.keys(config.build.targets||{}).length?'Aguardando recursos, população ou espaço de construção':'Sem metas de construção';
       if(id==='research')return Object.keys(config.research.queue||{}).length?'Aguardando pontos, academia e recursos':'Sem pesquisas planejadas';
       if(id==='commands')return config.commands.jobs?.length?'Comandos cadastrados; aguardando horário':'Nenhum comando agendado';
-      if(id==='dodge')return dodgeIncoming().length?'Ataque detectado; aguardando janela de esquiva':'Nenhum ataque confirmado';
+      if(id==='dodge'){
+        const store=dodgeRead(),pending=dodgeTracked(store).length;
+        const attention=Object.values(store.jobs||{}).filter(j=>j.state==='needs_attention').length;
+        if(attention)return attention+' apoio(s) de esquiva exigem atenção manual';
+        if(pending)return pending+' apoio(s) sendo acompanhados para cancelamento';
+        return dodgeIncoming().length?'Ataque detectado; aguardando janela de saída':'Nenhum ataque confirmado';
+      }
       if(id==='ruralTrade'||id==='ruralUpgrade'||id==='ruralUnlock')return 'Aguardando aldeias, recursos ou disponibilidade';
       if(id==='bootcamp')return 'Aguardando nível do acampamento, tropas ou recarga';
       if(id==='quests'){
@@ -2719,9 +2728,10 @@ let queueKindSelected='building';
         case 'templateImport':templateImport(el('templateImportText')?.value||'');break;
         case 'dodgeForceCancel':{
           const id=trg.dataset.job,store=dodgeRead(),job=store.jobs?.[id];
-          if(!job||!dodgeActive(job)||!job.commandId)throw Error('Apoio não encontrado ou ainda sem ID');
+          if(!job||(job.state!=='needs_attention'&&!dodgeActive(job))||!job.commandId)throw Error('Apoio não encontrado ou ainda sem ID');
           if(securityWatch())throw Error('CAPTCHA ativo: cancelamento indisponível');
           if(dodgeBusy)throw Error('Esquiva já está processando um comando');
+          if(job.state==='needs_attention'){job.state='sent';job.cancelAttempts=0;job.retryAfterMs=0;}
           job.forceCancel=true;dodgeSaveRecord(store,job);
           await dodgeCancel(store,job,dodgeNow());break;
         }
