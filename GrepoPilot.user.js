@@ -120,7 +120,7 @@
     cave: {minIron:15000,keepIron:5000},
     commands: {jobs:[]},
     alerts: {desktop:true,checkAll:true},
-    dodge: {version:2,leadSeconds:60,returnAfterSeconds:15,waveGapSeconds:12,land:true,naval:true,targets:{},colonizationPolicy:'review',attackMarks:{}},
+    dodge: {version:2,leadSeconds:60,returnAfterSeconds:15,waveGapSeconds:12,land:true,naval:true,targets:{},colonizationPolicy:'review',colonyConflictWindowSeconds:180,attackMarks:{}},
     attackTest: {delay:120,wave:0,mode:'preview'},
     sync: {role:'primary'},
     security: {notify:true,resumeAfterSeconds:5,pacingEnabled:true,minActionIntervalSeconds:15,maxActionsPerHour:100,postCaptchaCooldownMinutes:15},
@@ -1801,7 +1801,8 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     let explicitShip=false;
     for(const units of unitSamples){
       for(const [key,value] of Object.entries(units)){
-        if(colonyUnitKeys.has(String(key).toLowerCase())&&Number(value)>0)explicitShip=true;
+        const count=typeof value==='object'&&value?value.count??value.amount??value.value:value;
+        if(colonyUnitKeys.has(String(key).toLowerCase())&&Number(count)>0)explicitShip=true;
       }
     }
     const conquestFlag=a.is_colonization===true||a.is_colonisation===true||a.is_conquest===true||
@@ -1855,6 +1856,12 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
       return {allow:false,reason:'Possível colonizador: verifique e classifique o movimento'};
     return {allow:true,reason:status==='unknown'?'Ataque não identificado; defesa padrão':'Ataque comum/revolta'};
   }
+  const dodgeConflictWindow=()=>Math.max(60,Math.min(600,
+    Math.floor(num(config.dodge?.colonyConflictWindowSeconds,180))))*1000;
+  function dodgeColonyThreat(attacks,townId,start,end){
+    return attacks.find(a=>Number(a.townId)===Number(townId)&&!a.simulated&&
+      a.arrivalMs>=start&&a.arrivalMs<=end&&!dodgeAttackDecision(a).allow)||null;
+  }
   const dodgeClassificationLabel=a=>({
     confirmed:'🚢 Colono confirmado',
     suspected:'⚠ Possível colono',
@@ -1868,7 +1875,9 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const seen=new Set();
     const real=dodgeMovements().flatMap(({model,data:a})=>{
       const type=String(a.type??a.command_type??a.movement_type??'').toLowerCase();
-      if(!(type==='attack'||type.startsWith('attack_')||type==='attacking'))return [];
+      if(!(type==='attack'||type.startsWith('attack_')||type==='attacking'||
+        type==='conquest'||type==='takeover'||type==='colonization'||type==='colonisation'||
+        a.is_colonization===true||a.is_conquest===true||a.has_colony_ship===true))return [];
       const townId=dodgeDstId(a),source=dodgeSrcId(a),arrivalMs=dodgeArrival(a);
       if(!owned.has(townId)||(Number.isSafeInteger(source)&&owned.has(source))||!Number.isFinite(arrivalMs))return [];
       const id=String(a.command_id??a.id??model.id??'attack-'+townId+'-'+arrivalMs);
@@ -2076,6 +2085,21 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
       store.jobs??={};store.handled??={};
       dodgeCleanup(store,now);
       const incoming=dodgeIncoming();
+      // Avisos antecipados, não apenas segundos antes da chegada. Uma suspeita não é confirmação.
+      if(config.enabled&&config.modules.dodge){
+        for(const threat of incoming){
+          if(threat.simulated||threat.arrivalMs<now||
+            threat.arrivalMs>now+6*3600000)continue;
+          if(dodgeAttackDecision(threat).allow)continue;
+          const key=threat.id+':'+threat.intel.classification;
+          if(store.classifiedWarnings?.[key])continue;
+          store.classifiedWarnings??={};store.classifiedWarnings[key]=now;
+          dodgeWrite(store);
+          notify(dodgeClassificationLabel(threat)+' contra '+tName(townBy(threat.townId))+
+            '. Chegada '+new Date(threat.arrivalMs).toLocaleTimeString('pt-BR',{hour12:false})+
+            '. Confira os dados em ESQUIVA; defesa mantida.');
+        }
+      }
       // Primeiro processar retornos pendentes, inclusive se o usuário desligou o módulo.
       for(const job of dodgeTracked(store)){
         if(job.state==='canceling'){
@@ -2102,6 +2126,20 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
         }
         if(job.state!=='sent'||num(job.retryAfterMs)>now)continue;
         if(job.forceCancel){await dodgeCancel(store,job,now);return;}
+        const nearbyColony=dodgeColonyThreat(incoming,job.townId,now,now+dodgeConflictWindow());
+        if(nearbyColony){
+          if(!job.colonyConflictWarned){
+            job.colonyConflictWarned=true;
+            dodgeSaveRecord(store,job);
+            const projected=2*now-(num(job.startedAtMs)||num(job.sentAtMs));
+            notify('Esquiva: '+dodgeClassificationLabel(nearbyColony)+' detectado após envio do apoio #'+
+              (job.commandId||'?')+'. Solicitando retorno imediato; '+
+              (projected<=nearbyColony.arrivalMs-10000?'retorno pode chegar antes do impacto.':
+                'não há tempo confirmado para retornar antes do impacto.'));
+          }
+          await dodgeCancel(store,job,now);
+          return;
+        }
         job.lastImpactMs=dodgeLateAttacks(job,incoming);
         const started=num(job.startedAtMs,job.sentAtMs)||num(job.sentAtMs);
         const plan=dodgeTiming(started,job.lastImpactMs);
@@ -2135,9 +2173,12 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
           (config.enabled&&config.modules.dodge||a.simulated));
         const first=attacks[0];
         if(!first)continue;
-        const decision=dodgeAttackDecision(first);
+        const conflict=dodgeColonyThreat(attacks,townId,first.arrivalMs,
+          first.arrivalMs+dodgeConflictWindow());
+        const decision=conflict?{allow:false,reason:'Ataque próximo de possível colonizador #'+conflict.id+
+          ': esquiva automática suspensa para preservar defesa'}:dodgeAttackDecision(first);
         if(!decision.allow){
-          const key=first.id+':'+first.intel?.classification;
+          const key=first.id+':'+first.intel?.classification+':'+(conflict?.id||'');
           if(!store.classifiedWarnings?.[key]){
             store.classifiedWarnings??={};store.classifiedWarnings[key]=now;
             dodgeWrite(store);
@@ -2214,13 +2255,16 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
       <div class="formrow"><span>Agrupar ataques próximos (segundos)</span><input type="number" min="1" max="60" step="1" data-setting="dodge.waveGapSeconds" value="${config.dodge.waveGapSeconds}"></div>
       <div class="checks"><label><input type="checkbox" data-setting="dodge.land" ${config.dodge.land?'checked':''}> Tropas terrestres</label><label><input type="checkbox" data-setting="dodge.naval" ${config.dodge.naval?'checked':''}> Navios</label></div>
       ${section('Análise de colonização')}
+      <div class="formrow"><span>Janela para ataques próximos de colono (segundos)</span>
+        <input type="number" min="60" max="600" step="30" data-setting="dodge.colonyConflictWindowSeconds" value="${dodgeConflictWindow()/1000}"></div>
       <div class="formrow"><span>Como tratar possíveis colonizadores</span>
         <select data-setting="dodge.colonizationPolicy">${optionList([
           ['review','Conservador: aguardar confirmação e não esquivar de suspeitos'],
           ['confirmed','Pausar apenas colonizadores confirmados'],
           ['all','Esquivar de todos, inclusive colonizadores']
         ],config.dodge.colonizationPolicy||'review')}</select></div>
-      <p class="smallnote">Classifica por tipo de comando, indicadores de conquista, navio colonizador nas unidades visíveis, revolta e velocidade exposta pelo próprio jogo. Somente marcadores explícitos confirmam colono. Velocidade e duração são indícios, especialmente com farol, cartografia, heróis, poderes, bônus de missões e velocidade do mundo. A chegada mostrada utiliza o horário do servidor e não uma projeção da velocidade.</p>
+      <p class="smallnote">O classificador compara tipo de comando, dados explícitos de conquista, presença de navio colonizador nas unidades disponíveis, ataques de revolta e velocidade informada pelo jogo. Bônus de farol, cartografia, heróis, poderes, templos, pesquisas, eventos e missões só são lidos quando presentes nos dados visíveis. A ETA é sempre a chegada do servidor: nunca é recalculada por um bônus presumido. Uma suspeita não confirma colono.</p>
+      <p class="smallnote">Se um colono confirmado ou suspeito chegar próximo de um ataque de limpeza, a esquiva automática aguarda revisão para não retirar a defesa. Um colono identificado após envio de apoio provoca tentativa de cancelamento antecipado, com alerta se não houver tempo suficiente de retorno.</p>
       ${section('Destino do apoio')}
       <div class="formrow"><span>Cidade protegida</span>${selectTown('dodgeSource',src?.id)}</div>
       <div class="formrow"><span>Enviar para</span><select id="dodgeTarget"><option value="0">Automático · mesma ilha</option>${optionList(destinations.map(t=>[t.id,tName(t)]),selected)}</select><button data-action="dodgeSaveTarget">Salvar</button></div>
