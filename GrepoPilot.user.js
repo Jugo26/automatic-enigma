@@ -387,7 +387,14 @@
           done=true;clearTimeout(timeout);
           if(scope!==requestScope||currentScope()!==requestScope)
             return reject(new Error('Conta mudou durante a solicitação; resposta antiga descartada'));
-          if(response?.success===false || response?.json?.success===false || response?.error || response?.json?.error) return reject(new Error(JSON.stringify(response?.json?.error || response?.error || 'Falha reportada pelo jogo')));
+          if(response?.success===false || response?.json?.success===false || response?.error || response?.json?.error){
+            const reason=JSON.stringify(response?.json?.error || response?.error || 'Falha reportada pelo jogo');
+            if(/(?:too many requests|rate.limi(?:t|ted)|\b429\b|too frequent)/i.test(reason)){
+              try{pacingCoolDown(20);}catch{}
+              log('Grepolis sinalizou excesso de requisições: ações de rotina pausadas por 20 minutos','WARN');
+            }
+            return reject(new Error(reason));
+          }
           resolve(response);
         });
       } catch(e){if(!done){done=true;clearTimeout(timeout);reject(e)}}
@@ -2170,6 +2177,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     if(syncRole()!=='primary')return 'PC secundário';
     if(!connected())return 'Grepolis ainda não está disponível';
     if(securityWatch())return 'CAPTCHA visível ou aguardando liberação';
+    if(pacingInfo().enabled&&pacingInfo().cooldownUntil>Date.now())return 'Pausa de solicitações após CAPTCHA';
     if(running||dodgeBusy||inFlightActions>0)return 'Ação em andamento';
     if(shadow?.activeElement?.matches?.('input,textarea,select'))return 'Editando uma configuração';
     try{
