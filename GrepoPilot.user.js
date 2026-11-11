@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GrepoPilot - Painel de Automacao
 // @namespace    https://grepolis.com/
-// @version      0.9.5
+// @version      0.9.6
 // @updateURL    https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.meta.js
 // @downloadURL  https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.user.js
 // @homepageURL  https://github.com/Jugo26/automatic-enigma/tree/grepopilot-updates
@@ -123,7 +123,7 @@
     dodge: {leadSeconds:5,returnAfterSeconds:1,waveGapSeconds:12,land:true,naval:true,targets:{}},
     attackTest: {delay:20,wave:0,mode:'preview'},
     sync: {role:'primary'},
-    security: {notify:true,resumeAfterSeconds:5},
+    security: {notify:true,resumeAfterSeconds:5,pacingEnabled:true,minActionIntervalSeconds:15,maxActionsPerHour:100,postCaptchaCooldownMinutes:15},
     autoReload: {enabled:true,minutes:30,safeWindowSeconds:180},
     onboarding: {completed:false},
     ui: {x:null,y:90,tab:'COMEÇAR',collapsed:false}
@@ -322,12 +322,60 @@
     try {return W.MM.getOnlyCollectionByName(key)?.models || []} catch {return []}
   };
   const resource = t => t?.resources?.() || {};
+
+  // Limites conservadores para ações de rotina. Não tenta resolver nem contornar verificações.
+  const pacingConfig=()=>({
+    enabled:config.security?.pacingEnabled!==false,
+    intervalMs:Math.max(5,Math.min(120,num(config.security?.minActionIntervalSeconds,15)))*1000,
+    hourLimit:Math.max(10,Math.min(300,Math.floor(num(config.security?.maxActionsPerHour,100)))),
+    afterCaptchaMs:Math.max(0,Math.min(120,num(config.security?.postCaptchaCooldownMinutes,15)))*60000
+  });
+  function pacingInfo(now=Date.now()){
+    const rt=readRuntime(),p=rt.requestPacing||{},lim=pacingConfig();
+    const attempts=(Array.isArray(p.attempts)?p.attempts:[])
+      .filter(ts=>Number.isFinite(Number(ts))&&Number(ts)<=now&&now-Number(ts)<3600000)
+      .map(Number).sort((a,b)=>a-b);
+    const last=Number(p.lastAt)||0,until=Number(p.cooldownUntil)||0;
+    const intervalRemaining=Math.max(0,last+lim.intervalMs-now);
+    const volumeRemaining=attempts.length>=lim.hourLimit?
+      Math.max(0,attempts[attempts.length-lim.hourLimit]+3600000-now):0;
+    const cooldownRemaining=Math.max(0,until-now);
+    return {enabled:lim.enabled,intervalMs:lim.intervalMs,hourLimit:lim.hourLimit,
+      attempts:attempts.length,remainingMs:lim.enabled?Math.max(intervalRemaining,volumeRemaining,cooldownRemaining):0,
+      cooldownUntil:until,lastAt:last};
+  }
+  function pacingRecord(now=Date.now()){
+    const rt=readRuntime(),p=rt.requestPacing||{};
+    const recent=(Array.isArray(p.attempts)?p.attempts:[]).filter(ts=>
+      Number.isFinite(Number(ts))&&now-Number(ts)>=0&&now-Number(ts)<3600000);
+    recent.push(now);
+    rt.requestPacing={...p,attempts:recent.slice(-600),lastAt:now};
+    writeRuntime(rt);
+  }
+  function pacingCoolDown(minutes,now=Date.now()){
+    const rt=readRuntime(),p=rt.requestPacing||{};
+    rt.requestPacing={...p,cooldownUntil:Math.max(Number(p.cooldownUntil)||0,
+      now+Math.max(0,Number(minutes)||0)*60000)};
+    writeRuntime(rt);
+  }
+  const actionIsTimeCritical=(controller,method)=>(
+    controller==='command_info'&&method==='cancel_command'||
+    controller==='town_info'&&method==='send_units'
+  );
+  function pacingWaitError(waitMs){
+    const error=new Error('Ritmo de solicitações: ação de rotina aguardando '+Math.ceil(waitMs/1000)+' segundos');
+    error.code='GP_PACING';error.waitMs=waitMs;
+    return error;
+  }
   let inFlightActions=0;
   const action = async (controller,method,data,forceLive=false) => {
     if(!currentPlayerId()||scope!==currentScope())throw Error('Conta/mundo em transição: ação bloqueada');
     if(securityWatch())throw new Error('CAPTCHA ativo: comando suspenso até a verificação ser resolvida');
     if (config.dryRun && !forceLive) {log(`SIMULACAO ${controller}/${method} ${JSON.stringify(data).slice(0,160)}`);return {dryRun:true};}
     if (!connected()) throw new Error('Cliente Grepolis indisponível.');
+    const urgent=actionIsTimeCritical(controller,method),pace=pacingInfo();
+    if(pace.enabled&&!urgent&&pace.remainingMs>0)throw pacingWaitError(pace.remainingMs);
+    if(pace.enabled)pacingRecord();
     inFlightActions++;
     const requestScope=scope;
     return new Promise((resolve,reject) => {
@@ -449,6 +497,10 @@
     const delay=Math.max(1,Math.min(30,num(config.security?.resumeAfterSeconds,5)))*1000;
     if(now-securityState.clearSince<delay)return true;
     securityState.active=false;securityState.since=0;securityState.clearSince=0;securityState.source='';
+    if(pacingConfig().enabled&&pacingConfig().afterCaptchaMs>0){
+      pacingCoolDown(pacingConfig().afterCaptchaMs/60000);
+      log('CAPTCHA concluído: ações de rotina aguardam '+pacingConfig().afterCaptchaMs/60000+' minuto(s) antes de retomar','WARN');
+    }
     log('Verificação não está mais visível: operações liberadas novamente');
     nextRun={};
     if(config.security?.notify!==false)notify('Verificação concluída: GrepoPilot pode retomar as rotinas habilitadas');
@@ -2067,12 +2119,22 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
       const order=['commands','alerts','finishFree','smartQueue','banditRewards','quests','bootcamp','ruralUnlock','ruralUpgrade','farm','build','recruit','research','trade','ruralTrade','culture','cave'];
       for(const id of order){
         if(!config.modules[id] || num(nextRun[id])>now)continue;
+        if(id!=='commands'&&id!=='alerts'){
+          const pace=pacingInfo();
+          if(pace.remainingMs>0){health.lastTickResult='aguardando limite de solicitações';break;}
+        }
         nextRun[id]=now+Math.max(2,num(config.intervals[id],MODULES[id][2]))*1000;
         try{
           const did=await handlers[id]();
           diagMark(id,did?'done':'wait',did?(config.dryRun?'Execução simulada':'Ação enviada') : diagReason(id));
           if(did){if(id!=='commands')nextRun[id]=Date.now()+Math.max(5,num(config.intervals[id],MODULES[id][2]))*1000;break;}
         }catch(e){
+          if(e?.code==='GP_PACING'){
+            diagMark(id,'wait',e.message);
+            nextRun[id]=Date.now()+Math.min(60000,Math.max(1000,num(e.waitMs,5000)));
+            health.lastTickResult='aguardando limite de solicitações';
+            break;
+          }
           if(securityBlocked()){
             diagMark(id,'wait','CAPTCHA detectado: aguardando verificação');
             nextRun[id]=Date.now()+5000;break;
@@ -2483,6 +2545,13 @@ let queueKindSelected='building';
     <div class="helpbox"><b>${securityBlocked()?'⚠ CAPTCHA DETECTADO — operações temporariamente suspensas':'Nenhuma verificação CAPTCHA detectada'}</b>. Ao aparecer um desafio, resolva-o diretamente no Grepolis. O GrepoPilot não preenche nem contorna CAPTCHAs. Assim que desaparecer e passar o intervalo de confirmação, as rotinas anteriormente habilitadas poderão continuar.</div>
     <div class="checks"><label><input type="checkbox" data-setting="security.notify" ${config.security.notify!==false?'checked':''}> Notificar ao detectar e liberar CAPTCHA</label></div>
     <div class="formrow"><span>Retomar após a verificação desaparecer (seg)</span><input type="number" min="1" max="30" data-setting="security.resumeAfterSeconds" value="${config.security.resumeAfterSeconds}"></div>
+    ${section('Controle de solicitações')}
+    <p class="smallnote">Espaça ações de rotina para evitar repetições e carga desnecessária. Ataques/apoios programados e cancelamentos cronometrados preservam suas janelas; todas as ações ainda respeitam o bloqueio por CAPTCHA.</p>
+    <div class="checks"><label><input type="checkbox" data-setting="security.pacingEnabled" ${config.security.pacingEnabled!==false?'checked':''}> Limitar ações de rotina</label></div>
+    <div class="formrow"><span>Intervalo mínimo entre envios (seg)</span><input type="number" min="5" max="120" step="5" data-setting="security.minActionIntervalSeconds" value="${pacingConfig().intervalMs/1000}"></div>
+    <div class="formrow"><span>Máximo de solicitações por hora</span><input type="number" min="10" max="300" step="10" data-setting="security.maxActionsPerHour" value="${pacingConfig().hourLimit}"></div>
+    <div class="formrow"><span>Pausa após resolver CAPTCHA (min)</span><input type="number" min="0" max="120" step="5" data-setting="security.postCaptchaCooldownMinutes" value="${pacingConfig().afterCaptchaMs/60000}"></div>
+    <div class="smallnote">Última hora: ${pacingInfo().attempts} solicitação(ões). ${pacingInfo().remainingMs>0?'Próxima ação de rotina em '+Math.ceil(pacingInfo().remainingMs/1000)+' segundos.':'Ações de rotina liberadas.'}</div>
     <div class="tools"><button data-action="askNotif">Ativar alertas do navegador</button></div>
     <p class="smallnote">Com um CAPTCHA visível, inclusive ações de esquiva e testes práticos aguardam. Cancelamentos de apoio podem ficar atrasados durante a verificação.</p>
     ${section('Atualização automática da página (F5)')}
@@ -2519,7 +2588,7 @@ let queueKindSelected='building';
         '<div class="tools"><button data-tab="VERIFICAR">Abrir verificação</button></div>';
     }
     shadow.querySelector('#gp-app').innerHTML=`
-      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.9.5</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
+      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.9.6</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
       ${config.ui.collapsed?'':`<div class="status"><i class="dot ${config.enabled?(config.dryRun?'sim':'live'):''}"></i>${cleanStr(STATUS())}</div>
       <div class="tabs">${['COMEÇAR','INÍCIO','CIDADES','FILA','ALDEIAS','TROPAS','COMBATE','ESQUIVA','TESTE','DIAG','VERIFICAR','ECONOMIA','MISSÕES','AJUSTES','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
       <div class="body">${body}</div><div class="foot"><button class="${config.enabled?'stop':'go'}" data-action="toggle">${config.enabled?'■ PARAR TUDO':'▶ INICIAR'}</button><span>${Object.values(config.modules).filter(Boolean).length} módulos ativos</span></div>`}`;
