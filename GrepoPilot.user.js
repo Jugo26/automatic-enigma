@@ -1928,13 +1928,13 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const distance=Math.hypot(source.x-dest.x,source.y-dest.y);
     return distance>=0.5&&distance<3000?{distance,source,dest}:null;
   }
-  const colonyCalibration={at:0,samples:0,model:null};
+  const colonyCalibration={at:0,samples:0,model:null,scope:''};
   function colonyAutoBaseline(a){
     const g=colonyMovementGeometry(a);
     if(!g)return null;
     const now=Date.now();
-    if(now-colonyCalibration.at>30000||!colonyCalibration.at){
-      colonyCalibration.at=now;colonyCalibration.model=null;colonyCalibration.samples=0;
+    if(now-colonyCalibration.at>30000||!colonyCalibration.at||colonyCalibration.scope!==scope){
+      colonyCalibration.at=now;colonyCalibration.model=null;colonyCalibration.samples=0;colonyCalibration.scope=scope;
       const owned=new Set(towns().map(t=>Number(t.id))),samples=[];
       for(const m of dodgeMovements().slice(0,250)){
         const raw=m.data,started=dodgeStarted(raw),arrival=dodgeArrival(raw),
@@ -1983,7 +1983,8 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     };
     const route=colonyBaselineKey(source,dest);
     const direct=explicit(movement);
-    const auto=colonyAutoBaseline(movement);
+    const auto=Number.isFinite(direct)||Number.isFinite(stored)&&stored>=1&&stored<=2880?
+      null:colonyAutoBaseline(movement);
     const stored=Number(config.dodge?.colonyBaselineMinutes?.[route]);
     const baseSeconds=Number.isFinite(direct)?direct:
       Number.isFinite(stored)&&stored>=1&&stored<=2880?stored*60:
@@ -2084,7 +2085,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     if(mark==='colony')classification='manual_colony';
     else if(mark==='normal')classification='manual_normal';
     const reasons={confirmed:'Colonização confirmada por dados explícitos',
-      suspected:'Possível colonizador: somente indício de velocidade',
+      suspected:'Possível colonizador: velocidade ou duração total compatível com bônus',
       revolt:'Ataque de revolta — colono não confirmado',
       unknown:'Tipo não identificado — dados insuficientes',
       manual_colony:'Marcado manualmente como colonizador',
