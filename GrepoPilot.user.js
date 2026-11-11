@@ -1902,6 +1902,78 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     }
     return [...unique.values()].sort((a,b)=>a.factor-b.factor);
   }
+
+  function colonyTownCoordinates(t){
+    if(!t)return null;
+    const attrs=t.attributes||{};
+    const fromGetter=typeof t.getX==='function'&&typeof t.getY==='function'?
+      [t.getX(),t.getY()]:null;
+    const x=Number(fromGetter?.[0]??attrs.abs_x??attrs.x??t.abs_x??t.x);
+    const y=Number(fromGetter?.[1]??attrs.abs_y??attrs.y??t.abs_y??t.y);
+    return Number.isFinite(x)&&Number.isFinite(y)?{x,y,kind:'town'}:null;
+  }
+  function colonyMovementGeometry(a){
+    const sourceId=dodgeSrcId(a),destId=dodgeDstId(a);
+    const coords=(id,origin)=>{
+      const town=townBy(id);
+      const known=colonyTownCoordinates(town);
+      if(known)return known;
+      const m=origin?'origin':'destination';
+      const x=Number(a[m+'_town_x']??a[m+'_x']??a[(origin?'from':'to')+'_x']);
+      const y=Number(a[m+'_town_y']??a[m+'_y']??a[(origin?'from':'to')+'_y']);
+      return Number.isFinite(x)&&Number.isFinite(y)?{x,y,kind:'town'}:null;
+    };
+    const source=coords(sourceId,true),dest=coords(destId,false);
+    if(!source||!dest)return null;
+    const distance=Math.hypot(source.x-dest.x,source.y-dest.y);
+    return distance>=0.5&&distance<3000?{distance,source,dest}:null;
+  }
+  const colonyCalibration={at:0,samples:0,model:null};
+  function colonyAutoBaseline(a){
+    const g=colonyMovementGeometry(a);
+    if(!g)return null;
+    const now=Date.now();
+    if(now-colonyCalibration.at>30000||!colonyCalibration.at){
+      colonyCalibration.at=now;colonyCalibration.model=null;colonyCalibration.samples=0;
+      const owned=new Set(towns().map(t=>Number(t.id))),samples=[];
+      for(const m of dodgeMovements().slice(0,250)){
+        const raw=m.data,started=dodgeStarted(raw),arrival=dodgeArrival(raw),
+          native=dodgeNumber(raw.effective_unit_speed??raw.movement_unit_speed??raw.unit_speed);
+        if(!owned.has(dodgeSrcId(raw))||!Number.isFinite(started)||!Number.isFinite(arrival)||
+          arrival<=started||!Number.isFinite(native)||native<1)continue;
+        const geo=colonyMovementGeometry(raw);
+        if(!geo)continue;
+        const x=geo.distance/native,y=(arrival-started)/1000;
+        if(x>0&&y>20&&y<172800&&samples.every(v=>v.id!==dodgeMoveId(m)))
+          samples.push({x,y,id:dodgeMoveId(m)});
+      }
+      // Mínimo de três trajetos calibrados e distâncias diferentes:
+      // não assumir a fórmula de viagem de um mundo com base em um único apoio.
+      if(samples.length>=3){
+        const count=samples.length,meanX=samples.reduce((v,x)=>v+x.x,0)/count,
+          meanY=samples.reduce((v,x)=>v+x.y,0)/count;
+        const variance=samples.reduce((v,x)=>v+(x.x-meanX)**2,0);
+        const slope=variance>0?samples.reduce((v,x)=>v+(x.x-meanX)*(x.y-meanY),0)/variance:0;
+        const intercept=meanY-slope*meanX;
+        const errors=samples.map(v=>Math.abs(v.y-(intercept+slope*v.x))/v.y);
+        const typical=errors.sort((a,b)=>a-b)[Math.floor(errors.length/2)];
+        if(slope>0&&intercept>=0&&intercept<=1200&&typical<=0.10&&
+          Math.max(...samples.map(v=>v.x))/Math.min(...samples.map(v=>v.x))>=1.4){
+          colonyCalibration.model={intercept,slope,residual:typical,count};
+          colonyCalibration.samples=count;
+        }
+      }
+    }
+    const model=colonyCalibration.model;
+    const worldSpeed=dodgeUnitSpeed();
+    const csSpeed=Number(W.GameData?.units?.colonize_ship?.speed)||3;
+    if(!model||!Number.isFinite(worldSpeed)||worldSpeed<=0)return null;
+    const seconds=model.intercept+model.slope*g.distance/(csSpeed*worldSpeed);
+    return seconds>=60&&seconds<=172800?{
+      seconds,source:'calibração automática aproximada ('+model.count+' movimentos próprios)',
+      uncertainty:Math.max(0.10,model.residual*2),distance:g.distance,
+      calibrationSamples:model.count}:null;
+  }
   function colonyTimeModel(movement,source,dest,arrivalMs,startedAt,id){
     const explicit=moving=>{
       const raw=moving?.colony_ship_base_duration_seconds??
@@ -1911,9 +1983,11 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     };
     const route=colonyBaselineKey(source,dest);
     const direct=explicit(movement);
+    const auto=colonyAutoBaseline(movement);
     const stored=Number(config.dodge?.colonyBaselineMinutes?.[route]);
     const baseSeconds=Number.isFinite(direct)?direct:
-      Number.isFinite(stored)&&stored>=1&&stored<=2880?stored*60:NaN;
+      Number.isFinite(stored)&&stored>=1&&stored<=2880?stored*60:
+      auto?.seconds??NaN;
     const observedSeconds=Number.isFinite(startedAt)&&startedAt<=arrivalMs?
       (arrivalMs-startedAt)/1000:NaN;
     if(!Number.isFinite(baseSeconds)){
@@ -1926,7 +2000,8 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const speed=Number(W.GameData?.units?.colonize_ship?.speed)||3;
     const configs=colonyScenarioFactors(movement);
     const tolerance=Math.max(30,Number.isFinite(observedSeconds)?
-      observedSeconds*colonyTolerance():baseSeconds*colonyTolerance());
+      observedSeconds*Math.max(colonyTolerance(),auto&&(!Number.isFinite(stored)||stored<1)?
+        auto.uncertainty:0):baseSeconds*colonyTolerance());
     const build=(unit,baseSpeed)=>{
       const speedRatio=speed/baseSpeed;
       return configs.map(c=>{
@@ -1950,7 +2025,9 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const maxSeconds=Math.max(...scenarios.map(x=>x.seconds));
     const remaining=Math.max(0,(arrivalMs-dodgeNow())/1000);
     const compatibleOnly=!Number.isFinite(observedSeconds)&&remaining<=maxSeconds+tolerance;
-    return {available:true,route,source:Number.isFinite(direct)?'modelo do jogo':'duração informada pelo jogador',
+    return {available:true,route,source:Number.isFinite(direct)?'modelo do jogo':
+      Number.isFinite(stored)&&stored>=1?'duração informada pelo jogador':auto.source,
+      distance:auto?.distance??null,calibrationSamples:auto?.calibrationSamples??0,
       baseSeconds:Math.round(baseSeconds),observedSeconds:Number.isFinite(observedSeconds)?Math.round(observedSeconds):null,
       remainingSeconds:Math.round(remaining),toleranceSeconds:Math.round(tolerance),
       minSeconds,maxSeconds,compatibleOnly,
@@ -2413,7 +2490,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
         <div class="smallnote">Velocidade: ${Number.isFinite(i?.nativeSpeed)?i.nativeSpeed:'não exposta'} · fator do mundo: ${i?.unitSpeed??'não informado'} · bônus explícito: ${i?.multiplier??1}x</div>
         ${i?.effects.names.length||i?.effects.stats.length?`<div class="smallnote">Efeitos observados: ${cleanStr([...i.effects.names,...i.effects.stats].join(', '))}</div>`:''}
         ${i?.candidateUnits?.length?`<div class="smallnote">Velocidades-base compatíveis (não confirmam unidades): ${cleanStr(i.candidateUnits.map(x=>x.key+' ~'+x.expected).join(', '))}</div>`:''}
-        ${travel?.available?`<div class="smallnote">CS sem bônus: ${Math.round(travel.baseSeconds/60)} min · CS em cenários: ${Math.round(travel.minSeconds/60)}–${Math.round(travel.maxSeconds/60)} min · ${travel.scenarioCount} variações</div>
+        ${travel?.available?`<div class="smallnote">Base: ${cleanStr(travel.source)} ${travel.distance?'· distância '+travel.distance.toFixed(1):''} · CS sem bônus: ${Math.round(travel.baseSeconds/60)} min · CS em cenários: ${Math.round(travel.minSeconds/60)}–${Math.round(travel.maxSeconds/60)} min · ${travel.scenarioCount} variações</div>
         <div class="smallnote">${cleanStr(travel.reason)} ${travel.observedSeconds!==null?'Duração observada: '+Math.round(travel.observedSeconds/60)+' min.':'Tempo restante não informa o instante de envio.'}</div>
         ${travel.matches?.length?`<div class="smallnote"><b>Cenários compatíveis:</b> ${cleanStr(travel.matches.slice(0,3).map(m=>Math.round(m.seconds/60)+'min ('+(m.effects.join(' + ')||'sem bônus')+', '+m.method+')').join(' | '))}</div>`:''}
         ${travel.alternatives?.length?`<div class="smallnote">Outras tropas também compatíveis: ${cleanStr([...new Set(travel.alternatives.map(x=>x.unit))].join(', '))}</div>`:''}`:
