@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GrepoPilot - Painel de Automacao
 // @namespace    https://grepolis.com/
-// @version      0.9.6
+// @version      0.9.7
 // @updateURL    https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.meta.js
 // @downloadURL  https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.user.js
 // @homepageURL  https://github.com/Jugo26/automatic-enigma/tree/grepopilot-updates
@@ -120,8 +120,8 @@
     cave: {minIron:15000,keepIron:5000},
     commands: {jobs:[]},
     alerts: {desktop:true,checkAll:true},
-    dodge: {leadSeconds:5,returnAfterSeconds:1,waveGapSeconds:12,land:true,naval:true,targets:{}},
-    attackTest: {delay:20,wave:0,mode:'preview'},
+    dodge: {version:2,leadSeconds:60,returnAfterSeconds:15,waveGapSeconds:12,land:true,naval:true,targets:{}},
+    attackTest: {delay:120,wave:0,mode:'preview'},
     sync: {role:'primary'},
     security: {notify:true,resumeAfterSeconds:5,pacingEnabled:true,minActionIntervalSeconds:15,maxActionsPerHour:100,postCaptchaCooldownMinutes:15},
     autoReload: {enabled:true,minutes:30,safeWindowSeconds:180},
@@ -153,12 +153,20 @@
   let DODGE_LOCK = `grepopilot:dodge-lock:${scope}`;
   let TEST_STORE = `grepopilot:attacktest:${scope}`;
   const old = (() => {try {return JSON.parse(localStorage.getItem(STORE)||'{}')}catch{return {}}})();
+  const numOrFinite=(value,defaultValue)=>Number.isFinite(Number(value))?Number(value):defaultValue;
   const migrate = (cfg,raw={}) => {
     if(raw?.modules?.ruralUpgrade && raw?.ruralUpgrade?.unlock && raw?.modules?.ruralUnlock===undefined) cfg.modules.ruralUnlock=true;
     if(raw?.modules?.ruralUpgrade && raw?.ruralUpgrade?.upgrade===false) cfg.modules.ruralUpgrade=false;
     if(cfg?.ui?.tab==='MILITAR')cfg.ui.tab='TROPAS';
     if(cfg?.ui?.tab==='CONFIG')cfg.ui.tab='AJUSTES';
     if(cfg?.ui?.tab==='PRESENÇA')cfg.ui.tab='INÍCIO';
+    if(cfg.dodge&&Number(cfg.dodge.version)!==2){
+      // Atualiza valores legados projetados para uma janela de 1–5 s, insuficiente para a margem de chegada.
+      if(numOrFinite(cfg.dodge.leadSeconds,5)<=5)cfg.dodge.leadSeconds=60;
+      if(numOrFinite(cfg.dodge.returnAfterSeconds,1)<10)cfg.dodge.returnAfterSeconds=15;
+      cfg.dodge.version=2;
+    }
+    if(raw?.attackTest?.delay===20&&raw?.dodge?.version!==2)cfg.attackTest.delay=120;
     delete cfg.presence;
     if(raw&&Object.keys(raw).length>0&&raw.onboarding===undefined)cfg.onboarding={completed:true};
     return cfg;
@@ -1674,62 +1682,77 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     ${status}
     <p class="smallnote">O ataque fictício não aparece como ataque real no Grepolis. O teste prático executa somente o apoio e o cancelamento, mesmo se os demais módulos do bot estiverem pausados. Ao interromper depois do envio, o cancelamento das tropas continua pendente até confirmação.</p>`;
 }
+
   const dodgeRead=()=>{try{return JSON.parse(localStorage.getItem(DODGE_STORE)||'{}')}catch{return {}}};
-  const dodgeWrite=v=>localStorage.setItem(DODGE_STORE,JSON.stringify(v));
+  const dodgeWrite=data=>localStorage.setItem(DODGE_STORE,JSON.stringify(data));
   const dodgeClock={sampleAt:0,deltaMs:0,source:'local'};
   function dodgeNow(){
     const now=Date.now();
-    if(now-dodgeClock.sampleAt>12000){
+    if(now-dodgeClock.sampleAt>=12000||!dodgeClock.sampleAt){
       dodgeClock.sampleAt=now;
       try{
-        const sec=Number(W.Timestamp?.server?.());
-        if(Number.isFinite(sec)&&sec>1000000000){
-          dodgeClock.deltaMs=sec*1000+500-now;
+        const raw=Number(W.Timestamp?.server?.());
+        const stamp=raw>1e12?raw:raw>1e9?raw*1000:0;
+        if(stamp){
+          dodgeClock.deltaMs=stamp-now;
           dodgeClock.source='servidor';
         }else{dodgeClock.deltaMs=0;dodgeClock.source='local';}
       }catch{dodgeClock.deltaMs=0;dodgeClock.source='local';}
     }
     return now+dodgeClock.deltaMs;
   }
-  const dodgeEpochMs=raw=>{
-    if(raw===null||raw===undefined||raw==='')return NaN;
-    const n=Number(raw);
-    if(Number.isFinite(n))return n>1e12?n:n>1e9?n*1000:NaN;
-    const t=Date.parse(String(raw));
-    return Number.isFinite(t)?t:NaN;
+  const dodgeEpochMs=value=>{
+    if(value===undefined||value===null||value==='')return NaN;
+    if(typeof value==='object')
+      return dodgeEpochMs(value.timestamp??value.time??value.value??value.date);
+    const n=Number(value);
+    if(Number.isFinite(n)&&n>1e9)return n>1e12?n:n*1000;
+    const parsed=Date.parse(String(value));
+    return Number.isFinite(parsed)?parsed:NaN;
   };
   function dodgeMovements(){
+    const all=[];
     try{
-      const native=W.MM?.getModels?.()?.MovementsUnits;
-      const raw=Array.isArray(native)?native:Object.values(native||{});
-      return (raw.length?raw:models('MovementsUnits')).map(m=>({model:m,data:m?.attributes||m||{}}));
-    }catch{return []}
+      const raw=W.MM?.getModels?.()?.MovementsUnits;
+      const values=Array.isArray(raw)?raw:Object.values(raw||{});
+      all.push(...values);
+      if(!values.length)all.push(...models('MovementsUnits'));
+    }catch{}
+    const seen=new Set();
+    return all.filter(Boolean).map(model=>({model,data:model.attributes||model.getAttributes?.()||model}))
+      .filter(m=>{
+        const id=String(m.data.command_id??m.data.id??m.model.id??'');
+        const key=id||JSON.stringify([m.data.origin_town_id,m.data.target_town_id,m.data.arrival_at,m.data.type]);
+        if(seen.has(key))return false;
+        seen.add(key);return true;
+      });
   }
-  const dodgeMoveId=m=>Number(m?.data?.command_id||0);
-  const dodgeSrcId=a=>Number(a?.home_town_id??a?.origin_town_id??a?.from_town_id??a?.town_id);
-  const dodgeDstId=a=>Number(a?.target_town_id??a?.destination_town_id??a?.to_town_id);
-  const dodgeArrival=a=>dodgeEpochMs(a?.arrival_at??a?.time_of_arrival??a?.arrival_time);
+  const dodgeMoveId=m=>Number(m?.data?.command_id??m?.data?.id??m?.model?.id??m?.model?.getId?.());
+  const dodgeSrcId=a=>Number(a?.origin_town_id??a?.source_town_id??a?.from_town_id??a?.home_town_id??a?.town_id);
+  const dodgeDstId=a=>Number(a?.destination_town_id??a?.target_town_id??a?.to_town_id??a?.target_id);
+  const dodgeArrival=a=>dodgeEpochMs(a?.arrival_at??a?.arrival_time??a?.time_of_arrival??a?.arrival);
+  const dodgeStarted=a=>dodgeEpochMs(a?.started_at??a?.start_time??a?.sent_at??a?.departed_at);
   function dodgeIncoming(){
     const owned=new Set(towns().map(t=>Number(t.id)));
+    const seen=new Set();
     const real=dodgeMovements().flatMap(({model,data:a})=>{
       const type=String(a.type??a.command_type??a.movement_type??'').toLowerCase();
-      const townId=dodgeDstId(a);
-      if(!owned.has(townId)||!(type==='attack'||type==='attack_with_spy'||type.startsWith('attack_')))return [];
-      const source=dodgeSrcId(a);
-      if(Number.isFinite(source)&&owned.has(source))return [];
-      const arrivalMs=dodgeArrival(a);
-      if(!Number.isFinite(arrivalMs))return [];
-      const id=String(a.command_id||a.id||model?.id||`${townId}:${arrivalMs}`);
+      if(!(type==='attack'||type.startsWith('attack_')||type==='attacking'))return [];
+      const townId=dodgeDstId(a),source=dodgeSrcId(a),arrivalMs=dodgeArrival(a);
+      if(!owned.has(townId)||(Number.isSafeInteger(source)&&owned.has(source))||!Number.isFinite(arrivalMs))return [];
+      const id=String(a.command_id??a.id??model.id??'attack-'+townId+'-'+arrivalMs);
+      if(seen.has(id))return [];
+      seen.add(id);
       return [{townId,arrivalMs,id,type}];
-    }).sort((a,b)=>a.arrivalMs-b.arrivalMs);
+    });
     return real.concat(testAttacks()).sort((a,b)=>a.arrivalMs-b.arrivalMs);
   }
   function dodgeOutgoing(from,to){
     return dodgeMovements().filter(m=>{
-      const a=m.data;
-      return String(a.type||a.command_type||'').toLowerCase()==='support'
-        &&dodgeSrcId(a)===Number(from)&&dodgeDstId(a)===Number(to)
-        &&Number.isSafeInteger(dodgeMoveId(m))&&dodgeMoveId(m)>0;
+      const a=m.data,type=String(a.type??a.command_type??a.movement_type??'').toLowerCase();
+      return (type==='support'||type==='supporting'||type==='unit_support')&&
+        dodgeSrcId(a)===Number(from)&&dodgeDstId(a)===Number(to)&&
+        Number.isSafeInteger(dodgeMoveId(m))&&dodgeMoveId(m)>0;
     });
   }
   function dodgeSameIsland(a,b){
@@ -1738,151 +1761,191 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const ay=a.getIslandCoordinateY?.()??a.attributes?.island_y;
     const bx=b.getIslandCoordinateX?.()??b.attributes?.island_x;
     const by=b.getIslandCoordinateY?.()??b.attributes?.island_y;
-    if([ax,ay,bx,by].every(v=>v!==undefined&&v!==null))return String(ax)===String(bx)&&String(ay)===String(by);
-    const id1=a.getIslandId?.()??a.attributes?.island_id,id2=b.getIslandId?.()??b.attributes?.island_id;
-    return id1!=null&&id2!=null&&String(id1)===String(id2);
+    if([ax,ay,bx,by].every(x=>x!==undefined&&x!==null))
+      return String(ax)===String(bx)&&String(ay)===String(by);
+    const island1=a.getIslandId?.()??a.attributes?.island_id;
+    const island2=b.getIslandId?.()??b.attributes?.island_id;
+    return island1!=null&&island2!=null&&String(island1)===String(island2);
   }
+  const dodgeLead=()=>Math.max(20,Math.min(180,Math.floor(num(config.dodge.leadSeconds,60))))*1000;
+  const dodgeAfter=()=>Math.max(10,Math.min(90,Math.floor(num(config.dodge.returnAfterSeconds,15))))*1000;
+  const dodgeWaveGap=()=>Math.max(1,Math.min(60,Math.floor(num(config.dodge.waveGapSeconds,12))))*1000;
   function dodgeDestinations(id,incoming=[]){
-    const origin=townBy(id),soon=dodgeNow()+30000;
+    const origin=townBy(id),now=dodgeNow(),margin=dodgeLead()+dodgeAfter()+dodgeWaveGap();
     return towns().filter(t=>dodgeSameIsland(origin,t))
       .sort((a,b)=>{
-        const ax=incoming.some(x=>x.townId===Number(a.id)&&x.arrivalMs<=soon);
-        const bx=incoming.some(x=>x.townId===Number(b.id)&&x.arrivalMs<=soon);
-        return Number(ax)-Number(bx)||Number(a.id)-Number(b.id);
+        const risk=t=>incoming.some(x=>Number(x.townId)===Number(t.id)&&
+          x.arrivalMs>=now-10000&&x.arrivalMs<=now+margin);
+        return Number(risk(a))-Number(risk(b))||Number(a.id)-Number(b.id);
       });
   }
-  function dodgeDestination(id,incoming){
+  function dodgeDestination(id,incoming=[]){
+    const all=dodgeDestinations(id,incoming),now=dodgeNow(),margin=dodgeLead()+dodgeAfter()+dodgeWaveGap();
+    const safe=all.filter(t=>!incoming.some(a=>Number(a.townId)===Number(t.id)&&
+      a.arrivalMs>=now-10000&&a.arrivalMs<=now+margin));
     const configured=Number(config.dodge.targets?.[id]);
-    const list=dodgeDestinations(id,incoming);
-    if(configured&&list.some(t=>Number(t.id)===configured))return configured;
-    return Number(list[0]?.id)||0;
+    if(configured&&safe.some(t=>Number(t.id)===configured))return configured;
+    return Number(safe[0]?.id)||0;
   }
   function dodgeUnits(t){
-    const unitGroups={land:{},naval:{}};
-    const setting=config.dodge;
-    for(const [unit,raw] of Object.entries(t.units?.()||{})){
-      const count=Math.floor(Number(raw));
-      const def=W.GameData?.units?.[unit];
-      if(!def||unit==='militia'||!Number.isSafeInteger(count)||count<1)continue;
-      const kind=def.is_naval?'naval':'land';
-      if(kind==='land'&&setting.land===false)continue;
-      if(kind==='naval'&&setting.naval===false)continue;
-      unitGroups[kind][unit]=count;
+    const groups={land:{},naval:{}};
+    const cfg=config.dodge;
+    for(const [key,raw] of Object.entries(t?.units?.()||{})){
+      const count=Math.floor(Number(raw)),def=W.GameData?.units?.[key];
+      if(!def||key==='militia'||!Number.isSafeInteger(count)||count<=0)continue;
+      const naval=Boolean(def.is_naval),kind=naval?'naval':'land';
+      if(kind==='land'&&cfg.land===false||kind==='naval'&&cfg.naval===false)continue;
+      groups[kind][key]=count;
     }
-    return unitGroups;
+    return groups;
   }
   function dodgeLeader(){
     const now=Date.now();
     try{
-      const lock=JSON.parse(localStorage.getItem(DODGE_LOCK)||'{}');
-      if(lock.owner&&lock.owner!==instanceId&&Number(lock.until)>now)return false;
+      const previous=JSON.parse(localStorage.getItem(DODGE_LOCK)||'{}');
+      if(previous.owner&&previous.owner!==instanceId&&num(previous.until)>now)return false;
     }catch{}
     localStorage.setItem(DODGE_LOCK,JSON.stringify({owner:instanceId,until:now+2500}));
     return true;
   }
-  const dodgeWaveGap=()=>Math.min(60,Math.max(0,Number(config.dodge.waveGapSeconds)||12))*1000;
   function dodgeLateAttacks(job,attacks){
-    const cutoff=Number(job.firstImpactMs)+dodgeWaveGap();
-    const impacts=attacks.filter(a=>a.townId===Number(job.townId)&&a.arrivalMs>=job.firstImpactMs-1000&&a.arrivalMs<=cutoff);
-    return Math.max(Number(job.lastImpactMs)||0,...impacts.map(a=>a.arrivalMs));
+    const max=Number(job.firstImpactMs)+dodgeWaveGap();
+    const waves=attacks.filter(a=>Number(a.townId)===Number(job.townId)&&
+      a.arrivalMs>=Number(job.firstImpactMs)-1000&&a.arrivalMs<=max);
+    return Math.max(Number(job.lastImpactMs)||0,...waves.map(a=>a.arrivalMs));
   }
+  // Cancelar DEPOIS do último impacto, não no meio do voo para tentar voltar no segundo exato.
+  // Até 10 min após a saída; o retorno será posterior e varia conforme a viagem realizada.
   const dodgeTiming=(startMs,lastImpactMs)=>({
-    cancelAtMs:Math.round((startMs+lastImpactMs+Math.max(1,Number(config.dodge.returnAfterSeconds)||1)*1000)/2),
-    returnAtMs:lastImpactMs+Math.max(1,Number(config.dodge.returnAfterSeconds)||1)*1000
+    cancelAtMs:lastImpactMs+dodgeAfter(),
+    deadlineMs:startMs+590000
   });
   const dodgeActive=j=>['dispatching','identifying','sent','canceling'].includes(j?.state);
-  const dodgeTracked=d=>Object.values(d.jobs||{}).filter(j=>dodgeActive(j));
+  const dodgeTracked=d=>Object.values(d.jobs||{}).filter(dodgeActive);
   function dodgeFindCommand(job){
-    const excluded=new Set((job.existingIds||[]).map(String));
-    const found=dodgeOutgoing(job.townId,job.targetId).filter(m=>{
-      const id=dodgeMoveId(m);
-      if(excluded.has(String(id)))return false;
-      const started=dodgeEpochMs(m.data.started_at??m.data.start_time??m.data.sent_at??m.data.departed_at);
-      return !Number.isFinite(started)||started>=Number(job.sentAtMs)-3500;
+    const outgoing=dodgeOutgoing(job.townId,job.targetId),excluded=new Set((job.existingIds||[]).map(String));
+    if(job.commandId){
+      const exact=outgoing.find(m=>dodgeMoveId(m)===Number(job.commandId));
+      if(exact)return exact;
+    }
+    const found=outgoing.filter(m=>{
+      if(excluded.has(String(dodgeMoveId(m))))return false;
+      const started=dodgeStarted(m.data);
+      if(Number.isFinite(started)&&started<Number(job.sentAtMs)-5000)return false;
+      const moveUnits=m.data.units||m.data.unit_counts;
+      if(moveUnits&&typeof moveUnits==='object'){
+        for(const [unit,count] of Object.entries(job.units||{})){
+          if(moveUnits[unit]!==undefined&&num(moveUnits[unit])!==num(count))return false;
+        }
+      }
+      return true;
     });
     return found.length===1?found[0]:null;
   }
   let dodgeBusy=false;
   const dodgePreviewed=new Set();
-  function dodgeSaveRecord(store,job){store.jobs??={};store.jobs[job.id]=job;dodgeWrite(store);}
-  function dodgeCanOperate(){
-    return connected()&&!document.querySelector('iframe[src*="captcha"],.captcha_container,.recaptcha-wrapper');
+  const dodgeSaveRecord=(store,job)=>{
+    store.jobs??={};store.jobs[job.id]=job;dodgeWrite(store);
+  };
+  const dodgeCanOperate=()=>connected()&&scope===currentScope()&&!securityBlocked();
+  function dodgeAttention(store,job,reason){
+    if(job.state==='needs_attention'&&job.error===reason)return;
+    job.state='needs_attention';job.error=reason;job.ackAtMs=dodgeNow();
+    dodgeSaveRecord(store,job);
+    notify('Esquiva '+tName(townBy(job.townId))+': '+reason+' (apoio #'+(job.commandId||'?')+')');
   }
   async function dodgeCancel(store,job,now){
-    if(!job.commandId||job.state==='canceling')return false;
+    if(!job.commandId||job.state==='canceling'||job.state==='cancelled')return false;
+    if(now>=Number(job.sentAtMs)+600000){
+      dodgeAttention(store,job,'A janela de cancelamento de 10 minutos passou');
+      return false;
+    }
     job.state='canceling';job.cancelRequestedAtMs=now;dodgeSaveRecord(store,job);
     try{
       await action('command_info','cancel_command',{id:Number(job.commandId),town_id:Number(job.townId),nl_init:true},true);
       job.state='cancelled';job.cancelledAtMs=dodgeNow();
       job.estimatedArrivalMs=2*job.cancelledAtMs-(Number(job.startedAtMs)||Number(job.sentAtMs));
+      job.error='Cancelamento solicitado e aceito pelo cliente; retorno ainda não confirmado';
       dodgeSaveRecord(store,job);
-      log(`Esquiva ${tName(townBy(job.townId))} (${job.group}): apoio #${job.commandId} cancelado. Retorno estimado ${new Date(job.estimatedArrivalMs).toLocaleTimeString('pt-BR',{hour12:false})}`);
+      log('Esquiva '+tName(townBy(job.townId))+': cancelamento do apoio #'+job.commandId+
+        ' aceito; retorno estimado '+new Date(job.estimatedArrivalMs).toLocaleTimeString('pt-BR',{hour12:false}));
       return true;
     }catch(e){
-      job.state='sent';job.retryAfterMs=dodgeNow()+1500;
-      job.error=String(e.message||e);dodgeSaveRecord(store,job);
-      log(`Esquiva: falha ao cancelar apoio #${job.commandId}: ${job.error}`,'WARN');
+      job.cancelAttempts=(Number(job.cancelAttempts)||0)+1;
+      job.error=String(e?.message||e);
+      if(job.cancelAttempts>=3||/invalid|expired|too late|not found|already cancelled|não pode|expirad/i.test(job.error)){
+        dodgeAttention(store,job,'Cancelamento não confirmado: '+job.error);
+      }else{
+        job.state='sent';job.retryAfterMs=dodgeNow()+Math.min(30000,job.cancelAttempts*5000);
+        dodgeSaveRecord(store,job);
+        log('Esquiva: nova tentativa de cancelamento #'+job.commandId+' após '+job.retryAfterMs,'WARN');
+      }
       return false;
     }
   }
-  async function dodgeDispatch(store,townId,targetId,group,units,wave,testId=null){
-    const now=dodgeNow();
+  async function dodgeDispatch(store,townId,targetId,units,wave,testId=null){
+    const now=dodgeNow(),existing=dodgeOutgoing(townId,targetId).map(dodgeMoveId);
     const job={
-      id:`ED-${townId}-${group}-${Date.now().toString(36)}`,
-      townId,targetId,group,units,testId,
-      state:'dispatching',sentAtMs:now,
+      id:'ED-'+townId+'-'+Date.now().toString(36),townId,targetId,group:'all',
+      units,testId,state:'dispatching',sentAtMs:now,
       firstImpactMs:wave.firstImpactMs,lastImpactMs:wave.lastImpactMs,
-      existingIds:dodgeOutgoing(townId,targetId).map(dodgeMoveId),
-      commandId:0,retryAfterMs:0
+      existingIds:existing,commandId:0,retryAfterMs:0,cancelAttempts:0
     };
     dodgeSaveRecord(store,job);
     try{
-      await action('town_info','send_units',{id:Number(targetId),town_id:Number(townId),type:'support',nl_init:true,...units},Boolean(testId));
-      job.state='identifying';
-      job.ackAtMs=dodgeNow();
-      dodgeSaveRecord(store,job);
-      const match=dodgeFindCommand(job);
-      if(match){
-        job.commandId=dodgeMoveId(match);
-        job.startedAtMs=dodgeEpochMs(match.data.started_at??match.data.start_time??match.data.sent_at)||job.sentAtMs;
-        job.outboundArrivalMs=dodgeArrival(match.data);
+      const result=await action('town_info','send_units',
+        {id:Number(targetId),town_id:Number(townId),type:'support',nl_init:true,...units},Boolean(testId));
+      const suppliedId=Number(result?.json?.data?.command_id??result?.json?.command_id??
+        result?.command_id??result?.json?.data?.id);
+      if(Number.isSafeInteger(suppliedId)&&suppliedId>0)job.commandId=suppliedId;
+      job.state='identifying';job.ackAtMs=dodgeNow();dodgeSaveRecord(store,job);
+      const found=dodgeFindCommand(job);
+      if(found){
+        job.commandId=dodgeMoveId(found);
+        job.startedAtMs=dodgeStarted(found.data)||job.sentAtMs;
+        job.outboundArrivalMs=dodgeArrival(found.data);
         job.state='sent';dodgeSaveRecord(store,job);
+      }else if(job.commandId){
+        job.startedAtMs=job.sentAtMs;job.state='sent';dodgeSaveRecord(store,job);
       }
-      log(`Esquiva: ${tName(townBy(townId))} → ${tName(townBy(targetId))} (${group}: ${Object.entries(units).map(([k,v])=>k+' '+v).join(', ')}); aguardando cancelamento cronometrado`);
+      log('Esquiva: apoio único '+tName(townBy(townId))+' → '+tName(townBy(targetId))+
+        ' com '+Object.values(units).reduce((sum,x)=>sum+num(x),0)+' unidades; '+(job.commandId?'#'+job.commandId:'identificando comando'));
       return true;
     }catch(e){
-      job.state='identifying';job.error=String(e.message||e);
+      // Uma solicitação incerta pode ter sido enviada: não disparar outra automaticamente.
+      job.state='identifying';job.error='Envio sem confirmação: '+String(e?.message||e);
       dodgeSaveRecord(store,job);
-      log(`Esquiva: envio sem confirmação (${group}). Aguardando identificação do comando, sem reenviar: ${job.error}`,'WARN');
+      log('Esquiva: '+job.error+'. Não será reenviado automaticamente.','WARN');
       return false;
     }
   }
   function dodgeCleanup(store,now){
-    let dirty=false;
-    for(const [key,j] of Object.entries(store.jobs||{})){
-      if(['cancelled','needs_attention'].includes(j.state)&&now-Number(j.cancelledAtMs||j.ackAtMs||j.sentAtMs)>7200000){
-        delete store.jobs[key];dirty=true;
-      }
+    let changed=false;
+    for(const [id,j] of Object.entries(store.jobs||{})){
+      if(['cancelled','needs_attention'].includes(j.state)&&
+        now-Number(j.cancelledAtMs||j.ackAtMs||j.sentAtMs)>7200000){delete store.jobs[id];changed=true;}
     }
     const recent=Object.entries(store.handled||{}).filter(([,ts])=>now-Number(ts)<21600000);
-    if(recent.length!==Object.keys(store.handled||{}).length){store.handled=Object.fromEntries(recent);dirty=true;}
-    if(dirty)dodgeWrite(store);
+    if(recent.length!==Object.keys(store.handled||{}).length){store.handled=Object.fromEntries(recent);changed=true;}
+    if(changed)dodgeWrite(store);
   }
   async function dodgePulse(){
     if(scope!==currentScope()||dodgeBusy||securityWatch()||!dodgeCanOperate())return;
-    if((!config.enabled||!config.modules.dodge)&&!dodgeTracked(dodgeRead()).length&&!testActive())return;
+    const previous=dodgeRead();
+    if((!config.enabled||!config.modules.dodge)&&!dodgeTracked(previous).length&&!testActive())return;
     if(!dodgeLeader())return;
     dodgeBusy=true;
     try{
       const now=dodgeNow(),store=dodgeRead();
       store.jobs??={};store.handled??={};
       dodgeCleanup(store,now);
-      const attacks=dodgeIncoming();
-      // Continue cancelamentos já iniciados mesmo que o usuário pause o módulo.
+      const incoming=dodgeIncoming();
+      // Primeiro processar retornos pendentes, inclusive se o usuário desligou o módulo.
       for(const job of dodgeTracked(store)){
         if(job.state==='canceling'){
-          if(now-Number(job.cancelRequestedAtMs||now)>16000){
-            job.state='sent';job.retryAfterMs=now+2000;dodgeSaveRecord(store,job);
+          if(now-num(job.cancelRequestedAtMs,now)>16000){
+            job.state='sent';job.retryAfterMs=now+2000;
+            dodgeSaveRecord(store,job);
           }
           continue;
         }
@@ -1890,82 +1953,76 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
           const found=dodgeFindCommand(job);
           if(found){
             job.commandId=dodgeMoveId(found);
-            job.startedAtMs=dodgeEpochMs(found.data.started_at??found.data.start_time??found.data.sent_at)||job.sentAtMs;
+            job.startedAtMs=dodgeStarted(found.data)||job.sentAtMs;
             job.outboundArrivalMs=dodgeArrival(found.data);
             job.state='sent';dodgeSaveRecord(store,job);
-          }else if(now-Number(job.sentAtMs)>20000){
-            job.state='needs_attention';job.ackAtMs=now;
-            job.error='Movimento não identificado; verificar apoio no jogo';
-            dodgeSaveRecord(store,job);
-            notify(`Esquiva: confira o apoio de ${tName(townBy(job.townId))}; comando não identificado`);
+          }else if(job.commandId){
+            job.startedAtMs=job.startedAtMs||job.sentAtMs;
+            job.state='sent';dodgeSaveRecord(store,job);
+          }else if(now-num(job.sentAtMs)>45000){
+            dodgeAttention(store,job,'Movimento não identificado após 45 segundos. Confira o apoio no Grepolis');
             continue;
           }else continue;
         }
-        if(job.state!=='sent'||Number(job.retryAfterMs)>now)continue;
+        if(job.state!=='sent'||num(job.retryAfterMs)>now)continue;
         if(job.forceCancel){await dodgeCancel(store,job,now);return;}
-        job.lastImpactMs=dodgeLateAttacks(job,attacks);
-        const s=Number(job.startedAtMs)||Number(job.sentAtMs);
-        const plan=dodgeTiming(s,job.lastImpactMs);
-        if(job.outboundArrivalMs&&Number.isFinite(job.outboundArrivalMs)&&plan.cancelAtMs>=job.outboundArrivalMs-1250){
-          job.error='Tempo de viagem insuficiente para retornar após toda a onda';
-          job.state='needs_attention';job.ackAtMs=now;dodgeSaveRecord(store,job);
-          notify(`Esquiva: destino muito perto para cancelar apoio #${job.commandId}; verifique manualmente`);
-          continue;
-        }
-        if(plan.cancelAtMs-s>595000){
-          job.error='Cancelamento calculado depois do limite de 10 minutos';
-          job.state='needs_attention';job.ackAtMs=now;dodgeSaveRecord(store,job);
-          notify(`Esquiva: janela de 10 minutos inviável no apoio #${job.commandId}`);
-          continue;
-        }
-        if(job.cancelAtMs!==plan.cancelAtMs){
-          job.cancelAtMs=plan.cancelAtMs;job.returnAtMs=plan.returnAtMs;
+        job.lastImpactMs=dodgeLateAttacks(job,incoming);
+        const started=num(job.startedAtMs,job.sentAtMs)||num(job.sentAtMs);
+        const plan=dodgeTiming(started,job.lastImpactMs);
+        job.cancelAtMs=Math.min(plan.cancelAtMs,plan.deadlineMs);
+        job.returnAtMs=job.cancelAtMs+(job.cancelAtMs-started);
+        const earlyLanding=Number.isFinite(num(job.outboundArrivalMs,NaN))&&
+          num(job.outboundArrivalMs)>0&&num(job.outboundArrivalMs)<=job.cancelAtMs+2500;
+        if(earlyLanding){
+          job.error='Destino próximo: cancelamento antecipado para não deixar o apoio estacionar';
+          job.cancelAtMs=Math.min(job.cancelAtMs,now);
           dodgeSaveRecord(store,job);
+          await dodgeCancel(store,job,now);return;
         }
+        if(plan.cancelAtMs>plan.deadlineMs){
+          job.error='Última onda supera a janela de 10 minutos; cancelamento antecipado';
+          log('Esquiva: '+job.error,'WARN');
+        }
+        dodgeSaveRecord(store,job);
         if(now>=job.cancelAtMs){
-          await dodgeCancel(store,job,now);
-          return;
+          await dodgeCancel(store,job,now);return;
         }
       }
       if(syncRole()==='standby'||((!config.enabled||!config.modules.dodge)&&!testActive()))return;
-      const minLead=1000,lead=Math.min(5000,Math.max(1000,Number(config.dodge.leadSeconds||5)*1000));
-      const own=new Map(towns().map(t=>[Number(t.id),t]));
-      const normalDodge=Boolean(config.enabled&&config.modules.dodge);
-      for(const [townId,town] of own){
+      const minLead=15000,lead=dodgeLead(),owned=new Map(towns().map(t=>[Number(t.id),t]));
+      for(const [townId,town] of owned){
         if(dodgeTracked(store).some(j=>Number(j.townId)===townId))continue;
-        const waveEvents=attacks.filter(a=>a.townId===townId&&a.arrivalMs>now&&(normalDodge||a.simulated));
-        const first=waveEvents[0];
+        const attacks=incoming.filter(a=>Number(a.townId)===townId&&a.arrivalMs>now&&
+          (config.enabled&&config.modules.dodge||a.simulated));
+        const first=attacks[0];
         if(!first)continue;
         const before=first.arrivalMs-now;
-        if(before>lead||before<minLead)continue;
-        if(store.handled[first.id])continue;
-        const targetId=dodgeDestination(townId,attacks);
+        if(before>lead||before<minLead||store.handled[first.id])continue;
+        const targetId=dodgeDestination(townId,incoming);
         if(!targetId){
-          if(!store.lastWarning?.[townId]||now-Number(store.lastWarning[townId])>10000){
+          const last=Number(store.lastWarning?.[townId])||0;
+          if(now-last>60000){
             store.lastWarning??={};store.lastWarning[townId]=now;dodgeWrite(store);
-            log(`Esquiva ${tName(town)}: não existe outra cidade própria na mesma ilha para receber apoio`,'WARN');
+            log('Esquiva '+tName(town)+': sem destino próprio seguro na mesma ilha','WARN');
           }
           continue;
         }
-        const lastImpact=Math.max(first.arrivalMs,...waveEvents.filter(x=>x.arrivalMs-first.arrivalMs<=dodgeWaveGap()).map(x=>x.arrivalMs));
-        const groups=dodgeUnits(town);
-        const active=Object.entries(groups).filter(([,u])=>Object.keys(u).length>0);
-        if(!active.length){store.handled[first.id]=now;dodgeWrite(store);continue;}
-        const wave={firstImpactMs:first.arrivalMs,lastImpactMs:lastImpact};
-        if(config.dryRun && !first.simulated){
+        const units=Object.assign({},...Object.values(dodgeUnits(town)));
+        if(!Object.keys(units).length){
+          store.handled[first.id]=now;dodgeWrite(store);continue;
+        }
+        if(config.dryRun&&!first.simulated){
           if(!dodgePreviewed.has(first.id)){
             dodgePreviewed.add(first.id);
-            log(`SIMULAÇÃO ESQUIVA ${tName(town)} → ${tName(townBy(targetId))}: impacto em ${(before/1000).toFixed(2)} s, retorno-alvo ${new Date(lastImpact+1000).toLocaleTimeString('pt-BR',{hour12:false})}`);
+            log('SIMULAÇÃO ESQUIVA '+tName(town)+': apoio único com '+Object.keys(units).length+
+              ' tipos, impacto em '+Math.round(before/1000)+' s; cancelamento após última onda');
           }
           continue;
         }
+        const lastImpact=Math.max(first.arrivalMs,...attacks.filter(a=>a.arrivalMs-first.arrivalMs<=dodgeWaveGap()).map(a=>a.arrivalMs));
         store.handled[first.id]=now;dodgeWrite(store);
-        for(const [kind,units] of active){
-          if(dodgeNow()>=first.arrivalMs-350){
-            log(`Esquiva: ${kind} não enviada: impacto muito próximo`,'WARN');break;
-          }
-          await dodgeDispatch(store,townId,targetId,kind,units,wave,first.simulated?first.testId:null);
-        }
+        await dodgeDispatch(store,townId,targetId,units,
+          {firstImpactMs:first.arrivalMs,lastImpactMs:lastImpact},first.simulated?first.testId:null);
         return;
       }
     }finally{dodgeBusy=false;}
@@ -2596,7 +2653,7 @@ let queueKindSelected='building';
         '<div class="tools"><button data-tab="VERIFICAR">Abrir verificação</button></div>';
     }
     shadow.querySelector('#gp-app').innerHTML=`
-      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.9.6</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
+      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.9.7</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
       ${config.ui.collapsed?'':`<div class="status"><i class="dot ${config.enabled?(config.dryRun?'sim':'live'):''}"></i>${cleanStr(STATUS())}</div>
       <div class="tabs">${['COMEÇAR','INÍCIO','CIDADES','FILA','ALDEIAS','TROPAS','COMBATE','ESQUIVA','TESTE','DIAG','VERIFICAR','ECONOMIA','MISSÕES','AJUSTES','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
       <div class="body">${body}</div><div class="foot"><button class="${config.enabled?'stop':'go'}" data-action="toggle">${config.enabled?'■ PARAR TUDO':'▶ INICIAR'}</button><span>${Object.values(config.modules).filter(Boolean).length} módulos ativos</span></div>`}`;
