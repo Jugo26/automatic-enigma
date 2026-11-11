@@ -1577,12 +1577,13 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
   if(!town)throw Error('Cidade inválida');
   if(!['preview','live'].includes(mode))throw Error('Modo inválido');
   delay=Math.floor(Number(delay));wave=Math.floor(Number(wave)||0);
-  if(!Number.isSafeInteger(delay)||delay<8||delay>180)throw Error('Prazo deve estar entre 8 e 180 segundos');
+  if(!Number.isSafeInteger(delay)||delay<30||delay>600)throw Error('Prazo deve estar entre 30 e 600 segundos');
   if(!Number.isSafeInteger(wave)||wave<0||wave>30)throw Error('O intervalo da segunda onda deve ser de 0 a 30 segundos');
   if(testRead().active?.state==='active')throw Error('Interrompa o teste atual antes de iniciar outro');
   const now=dodgeNow();
   const targetId=dodgeDestination(Number(id),dodgeIncoming());
   if(mode==='live'){
+  if(delay*1000<dodgeLead()+16000)throw Error('Teste prático: configure o impacto após pelo menos '+Math.ceil((dodgeLead()+16000)/1000)+' segundos');
   if(syncRole()==='standby')throw Error('O teste prático exige PC principal');
     if(!dodgeCanOperate())throw Error('Grepolis não está disponível');
     if(!targetId)throw Error('Teste prático precisa de outra cidade própria na mesma ilha');
@@ -1592,8 +1593,8 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
   }
   const a={id:'T-'+now+'-'+Math.random().toString(36).slice(2,7),townId:Number(id),targetId,
     mode,state:'active',stage:'waiting',createdMs:now,impactMs:now+delay*1000,
-    secondMs:wave?now+(delay+wave)*1000:0,leadSeconds:Math.min(5,Math.max(1,num(config.dodge.leadSeconds,5))),
-    returnDelay:Math.max(1,num(config.dodge.returnAfterSeconds,1)),sentMs:0,cancelledMs:0,returnMs:0,reason:''};
+    secondMs:wave?now+(delay+wave)*1000:0,leadSeconds:dodgeLead()/1000,
+    returnDelay:dodgeAfter()/1000,sentMs:0,cancelledMs:0,returnMs:0,reason:''};
   testWrite({active:a});
   log(`Teste ${mode==='live'?'PRÁTICO':'SIMULADO'} iniciado em ${tName(town)}: impacto fictício em ${delay}s`);
   return a;
@@ -1620,14 +1621,14 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const sendAt=a.impactMs-a.leadSeconds*1000;
     if(a.stage==='waiting'&&now>=sendAt){
       a.stage='sent';a.sentMs=sendAt;
-      a.cancelDue=Math.round((sendAt+after)/2);a.returnDue=after;changed=true;
+      a.cancelDue=after;a.returnDue=after+(after-sendAt);changed=true;
       log('SIMULAÇÃO: apoio virtual enviado; cancelamento programado');
     }
     if(a.stage==='sent'&&now>=a.cancelDue){
       a.stage='cancelled';a.cancelledMs=a.cancelDue;changed=true;
       log('SIMULAÇÃO: apoio virtual cancelado');
     }
-    if(a.stage==='cancelled'&&now>=after){
+    if(a.stage==='cancelled'&&now>=a.returnDue){
       a.stage='completed';a.state='completed';a.returnMs=after;changed=true;
       log('SIMULAÇÃO: retorno previsto após o último impacto');
     }
@@ -1660,19 +1661,19 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
   const group=t?dodgeUnits(t):{land:{},naval:{}};
   const count=Object.values(group).reduce((n,g)=>n+Object.values(g).reduce((sum,v)=>sum+num(v),0),0);
   const difference=a?.returnMs?(a.returnMs-Math.max(a.impactMs,a.secondMs||0))/1000:null;
-  const accuracy=difference!==null?Math.abs(difference-a.returnDelay):null;
+  const accuracy=null;
   const status=a?`<div class="city"><b>${a.mode==='live'?'🟠 Teste prático':'🔵 Teste virtual'}</b>
     <div>Cidade: ${cleanStr(tName(townBy(a.townId)))} · destino: ${a.targetId?cleanStr(tName(townBy(a.targetId))):'sem cidade de apoio'}</div>
     <div>Estado: ${cleanStr(a.stage)} (${cleanStr(a.state)})</div>
     <div>Impacto fictício: ${new Date(a.impactMs).toLocaleTimeString('pt-BR',{hour12:false})}${a.secondMs?' · 2ª onda '+new Date(a.secondMs).toLocaleTimeString('pt-BR',{hour12:false}):''}</div>
     <div>Contagem regressiva: <b id="testCountdown">${Math.max(0,(a.impactMs-now)/1000).toFixed(1)}s</b></div>
     <div class="smallnote">Saída: ${a.sentMs?new Date(a.sentMs).toLocaleTimeString('pt-BR',{hour12:false}):'aguardando'} · Cancelamento: ${a.cancelledMs?new Date(a.cancelledMs).toLocaleTimeString('pt-BR',{hour12:false}):'aguardando'} · Retorno: ${a.returnMs?new Date(a.returnMs).toLocaleTimeString('pt-BR',{hour12:false}):a.returnDue?new Date(a.returnDue).toLocaleTimeString('pt-BR',{hour12:false}):'calculando'}</div>
-    ${difference!==null?`<div class="smallnote"><b>Resultado calculado:</b> retorno ${difference.toFixed(2)}s após o último impacto · alvo ${Number(a.returnDelay).toFixed(2)}s · diferença ${accuracy.toFixed(2)}s. ${a.mode==='live'?'Retorno estimado, não confirmado pelo servidor.':'Cálculo virtual.'}</div>`:''}
+    ${difference!==null?`<div class="smallnote"><b>Retorno estimado:</b> ${difference.toFixed(1)}s após o último impacto; cancelamento previsto ${Number(a.returnDelay).toFixed(0)}s após a onda. ${a.mode==='live'?'Chegada não confirmada pelo servidor.':'Cálculo virtual.'}</div>`:''}
     ${a.reason?'<div class="smallnote">'+cleanStr(a.reason)+'</div>':''}</div>`:'<p class="smallnote">Nenhum teste executado.</p>';
   return `${section('Simular ataque à cidade')}
     <div class="helpbox">Cria um <b>ataque fictício</b> só no GrepoPilot. O modo virtual não move tropas; o modo prático usa apoio real para testar a saída e o cancelamento cronometrado, sem realizar ataque inimigo.</div>
     <div class="formrow"><span>Cidade testada</span>${selectTown('testCity',t?.id)}</div>
-    <div class="formrow"><span>Chegada do ataque em (seg.)</span><input type="number" min="8" max="180" data-setting="attackTest.delay" value="${config.attackTest.delay}"></div>
+    <div class="formrow"><span>Chegada do ataque em (seg.)</span><input type="number" min="30" max="600" data-setting="attackTest.delay" value="${config.attackTest.delay}"></div>
     <div class="formrow"><span>Segunda onda</span><select data-setting="attackTest.wave">${optionList([[0,'Desativada'],[3,'3 segundos depois'],[5,'5 segundos depois'],[10,'10 segundos depois']],config.attackTest.wave)}</select></div>
     <div class="formrow"><span>Modo</span><select data-setting="attackTest.mode">${optionList([['preview','Só cálculo — sem mover tropas'],['live','Teste real: enviar e cancelar apoio']],mode)}</select></div>
     <div class="smallnote">Tropas disponíveis: ${count} · apoio para: ${destination?cleanStr(tName(townBy(destination))):'nenhuma cidade da mesma ilha'}</div>
@@ -2040,13 +2041,13 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
       <div>${cleanStr(j.group)} · apoio #${cleanStr(j.commandId||'identificando')} · ${cleanStr(j.state)}</div>
       <div class="smallnote">${j.cancelAtMs?'Cancelar às '+new Date(j.cancelAtMs).toLocaleTimeString('pt-BR',{hour12:false}):'Aguardando movimento'}
       ${j.returnAtMs?' · retorno planejado '+new Date(j.returnAtMs).toLocaleTimeString('pt-BR',{hour12:false}):''}</div>
-      ${j.error?`<div class="smallnote">${cleanStr(j.error)}</div>`:''}</div>`
+      ${j.error?`<div class="smallnote">${cleanStr(j.error)}</div>`:''}${dodgeActive(j)&&j.commandId?`<button data-action="dodgeForceCancel" data-job="${cleanStr(j.id)}">Cancelar este apoio agora</button>`:''}</div>`
     ).join('');
     return `${moduleNames()}
       ${section('Esquiva sincronizada por cidade')}
-      <p class="smallnote">Entre 5 e 1 segundos antes do ataque, envia tropas disponíveis em apoio para outra cidade sua da mesma ilha. Cancela cada apoio após calcular o tempo já percorrido para voltar depois do impacto.</p>
-      <div class="formrow"><span>Enviar faltando (segundos)</span><input type="number" min="1" max="5" step="1" data-setting="dodge.leadSeconds" value="${config.dodge.leadSeconds}"></div>
-      <div class="formrow"><span>Voltar depois do ataque (segundos)</span><input type="number" min="1" max="20" step="1" data-setting="dodge.returnAfterSeconds" value="${config.dodge.returnAfterSeconds}"></div>
+      <p class="smallnote">Envia um apoio com terrestres e/ou navios habilitados antes da onda inimiga. Solicita o cancelamento depois do último impacto com margem de segurança. A chegada das tropas de volta não ocorre em um segundo exato.</p>
+      <div class="formrow"><span>Enviar faltando (segundos)</span><input type="number" min="20" max="180" step="5" data-setting="dodge.leadSeconds" value="${dodgeLead()/1000}"></div>
+      <div class="formrow"><span>Cancelar após a última onda (segundos)</span><input type="number" min="10" max="90" step="5" data-setting="dodge.returnAfterSeconds" value="${dodgeAfter()/1000}"></div>
       <div class="formrow"><span>Agrupar ataques próximos (segundos)</span><input type="number" min="1" max="60" step="1" data-setting="dodge.waveGapSeconds" value="${config.dodge.waveGapSeconds}"></div>
       <div class="checks"><label><input type="checkbox" data-setting="dodge.land" ${config.dodge.land?'checked':''}> Tropas terrestres</label><label><input type="checkbox" data-setting="dodge.naval" ${config.dodge.naval?'checked':''}> Navios</label></div>
       ${section('Destino do apoio')}
@@ -2057,7 +2058,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
       <div class="cityscroll">${listed||'<p class="smallnote">Nenhum ataque inimigo com horário confirmado agora.</p>'}</div>
       ${section('Apoios e cancelamentos pendentes')}
       <div class="cityscroll">${records||'<p class="smallnote">Nenhuma esquiva em trânsito.</p>'}</div>
-      <p class="smallnote">O retorno continua programado mesmo se o bot for pausado depois do envio. A precisão de 1 segundo depende da resposta do servidor e da latência da conexão. O script só cancela apoios que ele próprio identificou. Relógio usado: ${dodgeClock.source}.</p>`;
+      <p class="smallnote">Apoios já enviados continuam sendo acompanhados com o módulo pausado. O Grepolis permite cancelar comandos nos primeiros 10 minutos. CAPTCHA, destino muito próximo ou comando não localizado podem exigir intervenção. Relógio: ${dodgeClock.source}.</p><div class="tools"><button data-action="dodgeExport">Exportar diagnóstico da esquiva</button></div>`;
   }
 
   function diagReason(id){
@@ -2716,6 +2717,28 @@ let queueKindSelected='building';
           log('Modelo público exportado sem cidades ou metas pessoais');break;
         }
         case 'templateImport':templateImport(el('templateImportText')?.value||'');break;
+        case 'dodgeForceCancel':{
+          const id=trg.dataset.job,store=dodgeRead(),job=store.jobs?.[id];
+          if(!job||!dodgeActive(job)||!job.commandId)throw Error('Apoio não encontrado ou ainda sem ID');
+          if(securityWatch())throw Error('CAPTCHA ativo: cancelamento indisponível');
+          if(dodgeBusy)throw Error('Esquiva já está processando um comando');
+          job.forceCancel=true;dodgeSaveRecord(store,job);
+          await dodgeCancel(store,job,dodgeNow());break;
+        }
+        case 'dodgeExport':{
+          const movements=dodgeMovements().map(m=>({
+            keys:Object.keys(m.data||{}),
+            type:String(m.data.type??m.data.command_type??''),
+            commandId:dodgeMoveId(m),
+            from:dodgeSrcId(m.data),to:dodgeDstId(m.data),
+            startedAt:dodgeStarted(m.data),arrivalAt:dodgeArrival(m.data)
+          }));
+          download('GrepoPilot-esquiva-'+location.host+'.json',JSON.stringify({
+            version:'0.9.7',world:location.host,at:new Date().toISOString(),
+            clock:dodgeClock,settings:config.dodge,attacks:dodgeIncoming(),
+            jobs:dodgeRead().jobs||{},movements
+          },null,2));break;
+        }
         case 'reloadRearm':reloadSchedule(true);log('F5 automático: contagem reiniciada para '+reloadMinutes()+' minutos');break;
         case 'healthRefresh':health.storageCache=null;log('Verificação do PC executada');break;
         case 'healthReopen':{
