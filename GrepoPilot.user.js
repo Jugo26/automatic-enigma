@@ -244,7 +244,7 @@
     return output;
   };
   const templatePayload=()=>({
-    format:'grepopilot-template',schema:1,version:'0.9.4',
+    format:'grepopilot-template',schema:1,version:'0.9.7',
     exportedAt:new Date().toISOString(),settings:templateSettings()
   });
   const templateExport=()=>JSON.stringify(templatePayload(),null,2);
@@ -2317,7 +2317,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const ajaxOK=typeof W.gpAjax?.ajaxPost==='function';
     const role=syncRole();
     const checks=[
-      healthCheck('script','GrepoPilot carregado','ok','v0.9.4 · inicialização em '+new Date(health.startedAt).toLocaleTimeString('pt-BR')),
+      healthCheck('script','GrepoPilot carregado','ok','v0.9.7 · inicialização em '+new Date(health.startedAt).toLocaleTimeString('pt-BR')),
       healthCheck('page','Página do Grepolis',location.protocol==='https:'&&/^\/game(?:\/|$)/.test(location.pathname)?'ok':'error',
         String(location.host)+String(location.pathname||''),'Abra a página do jogo em https://SEU-MUNDO.grepolis.com/game/'),
       healthCheck('api','Acesso aos dados do jogo',W!==window?'ok':'warn',
@@ -2369,7 +2369,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const critical=checks.filter(x=>x.status==='error');
     const warnings=checks.filter(x=>x.status==='warn');
     const active=ready&&critical.length===0&&config.enabled&&role==='primary'&&!config.dryRun&&!securityBlocked()&&n>0;
-    return {version:'0.9.4',time:new Date(now).toISOString(),world:location.host,
+    return {version:'0.9.7',time:new Date(now).toISOString(),world:location.host,
       playerId:player||null,userAgent:typeof navigator!=='undefined'?navigator.userAgent:'',
       active,critical:critical.length,warnings:warnings.length,
       runtime:{uptimeSeconds:Math.floor((now-health.startedAt)/1000),
@@ -2774,7 +2774,7 @@ let queueKindSelected='building';
         }
         case 'diagRefresh':log('Diagnóstico: condições reavaliadas');break;
         case 'diagExport':download('GrepoPilot-diagnostico-'+location.host+'.json',JSON.stringify({
-          version:'0.9.4',world:location.host,at:new Date().toISOString(),summary:diagSnapshot()},null,2));break;
+          version:'0.9.7',world:location.host,at:new Date().toISOString(),summary:diagSnapshot()},null,2));break;
         case 'diagReset':{
           const rt=readRuntime();delete rt.diagnostics;writeRuntime(rt);log('Diagnóstico: contadores reiniciados');break;
         }
