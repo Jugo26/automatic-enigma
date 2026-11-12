@@ -7,7 +7,7 @@ permissions:
   contents: read
 jobs:
   android:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Descompactar projeto
@@ -19,7 +19,14 @@ jobs:
       - name: Instalar plataformas Android com SDK do runner
         run: |
           SDKROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
-          "${SDKROOT}/cmdline-tools/16.0/bin/sdkmanager" --install "platforms;android-35" "build-tools;35.0.0"
+          echo "SDK: ${SDKROOT}"
+          find "${SDKROOT}" -maxdepth 5 -name sdkmanager -type f || true
+          SM="$(find "${SDKROOT}" -maxdepth 5 -name sdkmanager -type f | head -1)"
+          if [ -n "${SM}" ]; then
+            "${SM}" --install "platforms;android-35" "build-tools;35.0.0"
+          else
+            echo "SDK Manager nao presente; Gradle verificara plataformas preinstaladas"
+          fi
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
