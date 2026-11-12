@@ -1,0 +1,40 @@
+name: Build Mira Rastro 8 Ball APK
+on:
+  push:
+    branches: [build-mira-rastro-auto-v2]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Descompactar projeto
+        run: mkdir -p mira-android && tar -xJf mira_auto/source.tar.xz -C mira-android
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Instalar plataformas Android
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Testes de física
+        working-directory: mira-android
+        run: bash tools/test-physics.sh
+      - name: Teste do detector
+        working-directory: mira-android
+        run: |
+          mkdir -p /tmp/mira-detect
+          javac -d /tmp/mira-detect app/src/main/java/com/kindmops/mirarastro/FrameDetector.java tools/TestFrameDetector.java
+          java -cp /tmp/mira-detect TestFrameDetector
+      - name: Compilar APK
+        working-directory: mira-android
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MiraRastro8Ball-AUTO-v2-APK
+          path: mira-android/app/build/outputs/apk/debug/app-debug.apk
