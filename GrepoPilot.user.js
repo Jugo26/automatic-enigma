@@ -3887,9 +3887,9 @@ let queueKindSelected='building';
         node.closest('.gpwindow')||node.closest('.gpwindow_frame')||
         node.closest('.window_frame')||node;
       if(!root.isConnected||visited.has(root))continue;
-      visited.add(root);
       const kind=contextualKind(root)||contextualKind(node);
       if(!kind)continue;
+      visited.add(root);
       const existing=contextualCache.get(root);
       if(existing?.root?.isConnected&&existing.kind===kind){contextualRender(existing);continue;}
       if(existing?.root?.isConnected)existing.root.remove();
