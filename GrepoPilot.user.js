@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GrepoPilot - Painel de Automacao
 // @namespace    https://grepolis.com/
-// @version      1.0.2
+// @version      1.0.3
 // @updateURL    https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.meta.js
 // @downloadURL  https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.user.js
 // @homepageURL  https://github.com/Jugo26/automatic-enigma/tree/grepopilot-updates
@@ -123,8 +123,8 @@
     dodge: {version:2,leadSeconds:60,returnAfterSeconds:15,waveGapSeconds:12,land:true,naval:true,targets:{},colonizationPolicy:'review',colonyConflictWindowSeconds:180,attackMarks:{},colonyBaselineMinutes:{},colonyTimeTolerancePercent:5},
     attackTest: {delay:120,wave:0,mode:'preview'},
     sync: {role:'primary'},
-    security: {notify:true,resumeAfterSeconds:5,pacingEnabled:true,minActionIntervalSeconds:15,maxActionsPerHour:100,postCaptchaCooldownMinutes:15},
-    autoReload: {enabled:true,minutes:30,safeWindowSeconds:180},
+    security: {notify:true,resumeAfterSeconds:15,pacingEnabled:true,minActionIntervalSeconds:45,maxActionsPerHour:60,postCaptchaCooldownMinutes:45},
+    autoReload: {enabled:false,minutes:30,safeWindowSeconds:180},
     onboarding: {completed:false},
     ui: {x:null,y:90,tab:'COMEÇAR',collapsed:false}
   };
@@ -167,6 +167,15 @@
       cfg.dodge.version=2;
     }
     if(raw?.attackTest?.delay===20&&raw?.dodge?.version!==2)cfg.attackTest.delay=120;
+    // Migração permanente: perfis antigos não podem reativar F5 temporizado.
+    cfg.autoReload ||= {};
+    cfg.autoReload.enabled = false;
+    cfg.security ||= {};
+    cfg.security.pacingEnabled = true;
+    cfg.security.minActionIntervalSeconds = Math.max(45,numOrFinite(cfg.security.minActionIntervalSeconds,45));
+    cfg.security.maxActionsPerHour = Math.min(60,numOrFinite(cfg.security.maxActionsPerHour,60));
+    cfg.security.postCaptchaCooldownMinutes = Math.max(45,numOrFinite(cfg.security.postCaptchaCooldownMinutes,45));
+    cfg.security.resumeAfterSeconds = Math.max(15,numOrFinite(cfg.security.resumeAfterSeconds,15));
     delete cfg.presence;
     if(raw&&Object.keys(raw).length>0&&raw.onboarding===undefined)cfg.onboarding={completed:true};
     return cfg;
@@ -244,7 +253,7 @@
     return output;
   };
   const templatePayload=()=>({
-    format:'grepopilot-template',schema:1,version:'1.0.2',
+    format:'grepopilot-template',schema:1,version:'1.0.3',
     exportedAt:new Date().toISOString(),settings:templateSettings()
   });
   const templateExport=()=>JSON.stringify(templatePayload(),null,2);
@@ -334,9 +343,9 @@
   // Limites conservadores para ações de rotina. Não tenta resolver nem contornar verificações.
   const pacingConfig=()=>({
     enabled:config.security?.pacingEnabled!==false,
-    intervalMs:Math.max(5,Math.min(120,num(config.security?.minActionIntervalSeconds,15)))*1000,
-    hourLimit:Math.max(10,Math.min(300,Math.floor(num(config.security?.maxActionsPerHour,100)))),
-    afterCaptchaMs:Math.max(0,Math.min(120,num(config.security?.postCaptchaCooldownMinutes,15)))*60000
+    intervalMs:Math.max(45,Math.min(3600,num(config.security?.minActionIntervalSeconds,45)))*1000,
+    hourLimit:Math.max(10,Math.min(60,Math.floor(num(config.security?.maxActionsPerHour,60)))),
+    afterCaptchaMs:Math.max(45,Math.min(240,num(config.security?.postCaptchaCooldownMinutes,45)))*60000
   });
   function pacingInfo(now=Date.now()){
     const rt=readRuntime(),p=rt.requestPacing||{},lim=pacingConfig();
@@ -365,6 +374,16 @@
     rt.requestPacing={...p,cooldownUntil:Math.max(Number(p.cooldownUntil)||0,
       now+Math.max(0,Number(minutes)||0)*60000)};
     writeRuntime(rt);
+  }
+  function pacingBackoffOnRateLimit(now=Date.now()){
+    const rt=readRuntime(),p=rt.requestPacing||{};
+    const previous=now-num(p.lastBackoffAt)>6*3600000?0:Math.floor(num(p.backoffLevel));
+    const level=Math.min(3,Math.max(0,previous)+1);
+    const minutes=[0,45,90,180][level];
+    rt.requestPacing={...p,backoffLevel:level,lastBackoffAt:now,
+      cooldownUntil:Math.max(num(p.cooldownUntil),now+minutes*60000)};
+    writeRuntime(rt);
+    return minutes;
   }
   const actionIsTimeCritical=(controller,method)=>(
     controller==='command_info'&&method==='cancel_command'||
@@ -398,8 +417,9 @@
           if(response?.success===false || response?.json?.success===false || response?.error || response?.json?.error){
             const reason=JSON.stringify(response?.json?.error || response?.error || 'Falha reportada pelo jogo');
             if(/(?:too many requests|rate.limi(?:t|ted)|\b429\b|too frequent)/i.test(reason)){
-              try{pacingCoolDown(20);}catch{}
-              log('Grepolis sinalizou excesso de requisições: ações de rotina pausadas por 20 minutos','WARN');
+              let backoffMinutes=45;
+              try{backoffMinutes=pacingBackoffOnRateLimit();}catch{}
+              log('Grepolis sinalizou excesso de requisições: pausa adaptativa de '+backoffMinutes+' minutos','WARN');
             }
             return reject(new Error(reason));
           }
@@ -461,8 +481,11 @@
   // Somente detecção de verificação visível; nenhum CAPTCHA é resolvido ou contornado.
   const securitySelectors=[
     'iframe[src*="captcha"]','iframe[src*="recaptcha"]','iframe[src*="hcaptcha"]',
-    'iframe[src*="arkoselabs"]','.captcha_container','.recaptcha-wrapper',
-    '.g-recaptcha','.h-captcha','#captcha',
+    'iframe[src*="arkoselabs"]','iframe[src*="funcaptcha"]',
+    'iframe[src*="challenges.cloudflare.com"]','iframe[src*="turnstile"]',
+    '.captcha_container','.recaptcha-wrapper','.captcha-challenge',
+    '.g-recaptcha','.h-captcha','#captcha','#challenge-form',
+    '[data-sitekey]','[data-testid*="captcha"]',
     '[id*="captcha"]','[class*="captcha"]'
   ];
   function securityVisible(node){
@@ -493,6 +516,7 @@
       securityState.clearSince=0;
       if(!securityState.active){
         securityState.active=true;securityState.since=now;securityState.source=source;
+        try{pacingCoolDown(pacingConfig().afterCaptchaMs/60000);}catch{}
         log('Verificação CAPTCHA detectada: automações temporariamente suspensas','WARN');
         // Impede que um teste prático continue usando horários vencidos após a verificação.
         try{
@@ -509,7 +533,7 @@
     }
     if(!securityState.active)return false;
     if(!securityState.clearSince)securityState.clearSince=now;
-    const delay=Math.max(1,Math.min(30,num(config.security?.resumeAfterSeconds,5)))*1000;
+    const delay=Math.max(15,Math.min(60,num(config.security?.resumeAfterSeconds,15)))*1000;
     if(now-securityState.clearSince<delay)return true;
     securityState.active=false;securityState.since=0;securityState.clearSince=0;securityState.source='';
     if(pacingConfig().enabled&&pacingConfig().afterCaptchaMs>0){
@@ -2790,28 +2814,10 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     return '';
   }
   function autoReloadPulse(){
-    if(scope!==currentScope()||config.autoReload?.enabled!==true||!config.enabled||syncRole()!=='primary')return false;
-    const state=reloadSchedule(),now=Date.now();
-    if(now<Number(state.nextAt))return false;
-    const reason=reloadBlockReason(now);
-    if(reason){
-      if(state.lastPostpone!==reason){
-        const rt=readRuntime();
-        rt.autoReload={...rt.autoReload,lastPostpone:reason};
-        writeRuntime(rt);
-        log('F5 automático adiado: '+reason);
-      }
-      return false;
-    }
-    const rt=readRuntime();
-    rt.autoReload={...rt.autoReload,lastReloadAt:now,nextAt:now+reloadMinutes()*60000,
-      lastPostpone:''};
-    writeRuntime(rt);
-    log('F5 automático: recarregando o Grepolis após '+reloadMinutes()+' minutos');
-    location.reload();
-    return true;
+    // Sessão contínua: o Grepolis nunca sofre F5 por tempo decorrido.
+    return false;
   }
-  const STATUS=()=>securityBlocked()?'⚠ CAPTCHA — operações suspensas':connected()?`${towns().length} cidades · ${syncRole()==='standby'?'SECUNDÁRIO (pausado)':config.enabled?'executando':'pausado'} · ${config.dryRun?'SIMULAÇÃO':'AO VIVO'}`:'Aguardando cliente do jogo';
+    const STATUS=()=>securityBlocked()?'⚠ CAPTCHA — operações suspensas':connected()?`${towns().length} cidades · ${syncRole()==='standby'?'SECUNDÁRIO (pausado)':config.enabled?'executando':'pausado'} · ${config.dryRun?'SIMULAÇÃO':'AO VIVO'}`:'Aguardando cliente do jogo';
   const toggle=(k,title)=>`<label class="mod"><input type="checkbox" data-module="${k}" ${config.modules[k]?'checked':''}><span>${title}</span><small>${num(config.intervals[k])}s</small></label>`;
   const optionList=(list,chosen)=>list.map(([v,label])=>`<option value="${cleanStr(v)}" ${String(chosen)===String(v)?'selected':''}>${cleanStr(label)}</option>`).join('');
   const selectTown=(id,selected='')=>`<select id="${id}">${optionList(towns().map(t=>[t.id,`${tName(t)} (#${t.id})`]),selected)}</select>`;
@@ -2842,7 +2848,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const ajaxOK=typeof W.gpAjax?.ajaxPost==='function';
     const role=syncRole();
     const checks=[
-      healthCheck('script','GrepoPilot carregado','ok','v1.0.2 · inicialização em '+new Date(health.startedAt).toLocaleTimeString('pt-BR')),
+      healthCheck('script','GrepoPilot carregado','ok','v1.0.3 · inicialização em '+new Date(health.startedAt).toLocaleTimeString('pt-BR')),
       healthCheck('page','Página do Grepolis',location.protocol==='https:'&&/^\/game(?:\/|$)/.test(location.pathname)?'ok':'error',
         String(location.host)+String(location.pathname||''),'Abra a página do jogo em https://SEU-MUNDO.grepolis.com/game/'),
       healthCheck('api','Acesso aos dados do jogo',W!==window?'ok':'warn',
@@ -2894,7 +2900,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const critical=checks.filter(x=>x.status==='error');
     const warnings=checks.filter(x=>x.status==='warn');
     const active=ready&&critical.length===0&&config.enabled&&role==='primary'&&!config.dryRun&&!securityBlocked()&&n>0;
-    return {version:'1.0.2',time:new Date(now).toISOString(),world:location.host,
+    return {version:'1.0.3',time:new Date(now).toISOString(),world:location.host,
       playerId:player||null,userAgent:typeof navigator!=='undefined'?navigator.userAgent:'',
       active,critical:critical.length,warnings:warnings.length,
       runtime:{uptimeSeconds:Math.floor((now-health.startedAt)/1000),
@@ -3148,19 +3154,14 @@ let queueKindSelected='building';
     ${section('Controle de solicitações')}
     <p class="smallnote">Espaça ações de rotina para evitar repetições e carga desnecessária. Ataques/apoios programados e cancelamentos cronometrados preservam suas janelas; todas as ações ainda respeitam o bloqueio por CAPTCHA.</p>
     <div class="checks"><label><input type="checkbox" data-setting="security.pacingEnabled" ${config.security.pacingEnabled!==false?'checked':''}> Limitar ações de rotina</label></div>
-    <div class="formrow"><span>Intervalo mínimo entre envios (seg)</span><input type="number" min="5" max="120" step="5" data-setting="security.minActionIntervalSeconds" value="${pacingConfig().intervalMs/1000}"></div>
-    <div class="formrow"><span>Máximo de solicitações por hora</span><input type="number" min="10" max="300" step="10" data-setting="security.maxActionsPerHour" value="${pacingConfig().hourLimit}"></div>
-    <div class="formrow"><span>Pausa após resolver CAPTCHA (min)</span><input type="number" min="0" max="120" step="5" data-setting="security.postCaptchaCooldownMinutes" value="${pacingConfig().afterCaptchaMs/60000}"></div>
+    <div class="formrow"><span>Intervalo mínimo entre envios (seg)</span><input type="number" min="45" max="3600" step="5" data-setting="security.minActionIntervalSeconds" value="${pacingConfig().intervalMs/1000}"></div>
+    <div class="formrow"><span>Máximo de solicitações por hora</span><input type="number" min="10" max="60" step="10" data-setting="security.maxActionsPerHour" value="${pacingConfig().hourLimit}"></div>
+    <div class="formrow"><span>Pausa após resolver CAPTCHA (min)</span><input type="number" min="45" max="240" step="5" data-setting="security.postCaptchaCooldownMinutes" value="${pacingConfig().afterCaptchaMs/60000}"></div>
     <div class="smallnote">Última hora: ${pacingInfo().attempts} solicitação(ões). ${pacingInfo().remainingMs>0?'Próxima ação de rotina em '+Math.ceil(pacingInfo().remainingMs/1000)+' segundos.':'Ações de rotina liberadas.'}</div>
     <div class="tools"><button data-action="askNotif">Ativar alertas do navegador</button></div>
     <p class="smallnote">Com um CAPTCHA visível, inclusive ações de esquiva e testes práticos aguardam. Cancelamentos de apoio podem ficar atrasados durante a verificação.</p>
-    ${section('Atualização automática da página (F5)')}
-    <div class="checks"><label><input type="checkbox" data-setting="autoReload.enabled" ${config.autoReload.enabled?'checked':''}> Recarregar o Grepolis automaticamente enquanto o bot estiver ativo</label></div>
-    <div class="formrow"><span>Intervalo entre F5 (minutos)</span><input type="number" min="10" max="720" step="5" data-setting="autoReload.minutes" value="${reloadMinutes()}"></div>
-    <div class="formrow"><span>Margem antes de ataques e comandos (segundos)</span><input type="number" min="60" max="600" step="30" data-setting="autoReload.safeWindowSeconds" value="${Math.floor(reloadWindow()/1000)}"></div>
-    <div class="smallnote">Próximo F5: ${config.autoReload.enabled&&reloadState().nextAt?new Date(reloadState().nextAt).toLocaleTimeString('pt-BR',{hour12:false}):'após ativar o bot'}. ${reloadState().lastReloadAt?'Última atualização: '+new Date(reloadState().lastReloadAt).toLocaleTimeString('pt-BR',{hour12:false})+'.':''}</div>
-    <p class="smallnote">Adia o F5 durante CAPTCHA, ações em andamento, esquivas, ataques próximos, testes e comandos agendados. O relógio continua contando enquanto estiver adiado; a atualização ocorre assim que for seguro. Em abas em segundo plano, o navegador pode atrasar o temporizador.</p>
-    <div class="tools"><button data-action="reloadRearm">Reiniciar contagem do F5</button></div>
+    ${section('Sessão contínua (sem F5 automático)')}
+    <div class="helpbox">O recarregamento periódico foi removido. O jogo continua aberto durante as verificações de atualização do bot. Use o navegador para recarregar manualmente quando quiser.</div>
     ${section('Intervalos')}
     ${Object.keys(MODULES).map(k=>`<div class="formrow compact"><span>${MODULES[k][0]}</span><input type="number" data-interval="${k}" min="2" max="86400" value="${num(config.intervals[k])}"> <small>s</small></div>`).join('')}
     ${section('JSON da configuração')}
@@ -3188,7 +3189,7 @@ let queueKindSelected='building';
         '<div class="tools"><button data-tab="VERIFICAR">Abrir verificação</button></div>';
     }
     shadow.querySelector('#gp-app').innerHTML=`
-      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v1.0.2</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
+      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v1.0.3</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
       ${config.ui.collapsed?'':`<div class="status"><i class="dot ${config.enabled?(config.dryRun?'sim':'live'):''}"></i>${cleanStr(STATUS())}</div>
       <div class="tabs">${[...(config.onboarding?.completed?[]:['COMEÇAR']),'INÍCIO','CIDADES','TROPAS','FILA','ALDEIAS','COMBATE','ESQUIVA','ECONOMIA','MISSÕES','AJUSTES','VERIFICAR','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
       <div class="body">${body}</div><div class="foot"><button class="${config.enabled?'stop':'go'}" data-action="toggle">${config.enabled?'■ PARAR TUDO':'▶ INICIAR'}</button><span>${Object.values(config.modules).filter(Boolean).length} módulos ativos</span></div>`}`;
@@ -3293,7 +3294,7 @@ let queueKindSelected='building';
             startedAt:dodgeStarted(m.data),arrivalAt:dodgeArrival(m.data)
           }));
           download('GrepoPilot-esquiva-'+location.host+'.json',JSON.stringify({
-            version:'1.0.2',world:location.host,at:new Date().toISOString(),
+            version:'1.0.3',world:location.host,at:new Date().toISOString(),
             clock:dodgeClock,settings:config.dodge,attacks:dodgeIncoming(),
             movementFields:dodgeMovements().map(m=>({keys:Object.keys(m.data||{}),
               details:Object.fromEntries(Object.entries(m.data||{}).filter(([k])=>/(?:speed|modifier|power|spell|effect|hero|conquest|colon|takeover|revolt|unit|time|arriv|start)/i.test(k)).slice(0,25))})),
@@ -3325,7 +3326,7 @@ let queueKindSelected='building';
         }
         case 'diagRefresh':log('Diagnóstico: condições reavaliadas');break;
         case 'diagExport':download('GrepoPilot-diagnostico-'+location.host+'.json',JSON.stringify({
-          version:'1.0.2',world:location.host,at:new Date().toISOString(),summary:diagSnapshot()},null,2));break;
+          version:'1.0.3',world:location.host,at:new Date().toISOString(),summary:diagSnapshot()},null,2));break;
         case 'diagReset':{
           const rt=readRuntime();delete rt.diagnostics;writeRuntime(rt);log('Diagnóstico: contadores reiniciados');break;
         }
@@ -3949,7 +3950,6 @@ let queueKindSelected='building';
         log('Motor: '+health.lastTickResult,'ERROR');
       });}catch(e){health.lastTickResult='erro: '+String(e?.message||e);log('Motor: '+health.lastTickResult,'ERROR');}
     },1500);
-    setInterval(()=>{try{autoReloadPulse()}catch(e){log('F5 automático: '+e.message,'ERROR')}},10000);
     setInterval(()=>{dodgePulse().catch(e=>log(`Esquiva: ${e.message}`,'ERROR'))},125);
     setInterval(()=>{try{testTick();if(config.ui.tab==='TESTE'&&shadow){const a=testRead().active;const el=shadow.getElementById('testCountdown');if(a&&el)el.textContent=Math.max(0,(a.impactMs-dodgeNow())/1000).toFixed(1)+'s';}}catch(e){log(`Teste: ${e.message}`,'ERROR')}},250);
     setInterval(()=>{if(dodgeBusy){try{const active=JSON.parse(localStorage.getItem(DODGE_LOCK)||'{}');if(active.owner===instanceId)localStorage.setItem(DODGE_LOCK,JSON.stringify({owner:instanceId,until:Date.now()+2500}));}catch{}}},500);
