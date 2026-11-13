@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GrepoPilot - Painel de Automacao
 // @namespace    https://grepolis.com/
-// @version      0.9.9
+// @version      1.0.0
 // @updateURL    https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.meta.js
 // @downloadURL  https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.user.js
 // @homepageURL  https://github.com/Jugo26/automatic-enigma/tree/grepopilot-updates
@@ -106,7 +106,7 @@
     build: {targets:{},priority:BUILDINGS.slice(),allowDemolition:false},
     finishFree: {maxRemainingSeconds:285},
     cityProfiles: {},
-    recruit: {targets:{},maxBatch:35,minBatch:10,shipBatch:8,minShipBatch:3,mythicalBatch:2,minMythicalBatch:2,maxQueueSlots:2},
+    recruit: {targets:{},continuous:{},maxBatch:35,minBatch:10,shipBatch:8,minShipBatch:3,mythicalBatch:2,minMythicalBatch:2,maxQueueSlots:2},
     research: {queue:{}},
     smartQueue: {items:[],maxBatch:35,mode:'intelligent',autoPrereqs:true},
     trade: {routes:[],minReserve:2500,maxFill:0.90,intelligent:false,minCargo:200,cooldownMinutes:5,pendingMinutes:15,maxGoals:8},
@@ -244,7 +244,7 @@
     return output;
   };
   const templatePayload=()=>({
-    format:'grepopilot-template',schema:1,version:'0.9.9',
+    format:'grepopilot-template',schema:1,version:'1.0.0',
     exportedAt:new Date().toISOString(),settings:templateSettings()
   });
   const templateExport=()=>JSON.stringify(templatePayload(),null,2);
@@ -962,22 +962,46 @@ function policyForUnit(key,def){
     return false;
   }
   async function recruit(){
-    const candidates=[];
-    for(const [id,goals] of Object.entries(config.recruit.targets)){
-      const t=townBy(id);if(!t||!goals||queueManagesTown(id))continue;
+    const candidates=[],continuous=config.recruit.continuous||{};
+    const ids=new Set([...Object.keys(config.recruit.targets||{}),...Object.keys(continuous)]);
+    const runtime=readRuntime();
+    for(const id of ids){
+      const t=townBy(id),goals=config.recruit.targets?.[id]||{},loops=continuous[id]||{};
+      if(!t||queueManagesTown(id))continue;
       for(const [unit,wanted] of Object.entries(goals)){
+        if(Number(loops[unit])>0)continue;
         const plan=planRecruitBatch(t,unit,wanted);
-        if(plan.state==='ready')candidates.push({t,unit,plan});
+        if(plan.state==='ready')candidates.push({t,unit,plan,continuous:false,lastAt:0});
+      }
+      for(const [unit,batchRaw] of Object.entries(loops)){
+        const def=W.GameData?.units?.[unit],batch=Math.floor(Number(batchRaw));
+        if(!def||!Number.isSafeInteger(batch)||batch<1||batch>999)continue;
+        const owned=Math.max(0,num(t.units?.()?.[unit]))+Math.max(0,num(t.unitsOuter?.()?.[unit]));
+        const orders=t.getUnitOrdersCollection?.()?.models||[];
+        const queued=orders.reduce((sum,o)=>sum+
+          (o.attributes?.unit_type===unit?Math.max(0,num(o.attributes?.units_left??o.attributes?.count??o.attributes?.amount)):0),0);
+        // Meta móvel: assim que a fila liberar espaço, outro lote pode ser criado.
+        const plan=planRecruitBatch(t,unit,owned+queued+batch,batch);
+        if(plan.state==='ready')candidates.push({t,unit,plan,continuous:true,
+          lastAt:num(runtime.continuousRecruitLast?.[id+':'+unit])});
       }
     }
-    candidates.sort((a,b)=>queueSum(a.plan.cost)-queueSum(b.plan.cost));
+    candidates.sort((a,b)=>Number(a.continuous)-Number(b.continuous)||
+      (a.continuous?a.lastAt-b.lastAt:queueSum(a.plan.cost)-queueSum(b.plan.cost))||
+      queueSum(a.plan.cost)-queueSum(b.plan.cost));
     const best=candidates[0];if(!best)return false;
     const def=W.GameData.units[best.unit];
     await action(def.is_naval?'building_docks':'building_barracks','build',{
       unit_id:best.unit,amount:best.plan.amount,town_id:Number(best.t.id)
     });
     markRecruitLane(best.t,def);
-    log(tName(best.t)+': recrutar '+best.plan.amount+' '+best.unit+' · '+best.plan.reason);
+    if(best.continuous&&!config.dryRun){
+      const rt=readRuntime();rt.continuousRecruitLast??={};
+      rt.continuousRecruitLast[best.t.id+':'+best.unit]=Date.now();
+      writeRuntime(rt);
+    }
+    log(tName(best.t)+': '+(best.continuous?'recrutamento contínuo de ':'recrutar ')+
+      best.plan.amount+' '+best.unit+' · '+best.plan.reason);
     return true;
   }
   async function research(){
@@ -2818,7 +2842,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const ajaxOK=typeof W.gpAjax?.ajaxPost==='function';
     const role=syncRole();
     const checks=[
-      healthCheck('script','GrepoPilot carregado','ok','v0.9.9 · inicialização em '+new Date(health.startedAt).toLocaleTimeString('pt-BR')),
+      healthCheck('script','GrepoPilot carregado','ok','v1.0.0 · inicialização em '+new Date(health.startedAt).toLocaleTimeString('pt-BR')),
       healthCheck('page','Página do Grepolis',location.protocol==='https:'&&/^\/game(?:\/|$)/.test(location.pathname)?'ok':'error',
         String(location.host)+String(location.pathname||''),'Abra a página do jogo em https://SEU-MUNDO.grepolis.com/game/'),
       healthCheck('api','Acesso aos dados do jogo',W!==window?'ok':'warn',
@@ -2870,7 +2894,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const critical=checks.filter(x=>x.status==='error');
     const warnings=checks.filter(x=>x.status==='warn');
     const active=ready&&critical.length===0&&config.enabled&&role==='primary'&&!config.dryRun&&!securityBlocked()&&n>0;
-    return {version:'0.9.9',time:new Date(now).toISOString(),world:location.host,
+    return {version:'1.0.0',time:new Date(now).toISOString(),world:location.host,
       playerId:player||null,userAgent:typeof navigator!=='undefined'?navigator.userAgent:'',
       active,critical:critical.length,warnings:warnings.length,
       runtime:{uptimeSeconds:Math.floor((now-health.startedAt)/1000),
@@ -2904,7 +2928,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const r=ruralStatus();const q=questRows();const camp=W.MM?.getModelByNameAndPlayerId?.('PlayerAttackSpot');
     const enabled=Object.entries(config.modules).filter(([,v])=>v).length;
     return `${!config.onboarding?.completed?'<div class="helpbox">Primeiro acesso? Abra COMEÇAR para configurar esta conta.</div>':''}${section('Visão geral')}<div class="stats"><div><b>${towns().length}</b>Cidades</div><div><b>${r.unlocked}/${r.rows.length}</b>Aldeias</div><div><b>${r.bp??'—'}</b>Pontos de batalha</div><div><b>${q.length}</b>Missões prontas</div></div>
-      <div class="helpbox">1. Escolha uma aba abaixo. 2. Ative as funções desejadas. 3. Defina os modelos e as metas. 4. Ative <b>Iniciar</b> na barra inferior.${config.dryRun?' <b>Modo simulação ativo.</b>':''}</div>
+      <div class="helpbox"><b>Controles por edifício:</b> abra o Quartel para tropas terrestres, o Porto para navios, o Senado para obras e a Academia para pesquisas. Os modelos, as metas e a produção contínua ficam nas próprias janelas do jogo. Use este painel para os demais módulos e para iniciar a automação.${config.dryRun?' <b>Modo simulação ativo.</b>':''}</div>
       ${section('Acesso rápido')}<div class="quick">${[['CIDADES','🏛️ Modelos de cidades'],['ALDEIAS','🏡 Evoluir e desbloquear'],['TROPAS','⚔️ Modelos de tropas'],['MISSÕES','🎁 Recompensas'],['COMBATE','🏹 Acampamento e ataques'],['ECONOMIA','🌾 Coleta e comércio']].map(([tab,name])=>`<button data-tab="${tab}">${name}</button>`).join('')}</div>
       ${section('Acampamento')}<div class="smallnote">${camp ? `Fase ${cleanStr(String(camp.getLevel?.()??'?'))} · ${camp.hasReward?.()?'recompensa disponível':num(camp.getCooldownDuration?.())>0?'aguardando '+num(camp.getCooldownDuration?.())+'s':'pronto para ataque'}`:'Dados do acampamento indisponíveis'}</div>
       ${section('Módulos ligados')}<div class="smallnote">${enabled} de ${Object.keys(MODULES).length} ativos · ${Object.entries(config.modules).filter(([,v])=>v).map(([k])=>cleanStr(MODULES[k][0])).join(' · ')||'Ative um módulo em sua aba.'}</div>`;
@@ -3164,9 +3188,9 @@ let queueKindSelected='building';
         '<div class="tools"><button data-tab="VERIFICAR">Abrir verificação</button></div>';
     }
     shadow.querySelector('#gp-app').innerHTML=`
-      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v0.9.9</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
+      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v1.0.0</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
       ${config.ui.collapsed?'':`<div class="status"><i class="dot ${config.enabled?(config.dryRun?'sim':'live'):''}"></i>${cleanStr(STATUS())}</div>
-      <div class="tabs">${['COMEÇAR','INÍCIO','CIDADES','FILA','ALDEIAS','TROPAS','COMBATE','ESQUIVA','TESTE','DIAG','VERIFICAR','ECONOMIA','MISSÕES','AJUSTES','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
+      <div class="tabs">${[...(config.onboarding?.completed?[]:['COMEÇAR']),'INÍCIO','FILA','ALDEIAS','COMBATE','ESQUIVA','ECONOMIA','MISSÕES','AJUSTES','VERIFICAR','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
       <div class="body">${body}</div><div class="foot"><button class="${config.enabled?'stop':'go'}" data-action="toggle">${config.enabled?'■ PARAR TUDO':'▶ INICIAR'}</button><span>${Object.values(config.modules).filter(Boolean).length} módulos ativos</span></div>`}`;
   };
   const CSS=`
@@ -3269,7 +3293,7 @@ let queueKindSelected='building';
             startedAt:dodgeStarted(m.data),arrivalAt:dodgeArrival(m.data)
           }));
           download('GrepoPilot-esquiva-'+location.host+'.json',JSON.stringify({
-            version:'0.9.9',world:location.host,at:new Date().toISOString(),
+            version:'1.0.0',world:location.host,at:new Date().toISOString(),
             clock:dodgeClock,settings:config.dodge,attacks:dodgeIncoming(),
             movementFields:dodgeMovements().map(m=>({keys:Object.keys(m.data||{}),
               details:Object.fromEntries(Object.entries(m.data||{}).filter(([k])=>/(?:speed|modifier|power|spell|effect|hero|conquest|colon|takeover|revolt|unit|time|arriv|start)/i.test(k)).slice(0,25))})),
@@ -3301,7 +3325,7 @@ let queueKindSelected='building';
         }
         case 'diagRefresh':log('Diagnóstico: condições reavaliadas');break;
         case 'diagExport':download('GrepoPilot-diagnostico-'+location.host+'.json',JSON.stringify({
-          version:'0.9.9',world:location.host,at:new Date().toISOString(),summary:diagSnapshot()},null,2));break;
+          version:'1.0.0',world:location.host,at:new Date().toISOString(),summary:diagSnapshot()},null,2));break;
         case 'diagReset':{
           const rt=readRuntime();delete rt.diagnostics;writeRuntime(rt);log('Diagnóstico: contadores reiniciados');break;
         }
@@ -3510,8 +3534,303 @@ let queueKindSelected='building';
     document.addEventListener('pointerup',()=>{if(moving){moving=null;save()}});
     render();log('Painel carregado');
   };
+
+  // Integração contextual: os controles ficam nas janelas nativas, os motores continuam únicos.
+  const GP_CONTEXT_CSS = [
+    ':host{all:initial;color:#dfd9ca;font:12px/1.4 Arial,sans-serif}',
+    '.gpbox{box-sizing:border-box;background:#20282e;color:#e6e1d6;border:1px solid #b28a43;border-radius:7px;margin:10px 4px;padding:10px;box-shadow:0 3px 11px #0006}',
+    '.gphead{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding-bottom:7px;border-bottom:1px solid #675335}',
+    '.gphead b{color:#f6d18a;font-size:14px}.gpmeta{font-size:11px;color:#c6bfad}',
+    '.gpstate{padding:7px;background:#293846;border-radius:4px;margin:8px 0;color:#e3e3de}',
+    '.gpactions{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:8px 0}',
+    '.gpgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:7px;max-height:240px;overflow:auto;padding:3px}',
+    '.gpitem{border:1px solid #55626a;background:#2c353c;border-radius:5px;display:flex;gap:7px;padding:6px;min-width:0;align-items:flex-start}',
+    '.gpicon{flex:none;display:inline-flex;width:38px;height:38px;align-items:center;justify-content:center;background-color:#414c51;border:1px solid #767a74;border-radius:3px;background-repeat:no-repeat;color:#e6e0d0;font-size:11px;font-weight:bold}',
+    '.gpicon.plan{filter:grayscale(100%);opacity:.72}',
+    '.gpdetails{min-width:0;flex:1}.gpdetails b{display:block;color:#f0dcac;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}',
+    '.gpsmall{display:block;color:#c0c8ca;font-size:10px;margin:3px 0}',
+    '.gpcontrols{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:5px}',
+    'input,select,button{font:11px Arial,sans-serif;box-sizing:border-box;border:1px solid #707d82;border-radius:3px;color:#f0efe9;background:#111d27;padding:5px;min-width:0}',
+    'input[type=number]{width:74px}button{cursor:pointer;background:#46535c}button:hover{background:#65737d}',
+    '.gpprimary{background:#765b30;border-color:#c09c55;color:#fff0d5}',
+    '.gphelp{color:#aebbc4;font-size:11px;margin:6px 0}',
+    '.gppill{display:inline-block;border-radius:10px;background:#384b4c;padding:2px 7px;font-size:10px}',
+    '.gpempty{color:#e3ba83;padding:8px}'
+  ].join('\n');
+  const contextualCache=new WeakMap();
+  let contextualStarted=false;
+  function contextualKind(node){
+    if(!node||!node.getAttribute)return '';
+    const names=[node.getAttribute('data-window_type'),node.getAttribute('data-type'),
+      node.getAttribute('data-window-type'),node.id,typeof node.className==='string'?node.className:'']
+      .filter(Boolean).join(' ').toLowerCase();
+    const title=node.querySelector('.gpwindow_title,.gpwindow_header .title,.window_title,.window_header .title,.ui-dialog-title,.caption,.window_header');
+    const text=String(title?.textContent||'').trim().slice(0,100).toLowerCase();
+    if(/building[_\s-]*barracks|\bbarracks\b|\bquartel\b/.test(names+' '+text))return 'barracks';
+    if(/building[_\s-]*docks|\bdocks\b|\bporto\b/.test(names+' '+text))return 'docks';
+    if(/building[_\s-]*academy|\bacademy\b|\bacademia\b/.test(names+' '+text))return 'academy';
+    if(/building[_\s-]*main|\bsenate\b|\bsenado\b/.test(names+' '+text))return 'senate';
+    return '';
+  }
+  function contextualTown(){
+    const id=Number(W.Game?.townId??W.ITowns?.getCurrentTown?.()?.id??W.ITowns?.getCurrentTown?.()?.getId?.());
+    return Number.isSafeInteger(id)&&id>0?townBy(id):null;
+  }
+  function contextualIcon(key,kind,planned){
+    const safe=String(key||'');
+    const abbrev=cleanStr(safe.replace(/_/g,' ').slice(0,3).toUpperCase());
+    let inline='';
+    if(/^[a-zA-Z0-9_-]{1,80}$/.test(safe)){
+      const selectors=kind==='building'?
+        ['.building_icon.'+safe,'.building_icon_'+safe]:
+        ['.unit_icon40x40.'+safe,'.unit_icon.'+safe,'.unit_icon25x25.'+safe];
+      for(const selector of selectors){
+        const element=document.querySelector(selector);
+        if(!element)continue;
+        try{
+          const css=window.getComputedStyle(element);
+          if(css.backgroundImage&&css.backgroundImage!=='none'){
+            inline='background-image:'+css.backgroundImage+';background-position:'+css.backgroundPosition+
+              ';background-size:'+css.backgroundSize+';';
+            break;
+          }
+        }catch{}
+      }
+    }
+    return '<span class="gpicon'+(planned?' plan':'')+'" style="'+cleanStr(inline)+'">'+
+      (inline?'':abbrev)+'</span>';
+  }
+  function contextualArmy(t,naval){
+    const keys=Object.entries(W.GameData?.units||{}).filter(([key,def])=>{
+      if(!def||typeof def!=='object'||Boolean(def.is_naval)!==naval)return false;
+      if(isMythical(key,def)){
+        const expected=String(def.god_id||def.god||MYTH_GODS[key]||'').toLowerCase();
+        if(expected&&expected!==godOf(t))return false;
+      }
+      return true;
+    }).map(([key])=>key);
+    const targets=config.recruit.targets?.[t.id]||{};
+    const loops=config.recruit.continuous?.[t.id]||{};
+    const orders=t.getUnitOrdersCollection?.()?.models||[];
+    return keys.map(key=>{
+      const own=Math.max(0,num(t.units?.()?.[key]))+Math.max(0,num(t.unitsOuter?.()?.[key]));
+      const queued=orders.reduce((n,o)=>n+(o.attributes?.unit_type===key?
+        Math.max(0,num(o.attributes?.units_left??o.attributes?.count??o.attributes?.amount)):0),0);
+      const infinite=Math.floor(num(loops[key]))>0;
+      const goal=Math.max(0,Math.floor(num(targets[key])));
+      const amount=infinite?Math.floor(num(loops[key])):goal;
+      const def=W.GameData?.units?.[key]||{};
+      const label=String(def.name||def.name_plural||key).replace(/<[^>]+>/g,'');
+      const state=infinite?'∞ repetir lote '+amount:
+        goal>0?'meta '+goal+(own+queued>=goal?' · concluída':' · planejada'):'sem meta';
+      return '<div class="gpitem"><div>'+contextualIcon(key,'unit',goal>0||infinite)+
+        '</div><div class="gpdetails"><b>'+cleanStr(label)+'</b>'+
+        '<span class="gpsmall">Disponíveis '+own+' · na fila '+queued+'</span>'+
+        '<span class="gpsmall">'+cleanStr(state)+'</span>'+
+        '<div class="gpcontrols"><select data-gp-mode="'+cleanStr(key)+'">'+
+          '<option value="target"'+(!infinite?' selected':'')+'>Meta mínima</option>'+
+          '<option value="continuous"'+(infinite?' selected':'')+'>Infinito</option>'+
+          '</select><input type="number" data-gp-value="'+cleanStr(key)+'" min="0" max="999999" value="'+amount+'">'+
+          '<button data-gp-task="unit" data-key="'+cleanStr(key)+'" class="gpprimary">Salvar</button>'+
+          '</div></div></div>';
+    }).join('');
+  }
+  function contextualSenate(t){
+    const current=t.buildings?.()?.attributes||{};
+    const known=Object.keys(W.GameData?.buildings||{}).filter(key=>
+      Object.prototype.hasOwnProperty.call(current,key));
+    const keys=known.length?known:BUILDINGS.filter(key=>key in current);
+    const targets=config.build.targets?.[t.id]||{};
+    const orders=t.buildingOrders?.()?.models||[];
+    return keys.map(key=>{
+      const cur=Math.max(0,Math.floor(num(current[key])));
+      const planned=Object.prototype.hasOwnProperty.call(targets,key)?Math.floor(num(targets[key])):cur;
+      const pending=orders.filter(o=>String(o.attributes?.building_type)===key).length;
+      const def=W.GameData?.buildings?.[key]||{};
+      const title=String(def.name||key).replace(/<[^>]+>/g,'');
+      return '<div class="gpitem">'+contextualIcon(key,'building',planned>cur)+
+        '<div class="gpdetails"><b>'+cleanStr(title)+'</b>'+
+        '<span class="gpsmall">Atual '+cur+' · pretendido '+planned+(pending?' · '+pending+' na fila':'')+'</span>'+
+        '<div class="gpcontrols"><input type="number" data-gp-value="'+cleanStr(key)+
+        '" min="0" max="'+Math.max(cur,Math.floor(num(def.max_level,50)))+
+        '" value="'+planned+'"><button data-gp-task="building" data-key="'+cleanStr(key)+
+        '" class="gpprimary">Planejar</button></div></div></div>';
+    }).join('');
+  }
+  function contextualAcademy(t){
+    const done=t.researches?.()?.attributes||{};
+    const planned=config.research.queue?.[t.id]||[];
+    const running=t.getResearchOrdersCollection?.()?.models||t.researchOrders?.()?.models||[];
+    return Object.entries(W.GameData?.researches||{}).map(([key,def])=>{
+      if(!def||typeof def!=='object')return '';
+      const finished=Boolean(done[key]),queued=planned.includes(key);
+      const active=running.some(o=>String(o.attributes?.research_type||o.attributes?.research_id||
+        o.attributes?.research)===key);
+      const title=String(def.name||key).replace(/<[^>]+>/g,'');
+      const state=finished?'Pesquisada':active?'Em pesquisa':queued?'Planejada':'Não planejada';
+      return '<div class="gpitem">'+contextualIcon(key,'research',queued&&!finished)+
+        '<div class="gpdetails"><b>'+cleanStr(title)+'</b><span class="gpsmall">'+state+'</span>'+
+        '<div class="gpcontrols"><button data-gp-task="research" data-key="'+cleanStr(key)+'"'+
+        (finished?' disabled':'')+' class="'+(queued?'':'gpprimary')+'">'+
+        (finished?'Concluída':queued?'Retirar da lista':'Planejar pesquisa')+'</button></div></div></div>';
+    }).join('');
+  }
+  function contextualTemplateOptions(naval){
+    const available=naval?
+      ['sea_attack','sea_defense','balanced']:
+      ['land_attack','land_defense','fast_attack','balanced'];
+    return available.filter(k=>TROOP_TEMPLATES[k]).map(key=>'<option value="'+key+'">'+
+      cleanStr(TROOP_TEMPLATES[key].title)+'</option>').join('');
+  }
+  function contextualRender(ctx,force=false){
+    if(!ctx?.root?.isConnected)return;
+    const t=contextualTown();
+    const townId=Number(t?.id)||0;
+    if(!force&&ctx.shadow.activeElement?.matches?.('input,select'))return;
+    if(!force&&Date.now()-(ctx.lastAt||0)<4000&&ctx.lastTown===townId)return;
+    ctx.lastAt=Date.now();ctx.lastTown=townId;
+    const map={barracks:'⚔ Quartel',docks:'⚓ Porto',senate:'🏛 Senado',academy:'🎓 Academia'};
+    const moduleName=ctx.kind==='senate'?'build':ctx.kind==='academy'?'research':'recruit';
+    const enabled=Boolean(config.modules[moduleName]);
+    let body='';
+    if(!t){
+      body='<div class="gpempty">Aguardando a cidade ativa carregar.</div>';
+    }else if(ctx.kind==='barracks'||ctx.kind==='docks'){
+      const naval=ctx.kind==='docks';
+      body='<div class="gpactions"><span>Modelo:</span><select data-gp-template>'+
+        contextualTemplateOptions(naval)+'</select><button data-gp-task="template" class="gpprimary">Aplicar modelo</button></div>'+
+        '<div class="gphelp">Ícones acinzentados indicam metas planejadas. “Infinito” mantém o lote em produção sempre que houver recursos e espaço na fila.</div>'+
+        '<div class="gpgrid">'+(contextualArmy(t,naval)||'<div class="gpempty">Nenhuma unidade disponível.</div>')+'</div>';
+    }else if(ctx.kind==='senate'){
+      body='<div class="gphelp">Defina o nível desejado. Construções na fila e níveis atuais são mostrados ao lado.</div>'+
+        '<div class="gpgrid">'+(contextualSenate(t)||'<div class="gpempty">Edifícios indisponíveis.</div>')+'</div>';
+    }else{
+      body='<div class="gphelp">Escolha as pesquisas que o GrepoPilot deverá fazer quando os requisitos e recursos estiverem disponíveis.</div>'+
+        '<div class="gpgrid">'+(contextualAcademy(t)||'<div class="gpempty">Pesquisas indisponíveis.</div>')+'</div>';
+    }
+    ctx.shadow.innerHTML='<style>'+GP_CONTEXT_CSS+'</style><div class="gpbox">'+
+      '<div class="gphead"><b>♜ GrepoPilot · '+map[ctx.kind]+'</b>'+
+      '<span class="gpmeta">'+cleanStr(t?tName(t):'carregando')+'</span></div>'+
+      '<div class="gpstate">'+(enabled?'● Automação ativada':'○ Automação pausada')+
+      ' · '+(config.dryRun?'modo simulação':'modo ao vivo')+
+      ' · '+(config.enabled?'motor iniciado':'motor geral pausado')+
+      '</div><div class="gpactions"><button data-gp-task="toggle" class="gpprimary">'+
+        (enabled?'Pausar':'Ativar')+' este módulo</button></div>'+body+
+      '<div class="gphelp">Configurações salvas por cidade. O GrepoPilot usa o mesmo motor de automação do painel principal.</div></div>';
+  }
+  function contextualClick(ctx,event){
+    const button=event.target.closest('button[data-gp-task]');
+    if(!button)return;
+    const kind=button.dataset.gpTask,key=String(button.dataset.key||'');
+    const t=contextualTown();
+    if(!t){log('Janela contextual: aguarde carregar a cidade atual','WARN');return;}
+    const id=Number(t.id),moduleName=ctx.kind==='senate'?'build':ctx.kind==='academy'?'research':'recruit';
+    try{
+      if(kind==='toggle'){
+        config.modules[moduleName]=!config.modules[moduleName];
+      }else if(kind==='unit'){
+        const def=W.GameData?.units?.[key];
+        if(!def||Boolean(def.is_naval)!==(ctx.kind==='docks'))throw Error('Unidade incompatível com este edifício');
+        const container=button.closest('.gpitem'),raw=container?.querySelector('[data-gp-value]')?.value;
+        const qty=Number(raw),mode=container?.querySelector('[data-gp-mode]')?.value;
+        if(!Number.isSafeInteger(qty)||qty<0||qty>999999)throw Error('Quantidade inválida');
+        config.recruit.targets[id]??={};config.recruit.continuous??={};
+        config.recruit.continuous[id]??={};
+        if(mode==='continuous'){
+          if(qty<1||qty>999)throw Error('O lote infinito deve ter de 1 a 999 unidades');
+          config.recruit.continuous[id][key]=qty;
+          delete config.recruit.targets[id][key];
+        }else{
+          delete config.recruit.continuous[id][key];
+          if(qty>0)config.recruit.targets[id][key]=qty;
+          else delete config.recruit.targets[id][key];
+        }
+        config.modules.recruit=true;
+      }else if(kind==='template'){
+        const name=ctx.shadow.querySelector('[data-gp-template]')?.value;
+        const template=TROOP_TEMPLATES[name],naval=ctx.kind==='docks';
+        if(!template)throw Error('Modelo de tropas não encontrado');
+        const items=Object.entries(template.units||{}).filter(([k,count])=>
+          Number(count)>0&&W.GameData?.units?.[k]&&Boolean(W.GameData.units[k].is_naval)===naval);
+        if(!items.length)throw Error('Modelo não possui unidades disponíveis neste edifício');
+        config.recruit.targets[id]??={};config.recruit.continuous??={};
+        config.recruit.continuous[id]??={};
+        for(const key of Object.keys(config.recruit.targets[id])){
+          if(Boolean(W.GameData?.units?.[key]?.is_naval)===naval)delete config.recruit.targets[id][key];
+        }
+        for(const [k,count] of items){
+          config.recruit.targets[id][k]=count;
+          delete config.recruit.continuous[id][k];
+        }
+        config.modules.recruit=true;
+      }else if(kind==='building'){
+        if(!W.GameData?.buildings?.[key])throw Error('Edifício não disponível no jogo');
+        const val=Number(button.closest('.gpitem')?.querySelector('[data-gp-value]')?.value);
+        const cap=Math.floor(num(W.GameData.buildings[key].max_level,50));
+        if(!Number.isSafeInteger(val)||val<0||val>Math.max(1,cap))throw Error('Nível desejado inválido');
+        config.build.targets[id]??={};
+        config.build.targets[id][key]=val;
+        if(!config.build.priority.includes(key))config.build.priority.push(key);
+        config.modules.build=true;
+      }else if(kind==='research'){
+        if(!W.GameData?.researches?.[key])throw Error('Pesquisa não identificada');
+        config.research.queue[id]??=[];
+        const list=config.research.queue[id];
+        if(list.includes(key))config.research.queue[id]=list.filter(x=>x!==key);
+        else if(!t.researches?.()?.attributes?.[key])list.push(key);
+        config.modules.research=true;
+      }else return;
+      save();nextRun[moduleName]=0;
+      log('Janela '+ctx.kind+' · '+tName(t)+': '+(key||kind)+' atualizado');
+      contextualRender(ctx,true);
+      render();
+    }catch(error){
+      log('Janela '+ctx.kind+': '+String(error.message||error),'ERROR');
+    }
+  }
+  function contextualSync(){
+    const nodes=document.querySelectorAll('.gpwindow,[id^="gpwnd_"],[data-window_type],.window_frame');
+    const visited=new Set();
+    for(const node of nodes){
+      if(node.closest('#grepopilot-host,.gp-contextual-integration'))continue;
+      const root=node.closest('.gpwindow,[id^="gpwnd_"],.window_frame')||node;
+      if(!root.isConnected||visited.has(root))continue;
+      const kind=contextualKind(node)||contextualKind(root);
+      if(!kind)continue;
+      visited.add(root);
+      const existing=contextualCache.get(root);
+      if(existing?.root?.isConnected&&existing.kind===kind){contextualRender(existing);continue;}
+      if(existing?.root?.isConnected)existing.root.remove();
+      const panel=document.createElement('div');
+      panel.className='gp-contextual-integration';
+      panel.style.cssText='display:block;clear:both;width:100%;position:relative;z-index:2;';
+      const target=root.querySelector('.window_content,.gpwindow_content,.window_inner,.window_content_inner')||root;
+      target.append(panel);
+      const ctx={root:panel,kind,shadow:panel.attachShadow({mode:'open'}),lastTown:0,lastAt:0};
+      ctx.shadow.addEventListener('click',event=>contextualClick(ctx,event));
+      contextualCache.set(root,ctx);
+      contextualRender(ctx,true);
+    }
+  }
+  function contextualStart(){
+    if(contextualStarted)return;
+    contextualStarted=true;
+    try{contextualSync();}catch(e){log('Janelas contextuais: '+e.message,'WARN');}
+    let pending=false;
+    const observer=new MutationObserver(records=>{
+      if(records.every(r=>r.target?.closest?.('.gp-contextual-integration')))return;
+      if(pending)return;
+      pending=true;
+      setTimeout(()=>{pending=false;try{contextualSync();}catch(e){
+        log('Integração contextual: '+e.message,'WARN');}},250);
+    });
+    observer.observe(document.body||document.documentElement,{subtree:true,childList:true});
+    setInterval(()=>{if(!document.hidden)try{contextualSync();}catch(e){
+      log('Integração contextual: '+e.message,'WARN');}},4000);
+  }
+
   const start=()=>{
-    try{mount();}
+    try{mount();contextualStart();}
     catch(e){health.mountErrors++;health.lastMountError=String(e?.message||e);console.error('[GrepoPilot] Montagem inicial:',e);}
     if(W.Game?.player_id)save(); // Evita escrever configuração na conta "unknown" antes do cliente carregar.
     setInterval(()=>{
