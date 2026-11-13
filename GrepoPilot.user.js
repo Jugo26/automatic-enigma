@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GrepoPilot - Painel de Automacao
 // @namespace    https://grepolis.com/
-// @version      1.0.1
+// @version      1.0.2
 // @updateURL    https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.meta.js
 // @downloadURL  https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.user.js
 // @homepageURL  https://github.com/Jugo26/automatic-enigma/tree/grepopilot-updates
@@ -244,7 +244,7 @@
     return output;
   };
   const templatePayload=()=>({
-    format:'grepopilot-template',schema:1,version:'1.0.1',
+    format:'grepopilot-template',schema:1,version:'1.0.2',
     exportedAt:new Date().toISOString(),settings:templateSettings()
   });
   const templateExport=()=>JSON.stringify(templatePayload(),null,2);
@@ -2842,7 +2842,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const ajaxOK=typeof W.gpAjax?.ajaxPost==='function';
     const role=syncRole();
     const checks=[
-      healthCheck('script','GrepoPilot carregado','ok','v1.0.1 · inicialização em '+new Date(health.startedAt).toLocaleTimeString('pt-BR')),
+      healthCheck('script','GrepoPilot carregado','ok','v1.0.2 · inicialização em '+new Date(health.startedAt).toLocaleTimeString('pt-BR')),
       healthCheck('page','Página do Grepolis',location.protocol==='https:'&&/^\/game(?:\/|$)/.test(location.pathname)?'ok':'error',
         String(location.host)+String(location.pathname||''),'Abra a página do jogo em https://SEU-MUNDO.grepolis.com/game/'),
       healthCheck('api','Acesso aos dados do jogo',W!==window?'ok':'warn',
@@ -2894,7 +2894,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const critical=checks.filter(x=>x.status==='error');
     const warnings=checks.filter(x=>x.status==='warn');
     const active=ready&&critical.length===0&&config.enabled&&role==='primary'&&!config.dryRun&&!securityBlocked()&&n>0;
-    return {version:'1.0.1',time:new Date(now).toISOString(),world:location.host,
+    return {version:'1.0.2',time:new Date(now).toISOString(),world:location.host,
       playerId:player||null,userAgent:typeof navigator!=='undefined'?navigator.userAgent:'',
       active,critical:critical.length,warnings:warnings.length,
       runtime:{uptimeSeconds:Math.floor((now-health.startedAt)/1000),
@@ -3188,9 +3188,9 @@ let queueKindSelected='building';
         '<div class="tools"><button data-tab="VERIFICAR">Abrir verificação</button></div>';
     }
     shadow.querySelector('#gp-app').innerHTML=`
-      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v1.0.1</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
+      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v1.0.2</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
       ${config.ui.collapsed?'':`<div class="status"><i class="dot ${config.enabled?(config.dryRun?'sim':'live'):''}"></i>${cleanStr(STATUS())}</div>
-      <div class="tabs">${[...(config.onboarding?.completed?[]:['COMEÇAR']),'INÍCIO','FILA','ALDEIAS','COMBATE','ESQUIVA','ECONOMIA','MISSÕES','AJUSTES','VERIFICAR','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
+      <div class="tabs">${[...(config.onboarding?.completed?[]:['COMEÇAR']),'INÍCIO','CIDADES','TROPAS','FILA','ALDEIAS','COMBATE','ESQUIVA','ECONOMIA','MISSÕES','AJUSTES','VERIFICAR','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
       <div class="body">${body}</div><div class="foot"><button class="${config.enabled?'stop':'go'}" data-action="toggle">${config.enabled?'■ PARAR TUDO':'▶ INICIAR'}</button><span>${Object.values(config.modules).filter(Boolean).length} módulos ativos</span></div>`}`;
   };
   const CSS=`
@@ -3293,7 +3293,7 @@ let queueKindSelected='building';
             startedAt:dodgeStarted(m.data),arrivalAt:dodgeArrival(m.data)
           }));
           download('GrepoPilot-esquiva-'+location.host+'.json',JSON.stringify({
-            version:'1.0.1',world:location.host,at:new Date().toISOString(),
+            version:'1.0.2',world:location.host,at:new Date().toISOString(),
             clock:dodgeClock,settings:config.dodge,attacks:dodgeIncoming(),
             movementFields:dodgeMovements().map(m=>({keys:Object.keys(m.data||{}),
               details:Object.fromEntries(Object.entries(m.data||{}).filter(([k])=>/(?:speed|modifier|power|spell|effect|hero|conquest|colon|takeover|revolt|unit|time|arriv|start)/i.test(k)).slice(0,25))})),
@@ -3325,7 +3325,7 @@ let queueKindSelected='building';
         }
         case 'diagRefresh':log('Diagnóstico: condições reavaliadas');break;
         case 'diagExport':download('GrepoPilot-diagnostico-'+location.host+'.json',JSON.stringify({
-          version:'1.0.1',world:location.host,at:new Date().toISOString(),summary:diagSnapshot()},null,2));break;
+          version:'1.0.2',world:location.host,at:new Date().toISOString(),summary:diagSnapshot()},null,2));break;
         case 'diagReset':{
           const rt=readRuntime();delete rt.diagnostics;writeRuntime(rt);log('Diagnóstico: contadores reiniciados');break;
         }
@@ -3573,16 +3573,38 @@ let queueKindSelected='building';
   const contextualCache=new WeakMap();
   let contextualStarted=false;
   function contextualKind(node){
-    if(!node||!node.getAttribute)return '';
-    const names=[node.getAttribute('data-window_type'),node.getAttribute('data-type'),
-      node.getAttribute('data-window-type'),node.id,typeof node.className==='string'?node.className:'']
-      .filter(Boolean).join(' ').toLowerCase();
-    const title=node.querySelector('.gpwindow_title,.gpwindow_header .title,.window_title,.window_header .title,.ui-dialog-title,.caption,.window_header');
-    const text=String(title?.textContent||'').trim().slice(0,100).toLowerCase();
-    if(/building[_\s-]*barracks|\bbarracks\b|\bquartel\b/.test(names+' '+text))return 'barracks';
-    if(/building[_\s-]*docks|\bdocks\b|\bporto\b/.test(names+' '+text))return 'docks';
-    if(/building[_\s-]*academy|\bacademy\b|\bacademia\b/.test(names+' '+text))return 'academy';
-    if(/building[_\s-]*main|\bsenate\b|\bsenado\b/.test(names+' '+text))return 'senate';
+    if(!node || !node.querySelector)return '';
+    const shell=node.closest?.('.ui-dialog')||node.closest?.('[id^="gpwnd_"]')||node;
+    const part=shell.querySelector('.gpwindow_content,.window_content,.gpwindow_frame,.window_frame')||shell;
+    const pieces=[shell,node,part];
+    const attributes=['id','class','data-window_type','data-window-type','data-type','data-controller','data-action','data-view','aria-label'];
+    const tokens=pieces.flatMap(el=>attributes.map(key=>el.getAttribute?.(key)||''));
+    const title=shell.querySelector('.ui-dialog-title,.gpwindow_title,.gpwindow_header .title,.window_header .title,.window_title,.caption');
+    if(title)tokens.push(String(title.textContent||'').trim().slice(0,120));
+    try{
+      const focused=W.GPWindowMgr?.getFocusedWindow?.();
+      const jq=focused?.getJQElement?.();
+      const element=jq?.[0]||jq?.get?.(0);
+      if(element && (shell===element||shell.contains(element)||element.contains(shell))){
+        for(const field of ['getType','getWindowType','getTitle']){
+          const value=focused[field]?.();
+          if(typeof value==='string')tokens.push(value);
+        }
+        for(const key of ['type','window_type','windowType'])if(typeof focused[key]==='string')tokens.push(focused[key]);
+      }
+    }catch{}
+    const marker=tokens.join(' ').toLowerCase();
+    if(/building[_\s-]*barracks|\bbarracks\b|\bquartel\b/.test(marker))return 'barracks';
+    if(/building[_\s-]*docks|\bdocks\b|\bharbo[u]?r\b|\bporto\b/.test(marker))return 'docks';
+    if(/building[_\s-]*academy|\bacademy\b|\bacademia\b/.test(marker))return 'academy';
+    if(/building[_\s-]*main|\bsenate\b|\bsenado\b/.test(marker))return 'senate';
+    const signatures=[
+      ['barracks','#building_barracks,[id^="building_barracks_"],.building_barracks,[data-window_type="building_barracks"]'],
+      ['docks','#building_docks,[id^="building_docks_"],.building_docks,[data-window_type="building_docks"]'],
+      ['academy','#building_academy,[id^="building_academy_"],.building_academy,[data-window_type="building_academy"]'],
+      ['senate','#building_main,[id^="building_main_"],.building_main,[data-window_type="building_main"]']
+    ];
+    for(const [kind,selector] of signatures)if(part.matches?.(selector)||part.querySelector(selector))return kind;
     return '';
   }
   function contextualTown(){
@@ -3795,8 +3817,11 @@ let queueKindSelected='building';
       }else if(kind==='unit'){
         const def=W.GameData?.units?.[key];
         if(!def||Boolean(def.is_naval)!==(ctx.kind==='docks'))throw Error('Unidade incompatível com este edifício');
-        const container=button.closest('.gpitem'),raw=container?.querySelector('[data-gp-value]')?.value;
-        const qty=Number(raw),mode=container?.querySelector('[data-gp-mode]')?.value;
+        const container=button.closest('.gp-editor');
+        const raw=container?.querySelector('input[data-gp-value]')?.value;
+        const mode=container?.querySelector('select[data-gp-mode]')?.value;
+        if(raw===undefined||raw.trim()==='')throw Error('Preencha a quantidade da tropa');
+        const qty=Number(raw);
         if(!Number.isSafeInteger(qty)||qty<0||qty>999999)throw Error('Quantidade inválida');
         config.recruit.targets[id]??={};config.recruit.continuous??={};
         config.recruit.continuous[id]??={};
@@ -3853,30 +3878,42 @@ let queueKindSelected='building';
     }
   }
   function contextualSync(){
-    const nodes=document.querySelectorAll('.gpwindow,[id^="gpwnd_"],[data-window_type],.window_frame');
+    const selectors='.ui-dialog,[id^="gpwnd_"],.gpwindow,.gpwindow_frame,.gpwindow_content,.window_frame,.window_content,[data-window_type],[data-window-type]';
+    const nodes=document.querySelectorAll(selectors);
     const visited=new Set();
     for(const node of nodes){
       if(node.closest('#grepopilot-host,.gp-contextual-integration'))continue;
-      const root=node.closest('.gpwindow,[id^="gpwnd_"],.window_frame')||node;
+      const root=node.closest('.ui-dialog')||node.closest('[id^="gpwnd_"]')||
+        node.closest('.gpwindow')||node.closest('.gpwindow_frame')||
+        node.closest('.window_frame')||node;
       if(!root.isConnected||visited.has(root))continue;
-      const kind=contextualKind(node)||contextualKind(root);
-      if(!kind)continue;
       visited.add(root);
+      const kind=contextualKind(root)||contextualKind(node);
+      if(!kind)continue;
       const existing=contextualCache.get(root);
       if(existing?.root?.isConnected&&existing.kind===kind){contextualRender(existing);continue;}
       if(existing?.root?.isConnected)existing.root.remove();
-      const panel=document.createElement('div');
-      panel.className='gp-contextual-integration';
-      panel.style.cssText='display:block;clear:both;width:100%;position:relative;z-index:2;';
-      const target=root.querySelector('.window_content,.gpwindow_content,.window_inner,.window_content_inner')||root;
+      const target=root.querySelector('.gpwindow_content,.window_content,.window_content_inner,.gpwindow_frame')||root;
       const queue=(kind==='barracks'||kind==='docks')?
         target.querySelector('#unit_order_queue,.unit_order_queue,#unit_orders,.unit_orders,.unit_orders_box,.training_queue,.recruitment_queue'):null;
-      if(queue&&queue.parentElement&&queue!==target)queue.insertAdjacentElement('afterend',panel);
+      const panel=document.createElement('div');
+      panel.className='gp-contextual-integration';
+      panel.style.cssText='display:block;clear:both;box-sizing:border-box;width:100%;min-width:0;position:relative;z-index:2;';
+      if(queue?.parentElement&&queue!==target)queue.insertAdjacentElement('afterend',panel);
       else target.append(panel);
-      const ctx={root:panel,kind,shadow:panel.attachShadow({mode:'open'}),lastTown:0,lastAt:0,selectedUnit:''};
+      // Many native building dialogs clip additional children without a scrolling content area.
+      if(target!==root){
+        try{
+          const overflow=window.getComputedStyle(target).overflowY;
+          if(overflow==='hidden'||overflow==='clip')target.style.overflowY='auto';
+        }catch{}
+      }
+      const ctx={root:panel,kind,shadow:panel.attachShadow({mode:'open'}),
+        lastTown:0,lastAt:0,selectedUnit:''};
       ctx.shadow.addEventListener('click',event=>contextualClick(ctx,event));
       contextualCache.set(root,ctx);
       contextualRender(ctx,true);
+      log('Integração contextual instalada: '+kind);
     }
   }
   function contextualStart(){
