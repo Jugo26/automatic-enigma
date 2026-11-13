@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GrepoPilot - Painel de Automacao
 // @namespace    https://grepolis.com/
-// @version      1.0.0
+// @version      1.0.1
 // @updateURL    https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.meta.js
 // @downloadURL  https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.user.js
 // @homepageURL  https://github.com/Jugo26/automatic-enigma/tree/grepopilot-updates
@@ -244,7 +244,7 @@
     return output;
   };
   const templatePayload=()=>({
-    format:'grepopilot-template',schema:1,version:'1.0.0',
+    format:'grepopilot-template',schema:1,version:'1.0.1',
     exportedAt:new Date().toISOString(),settings:templateSettings()
   });
   const templateExport=()=>JSON.stringify(templatePayload(),null,2);
@@ -2842,7 +2842,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const ajaxOK=typeof W.gpAjax?.ajaxPost==='function';
     const role=syncRole();
     const checks=[
-      healthCheck('script','GrepoPilot carregado','ok','v1.0.0 · inicialização em '+new Date(health.startedAt).toLocaleTimeString('pt-BR')),
+      healthCheck('script','GrepoPilot carregado','ok','v1.0.1 · inicialização em '+new Date(health.startedAt).toLocaleTimeString('pt-BR')),
       healthCheck('page','Página do Grepolis',location.protocol==='https:'&&/^\/game(?:\/|$)/.test(location.pathname)?'ok':'error',
         String(location.host)+String(location.pathname||''),'Abra a página do jogo em https://SEU-MUNDO.grepolis.com/game/'),
       healthCheck('api','Acesso aos dados do jogo',W!==window?'ok':'warn',
@@ -2894,7 +2894,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const critical=checks.filter(x=>x.status==='error');
     const warnings=checks.filter(x=>x.status==='warn');
     const active=ready&&critical.length===0&&config.enabled&&role==='primary'&&!config.dryRun&&!securityBlocked()&&n>0;
-    return {version:'1.0.0',time:new Date(now).toISOString(),world:location.host,
+    return {version:'1.0.1',time:new Date(now).toISOString(),world:location.host,
       playerId:player||null,userAgent:typeof navigator!=='undefined'?navigator.userAgent:'',
       active,critical:critical.length,warnings:warnings.length,
       runtime:{uptimeSeconds:Math.floor((now-health.startedAt)/1000),
@@ -3188,7 +3188,7 @@ let queueKindSelected='building';
         '<div class="tools"><button data-tab="VERIFICAR">Abrir verificação</button></div>';
     }
     shadow.querySelector('#gp-app').innerHTML=`
-      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v1.0.0</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
+      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v1.0.1</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
       ${config.ui.collapsed?'':`<div class="status"><i class="dot ${config.enabled?(config.dryRun?'sim':'live'):''}"></i>${cleanStr(STATUS())}</div>
       <div class="tabs">${[...(config.onboarding?.completed?[]:['COMEÇAR']),'INÍCIO','FILA','ALDEIAS','COMBATE','ESQUIVA','ECONOMIA','MISSÕES','AJUSTES','VERIFICAR','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
       <div class="body">${body}</div><div class="foot"><button class="${config.enabled?'stop':'go'}" data-action="toggle">${config.enabled?'■ PARAR TUDO':'▶ INICIAR'}</button><span>${Object.values(config.modules).filter(Boolean).length} módulos ativos</span></div>`}`;
@@ -3293,7 +3293,7 @@ let queueKindSelected='building';
             startedAt:dodgeStarted(m.data),arrivalAt:dodgeArrival(m.data)
           }));
           download('GrepoPilot-esquiva-'+location.host+'.json',JSON.stringify({
-            version:'1.0.0',world:location.host,at:new Date().toISOString(),
+            version:'1.0.1',world:location.host,at:new Date().toISOString(),
             clock:dodgeClock,settings:config.dodge,attacks:dodgeIncoming(),
             movementFields:dodgeMovements().map(m=>({keys:Object.keys(m.data||{}),
               details:Object.fromEntries(Object.entries(m.data||{}).filter(([k])=>/(?:speed|modifier|power|spell|effect|hero|conquest|colon|takeover|revolt|unit|time|arriv|start)/i.test(k)).slice(0,25))})),
@@ -3325,7 +3325,7 @@ let queueKindSelected='building';
         }
         case 'diagRefresh':log('Diagnóstico: condições reavaliadas');break;
         case 'diagExport':download('GrepoPilot-diagnostico-'+location.host+'.json',JSON.stringify({
-          version:'1.0.0',world:location.host,at:new Date().toISOString(),summary:diagSnapshot()},null,2));break;
+          version:'1.0.1',world:location.host,at:new Date().toISOString(),summary:diagSnapshot()},null,2));break;
         case 'diagReset':{
           const rt=readRuntime();delete rt.diagnostics;writeRuntime(rt);log('Diagnóstico: contadores reiniciados');break;
         }
@@ -3537,25 +3537,38 @@ let queueKindSelected='building';
 
   // Integração contextual: os controles ficam nas janelas nativas, os motores continuam únicos.
   const GP_CONTEXT_CSS = [
-    ':host{all:initial;color:#dfd9ca;font:12px/1.4 Arial,sans-serif}',
-    '.gpbox{box-sizing:border-box;background:#20282e;color:#e6e1d6;border:1px solid #b28a43;border-radius:7px;margin:10px 4px;padding:10px;box-shadow:0 3px 11px #0006}',
-    '.gphead{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding-bottom:7px;border-bottom:1px solid #675335}',
-    '.gphead b{color:#f6d18a;font-size:14px}.gpmeta{font-size:11px;color:#c6bfad}',
-    '.gpstate{padding:7px;background:#293846;border-radius:4px;margin:8px 0;color:#e3e3de}',
-    '.gpactions{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:8px 0}',
-    '.gpgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:7px;max-height:240px;overflow:auto;padding:3px}',
-    '.gpitem{border:1px solid #55626a;background:#2c353c;border-radius:5px;display:flex;gap:7px;padding:6px;min-width:0;align-items:flex-start}',
-    '.gpicon{flex:none;display:inline-flex;width:38px;height:38px;align-items:center;justify-content:center;background-color:#414c51;border:1px solid #767a74;border-radius:3px;background-repeat:no-repeat;color:#e6e0d0;font-size:11px;font-weight:bold}',
-    '.gpicon.plan{filter:grayscale(100%);opacity:.72}',
-    '.gpdetails{min-width:0;flex:1}.gpdetails b{display:block;color:#f0dcac;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}',
-    '.gpsmall{display:block;color:#c0c8ca;font-size:10px;margin:3px 0}',
-    '.gpcontrols{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:5px}',
-    'input,select,button{font:11px Arial,sans-serif;box-sizing:border-box;border:1px solid #707d82;border-radius:3px;color:#f0efe9;background:#111d27;padding:5px;min-width:0}',
-    'input[type=number]{width:74px}button{cursor:pointer;background:#46535c}button:hover{background:#65737d}',
-    '.gpprimary{background:#765b30;border-color:#c09c55;color:#fff0d5}',
-    '.gphelp{color:#aebbc4;font-size:11px;margin:6px 0}',
-    '.gppill{display:inline-block;border-radius:10px;background:#384b4c;padding:2px 7px;font-size:10px}',
-    '.gpempty{color:#e3ba83;padding:8px}'
+    ":host{all:initial;display:block;box-sizing:border-box;color:#3d2c18;font:12px/1.3 Arial,sans-serif}",
+    ".gpbox{box-sizing:border-box;max-width:100%;background:linear-gradient(155deg,#ffe8b4,#f2d399 74%,#efd09c);color:#352919;border:1px solid #ac813e;border-radius:3px;margin:3px 2px;padding:6px 8px;box-shadow:inset 0 1px 0 #fff8e0}",
+    ".gphead{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding-bottom:4px;border-bottom:1px solid #cba766}",
+    ".gphead b{color:#62411e;font-size:12px}.gpmeta{font-size:11px;color:#745935;margin-right:auto}",
+    ".gpstate{padding:5px;background:#ecd3a3;border-radius:3px;margin:5px 0;color:#544229}",
+    ".gpactions{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin:5px 0}",
+    ".gpgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:6px;max-height:210px;overflow:auto;padding:3px}",
+    ".gpitem{border:1px solid #c7a46b;background:#f9e0ae;border-radius:3px;display:flex;gap:6px;padding:5px;min-width:0;align-items:flex-start}",
+    ".gpicon{flex:none;display:inline-flex;width:38px;height:38px;align-items:center;justify-content:center;box-sizing:border-box;background-color:#eac68d;border:1px solid #997146;border-radius:2px;background-repeat:no-repeat;color:#593f1f;font-size:11px;font-weight:bold;overflow:hidden}",
+    ".gpicon.plan{filter:grayscale(100%);opacity:.65}",
+    ".gpdetails{min-width:0;flex:1}.gpdetails b{display:block;color:#513715;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}",
+    ".gpsmall{display:block;color:#72522f;font-size:10px;margin:2px 0}",
+    ".gpcontrols{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:4px}",
+    "input,select,button{font:11px Arial,sans-serif;box-sizing:border-box;border:1px solid #9b794c;border-radius:2px;color:#4b341d;background:#fff0c9;padding:4px;min-width:0}",
+    "input[type=number]{width:74px}button{cursor:pointer;background:#e5c591}button:hover{background:#f7dea7}",
+    ".gpprimary{background:#b58a48;border-color:#86602a;color:#fffaf0;font-weight:bold}",
+    ".gphelp{color:#785e3b;font-size:10px;margin:4px 0}",
+    ".gppill{display:inline-block;border-radius:3px;background:#e2c28a;padding:2px 5px;font-size:10px}",
+    ".gpempty{color:#8c5228;padding:7px}",
+    ".gp-roster{display:flex;align-items:flex-start;gap:5px;overflow-x:auto;overflow-y:hidden;max-width:100%;padding:3px 1px 5px;scrollbar-width:thin}",
+    ".gp-troop{position:relative;display:flex;flex:0 0 51px;flex-direction:column;align-items:center;justify-content:center;gap:2px;height:62px;background:#f6ddb0;border:1px solid #a7844e;border-radius:3px;padding:2px;cursor:pointer}",
+    ".gp-troop .gpicon{width:40px;height:40px}.gp-troop:not(.configured):not(.selected) .gpicon{filter:grayscale(100%);opacity:.56}",
+    ".gp-troop.configured{background:#ead09a;border-color:#997038}.gp-troop.selected{outline:2px solid #b1833c;outline-offset:-2px;background:#fff2ce}",
+    ".gp-troop .gp-count{font-size:9px;font-weight:bold;color:#71491e;max-width:48px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+    ".gp-editor{display:flex;align-items:center;flex-wrap:wrap;gap:6px;background:#efcf95;border:1px solid #cda96f;padding:5px;margin-top:2px;border-radius:3px}",
+    ".gp-editor-title{display:flex;flex-direction:column;min-width:135px;margin-right:auto}.gp-editor-title strong{font-size:12px}.gp-editor-title small{font-size:10px;color:#694c29}",
+    ".gp-editor label{display:flex;align-items:center;gap:4px;font-size:11px}",
+    ".gp-editor input[type=number]{width:74px}.gp-editor select{max-width:115px}",
+    ".gp-summary{font-size:10px;color:#6d4c28;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:4px}",
+    ".gpflag{color:#7e5a27;font-size:10px}",
+    ".gpbox.gparmy .gpactions{margin:4px 0}.gpbox.gparmy .gphead button{padding:3px 7px}",
+    ".gp-troop:focus-visible,.gp-editor button:focus-visible{outline:2px solid #6a491c;outline-offset:1px}",
   ].join('\n');
   const contextualCache=new WeakMap();
   let contextualStarted=false;
@@ -3576,31 +3589,46 @@ let queueKindSelected='building';
     const id=Number(W.Game?.townId??W.ITowns?.getCurrentTown?.()?.id??W.ITowns?.getCurrentTown?.()?.getId?.());
     return Number.isSafeInteger(id)&&id>0?townBy(id):null;
   }
-  function contextualIcon(key,kind,planned){
+  const contextualIconCache=new Map();
+  function contextualIcon(key,kind,muted){
     const safe=String(key||'');
     const abbrev=cleanStr(safe.replace(/_/g,' ').slice(0,3).toUpperCase());
-    let inline='';
-    if(/^[a-zA-Z0-9_-]{1,80}$/.test(safe)){
+    const cacheKey=kind+':'+safe;
+    let inline=contextualIconCache.get(cacheKey)||'';
+    if(!inline&&/^[a-zA-Z0-9_-]{1,80}$/.test(safe)){
       const selectors=kind==='building'?
         ['.building_icon.'+safe,'.building_icon_'+safe]:
-        ['.unit_icon40x40.'+safe,'.unit_icon.'+safe,'.unit_icon25x25.'+safe];
+        kind==='research'?
+          ['.research_icon.'+safe,'.research_icon_'+safe,'.unit_icon40x40.'+safe]:
+          ['.unit_icon40x40.'+safe,'.unit_icon.'+safe,'.unit_icon25x25.'+safe];
       for(const selector of selectors){
-        const element=document.querySelector(selector);
+        let element=document.querySelector(selector),probe=null;
+        if(!element&&document.body&&selector.includes('.'+safe)){
+          probe=document.createElement('span');
+          probe.className=selector.slice(1).split('.').join(' ');
+          probe.style.cssText='position:absolute;left:-9999px;top:-9999px;width:40px;height:40px;visibility:hidden';
+          document.body.append(probe);
+          element=probe;
+        }
         if(!element)continue;
         try{
-          const css=window.getComputedStyle(element);
-          if(css.backgroundImage&&css.backgroundImage!=='none'){
-            inline='background-image:'+css.backgroundImage+';background-position:'+css.backgroundPosition+
-              ';background-size:'+css.backgroundSize+';';
-            break;
+          const s=window.getComputedStyle(element);
+          if(s.backgroundImage&&s.backgroundImage!=='none'){
+            inline='background-image:'+s.backgroundImage+';background-position:'+s.backgroundPosition+
+              ';background-size:'+s.backgroundSize+';background-repeat:'+s.backgroundRepeat+';';
+          }else if(element.tagName==='IMG'&&element.currentSrc){
+            inline='background-image:url("'+element.currentSrc.replace(/["\\]/g,'')+'");background-size:contain;';
           }
         }catch{}
+        if(probe)probe.remove();
+        if(inline)break;
       }
+      if(inline)contextualIconCache.set(cacheKey,inline);
     }
-    return '<span class="gpicon'+(planned?' plan':'')+'" style="'+cleanStr(inline)+'">'+
+    return '<span class="gpicon'+(muted?' plan':'')+'" style="'+cleanStr(inline)+'">'+
       (inline?'':abbrev)+'</span>';
   }
-  function contextualArmy(t,naval){
+  function contextualArmy(t,naval,ctx){
     const keys=Object.entries(W.GameData?.units||{}).filter(([key,def])=>{
       if(!def||typeof def!=='object'||Boolean(def.is_naval)!==naval)return false;
       if(isMythical(key,def)){
@@ -3609,31 +3637,54 @@ let queueKindSelected='building';
       }
       return true;
     }).map(([key])=>key);
+    if(!keys.length)return '<div class="gpempty">Nenhuma unidade encontrada neste edifício.</div>';
     const targets=config.recruit.targets?.[t.id]||{};
     const loops=config.recruit.continuous?.[t.id]||{};
     const orders=t.getUnitOrdersCollection?.()?.models||[];
-    return keys.map(key=>{
-      const own=Math.max(0,num(t.units?.()?.[key]))+Math.max(0,num(t.unitsOuter?.()?.[key]));
-      const queued=orders.reduce((n,o)=>n+(o.attributes?.unit_type===key?
-        Math.max(0,num(o.attributes?.units_left??o.attributes?.count??o.attributes?.amount)):0),0);
-      const infinite=Math.floor(num(loops[key]))>0;
-      const goal=Math.max(0,Math.floor(num(targets[key])));
-      const amount=infinite?Math.floor(num(loops[key])):goal;
+    const planned=key=>Math.max(0,Math.floor(num(targets[key])));
+    const repeat=key=>Math.max(0,Math.floor(num(loops[key])));
+    const active=key=>planned(key)>0||repeat(key)>0;
+    if(!keys.includes(ctx.selectedUnit))ctx.selectedUnit=keys.find(active)||keys[0];
+    const selected=ctx.selectedUnit;
+    const roster=keys.map(key=>{
       const def=W.GameData?.units?.[key]||{};
       const label=String(def.name||def.name_plural||key).replace(/<[^>]+>/g,'');
-      const state=infinite?'∞ repetir lote '+amount:
-        goal>0?'meta '+goal+(own+queued>=goal?' · concluída':' · planejada'):'sem meta';
-      return '<div class="gpitem"><div>'+contextualIcon(key,'unit',goal>0||infinite)+
-        '</div><div class="gpdetails"><b>'+cleanStr(label)+'</b>'+
-        '<span class="gpsmall">Disponíveis '+own+' · na fila '+queued+'</span>'+
-        '<span class="gpsmall">'+cleanStr(state)+'</span>'+
-        '<div class="gpcontrols"><select data-gp-mode="'+cleanStr(key)+'">'+
-          '<option value="target"'+(!infinite?' selected':'')+'>Meta mínima</option>'+
-          '<option value="continuous"'+(infinite?' selected':'')+'>Infinito</option>'+
-          '</select><input type="number" data-gp-value="'+cleanStr(key)+'" min="0" max="999999" value="'+amount+'">'+
-          '<button data-gp-task="unit" data-key="'+cleanStr(key)+'" class="gpprimary">Salvar</button>'+
-          '</div></div></div>';
+      const loop=repeat(key),goal=planned(key);
+      const tag=loop?'∞'+loop:goal?String(goal):'+';
+      const classes='gp-troop'+(active(key)?' configured':'')+(selected===key?' selected':'');
+      return '<button type="button" data-gp-task="selectUnit" data-key="'+cleanStr(key)+
+        '" class="'+classes+'" title="'+cleanStr(label)+'">'+contextualIcon(key,'unit',false)+
+        '<span class="gp-count">'+cleanStr(tag)+'</span></button>';
     }).join('');
+    const def=W.GameData?.units?.[selected]||{};
+    const label=String(def.name||def.name_plural||selected).replace(/<[^>]+>/g,'');
+    const owned=Math.max(0,num(t.units?.()?.[selected]))+Math.max(0,num(t.unitsOuter?.()?.[selected]));
+    const queued=orders.reduce((sum,order)=>sum+(order.attributes?.unit_type===selected?
+      Math.max(0,num(order.attributes?.units_left??order.attributes?.count??order.attributes?.amount)):0),0);
+    const infinite=repeat(selected)>0;
+    const saved=infinite?repeat(selected):planned(selected);
+    const quantity=saved||Math.max(1,Math.floor(num(config.recruit.minBatch,10)));
+    const details=infinite?'∞ repetição de '+saved+' por lote':planned(selected)?
+      'meta mínima de '+saved:'ainda não programada';
+    const pending=keys.filter(active).map(key=>{
+      const name=String(W.GameData?.units?.[key]?.name||key).replace(/<[^>]+>/g,'');
+      return cleanStr(name)+': '+(repeat(key)?'∞ '+repeat(key)+'/lote':planned(key));
+    });
+    return '<div class="gp-roster" role="group" aria-label="Escolher tropas para automatizar">'+roster+'</div>'+
+      '<div class="gp-editor">'+contextualIcon(selected,'unit',false)+
+      '<div class="gp-editor-title"><strong>'+cleanStr(label)+'</strong>'+
+      '<small>Disponíveis '+owned+' · fila '+queued+' · '+cleanStr(details)+'</small></div>'+
+      '<label>Modo <select data-gp-mode="'+cleanStr(selected)+'">'+
+      '<option value="target"'+(!infinite?' selected':'')+'>Meta mínima</option>'+
+      '<option value="continuous"'+(infinite?' selected':'')+'>Repetir ∞</option></select></label>'+
+      '<label>Qtde. <input type="number" data-gp-value="'+cleanStr(selected)+
+      '" min="0" max="999999" value="'+quantity+'"></label>'+
+      '<button type="button" data-gp-task="unit" data-key="'+cleanStr(selected)+
+      '" class="gpprimary">'+(active(selected)?'Atualizar':'Adicionar')+'</button>'+
+      '<button type="button" data-gp-task="removeUnit" data-key="'+cleanStr(selected)+
+      '"'+(active(selected)?'':' disabled')+'>Remover</button></div>'+
+      '<div class="gp-summary"><b>Plano automático:</b> '+(pending.length?pending.join(' · '):
+        'nenhuma tropa programada — selecione uma imagem cinza e adicione')+'</div>';
   }
   function contextualSenate(t){
     const current=t.buildings?.()?.attributes||{};
@@ -3690,17 +3741,19 @@ let queueKindSelected='building';
     if(!force&&Date.now()-(ctx.lastAt||0)<4000&&ctx.lastTown===townId)return;
     ctx.lastAt=Date.now();ctx.lastTown=townId;
     const map={barracks:'⚔ Quartel',docks:'⚓ Porto',senate:'🏛 Senado',academy:'🎓 Academia'};
+    const army=ctx.kind==='barracks'||ctx.kind==='docks';
     const moduleName=ctx.kind==='senate'?'build':ctx.kind==='academy'?'research':'recruit';
     const enabled=Boolean(config.modules[moduleName]);
     let body='';
     if(!t){
       body='<div class="gpempty">Aguardando a cidade ativa carregar.</div>';
-    }else if(ctx.kind==='barracks'||ctx.kind==='docks'){
+    }else if(army){
       const naval=ctx.kind==='docks';
       body='<div class="gpactions"><span>Modelo:</span><select data-gp-template>'+
-        contextualTemplateOptions(naval)+'</select><button data-gp-task="template" class="gpprimary">Aplicar modelo</button></div>'+
-        '<div class="gphelp">Ícones acinzentados indicam metas planejadas. “Infinito” mantém o lote em produção sempre que houver recursos e espaço na fila.</div>'+
-        '<div class="gpgrid">'+(contextualArmy(t,naval)||'<div class="gpempty">Nenhuma unidade disponível.</div>')+'</div>';
+        contextualTemplateOptions(naval)+'</select>'+
+        '<button type="button" data-gp-task="template">Aplicar modelo</button>'+
+        '<span class="gpflag">imagens cinza = disponíveis para programar</span></div>'+
+        contextualArmy(t,naval,ctx);
     }else if(ctx.kind==='senate'){
       body='<div class="gphelp">Defina o nível desejado. Construções na fila e níveis atuais são mostrados ao lado.</div>'+
         '<div class="gpgrid">'+(contextualSenate(t)||'<div class="gpempty">Edifícios indisponíveis.</div>')+'</div>';
@@ -3708,15 +3761,15 @@ let queueKindSelected='building';
       body='<div class="gphelp">Escolha as pesquisas que o GrepoPilot deverá fazer quando os requisitos e recursos estiverem disponíveis.</div>'+
         '<div class="gpgrid">'+(contextualAcademy(t)||'<div class="gpempty">Pesquisas indisponíveis.</div>')+'</div>';
     }
-    ctx.shadow.innerHTML='<style>'+GP_CONTEXT_CSS+'</style><div class="gpbox">'+
+    const state=config.enabled?(config.dryRun?'simulação':'automação geral ligada'):'automação geral pausada';
+    ctx.shadow.innerHTML='<style>'+GP_CONTEXT_CSS+'</style><div class="gpbox'+(army?' gparmy':'')+'">'+
       '<div class="gphead"><b>♜ GrepoPilot · '+map[ctx.kind]+'</b>'+
-      '<span class="gpmeta">'+cleanStr(t?tName(t):'carregando')+'</span></div>'+
-      '<div class="gpstate">'+(enabled?'● Automação ativada':'○ Automação pausada')+
-      ' · '+(config.dryRun?'modo simulação':'modo ao vivo')+
-      ' · '+(config.enabled?'motor iniciado':'motor geral pausado')+
-      '</div><div class="gpactions"><button data-gp-task="toggle" class="gpprimary">'+
-        (enabled?'Pausar':'Ativar')+' este módulo</button></div>'+body+
-      '<div class="gphelp">Configurações salvas por cidade. O GrepoPilot usa o mesmo motor de automação do painel principal.</div></div>';
+      '<span class="gpmeta">'+cleanStr(t?tName(t):'carregando')+'</span>'+
+      '<span class="gpflag">'+cleanStr(state)+'</span>'+
+      '<button type="button" data-gp-task="toggle" class="'+(enabled?'':'gpprimary')+'">'+
+        (enabled?'Pausar':'Ativar')+' '+(army?'recrutamento':'automação')+'</button></div>'+
+      body+(army?'':'<div class="gphelp">Configurações salvas por cidade e executadas pelo motor existente.</div>')+
+      '</div>';
   }
   function contextualClick(ctx,event){
     const button=event.target.closest('button[data-gp-task]');
@@ -3726,7 +3779,18 @@ let queueKindSelected='building';
     if(!t){log('Janela contextual: aguarde carregar a cidade atual','WARN');return;}
     const id=Number(t.id),moduleName=ctx.kind==='senate'?'build':ctx.kind==='academy'?'research':'recruit';
     try{
-      if(kind==='toggle'){
+      if(kind==='selectUnit'){
+        const def=W.GameData?.units?.[key];
+        if(!def||Boolean(def.is_naval)!==(ctx.kind==='docks'))throw Error('Unidade incompatível');
+        ctx.selectedUnit=key;
+        contextualRender(ctx,true);
+        return;
+      }else if(kind==='removeUnit'){
+        config.recruit.targets[id]??={};config.recruit.continuous??={};
+        config.recruit.continuous[id]??={};
+        delete config.recruit.targets[id][key];
+        delete config.recruit.continuous[id][key];
+      }else if(kind==='toggle'){
         config.modules[moduleName]=!config.modules[moduleName];
       }else if(kind==='unit'){
         const def=W.GameData?.units?.[key];
@@ -3805,8 +3869,11 @@ let queueKindSelected='building';
       panel.className='gp-contextual-integration';
       panel.style.cssText='display:block;clear:both;width:100%;position:relative;z-index:2;';
       const target=root.querySelector('.window_content,.gpwindow_content,.window_inner,.window_content_inner')||root;
-      target.append(panel);
-      const ctx={root:panel,kind,shadow:panel.attachShadow({mode:'open'}),lastTown:0,lastAt:0};
+      const queue=(kind==='barracks'||kind==='docks')?
+        target.querySelector('#unit_order_queue,.unit_order_queue,#unit_orders,.unit_orders,.unit_orders_box,.training_queue,.recruitment_queue'):null;
+      if(queue&&queue.parentElement&&queue!==target)queue.insertAdjacentElement('afterend',panel);
+      else target.append(panel);
+      const ctx={root:panel,kind,shadow:panel.attachShadow({mode:'open'}),lastTown:0,lastAt:0,selectedUnit:''};
       ctx.shadow.addEventListener('click',event=>contextualClick(ctx,event));
       contextualCache.set(root,ctx);
       contextualRender(ctx,true);
