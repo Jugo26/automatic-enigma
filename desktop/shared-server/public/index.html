@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Central Compartilhada • Grepolis</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="header">
+      <div class="brand"><span class="crest">✦</span><div><div class="eyebrow">CENTRAL DO BOT</div><h1>Central Compartilhada</h1></div></div>
+      <div class="right"><span class="status-dot"></span><span id="connectionLabel">Desconectado</span><button id="logout" class="ghost hidden">Sair</button></div>
+    </header>
+    <section id="login" class="login-card">
+      <div class="eyebrow">ACESSO AO MUNDO</div><h2>Entrar na central</h2>
+      <p>Use o token individual fornecido pelo administrador do bot. O acesso mostra apenas os participantes do seu mundo.</p>
+      <form id="loginForm" class="login-row"><input id="token" type="password" required autocomplete="off" placeholder="Token de acesso"><button type="submit">Conectar</button></form>
+      <div id="loginError" class="error" role="alert"></div>
+    </section>
+    <div id="main" class="hidden">
+      <section class="summary">
+        <div class="metric"><span>JOGADORES CADASTRADOS</span><strong id="usersTotal">0</strong></div>
+        <div class="metric"><span>ONLINE AGORA</span><strong id="usersOnline">0</strong></div>
+        <div class="metric"><span>MOVIMENTOS COMPARTILHADOS</span><strong id="moveTotal">0</strong></div>
+        <div class="metric"><span>MUNDO</span><strong id="worldName">—</strong></div>
+      </section>
+      <nav class="tabs" aria-label="Abas da central">
+        <button data-tab="players" class="active" type="button">♙ Jogadores</button>
+        <button data-tab="movements" type="button">⚔ Movimentações</button>
+        <button data-tab="settings" type="button">⚙ Compartilhamento</button>
+      </nav>
+      <section id="players" class="panel">
+        <div class="panel-head"><div><div class="eyebrow">PRESENÇA DO BOT</div><h2>Jogadores do mundo</h2></div><span id="lastUpdate" class="muted"></span></div>
+        <div class="table-wrap"><table><thead><tr><th>JOGADOR</th><th>ALIANÇA</th><th>CONEXÃO</th><th>MOVIMENTOS</th><th>ÚLTIMO SINAL</th></tr></thead><tbody id="playerRows"></tbody></table></div>
+      </section>
+      <section id="movements" class="panel hidden">
+        <div class="panel-head"><div><div class="eyebrow">CENTRAL DE COMANDOS</div><h2>Ataques, apoios e comércio</h2></div></div>
+        <div class="filters">
+          <label>Jogador<select id="playerFilter"><option value="">Todos</option></select></label>
+          <label>Tipo<select id="typeFilter"><option value="">Todos</option><option value="attack">Ataque</option><option value="support">Apoio</option><option value="trade">Comércio</option><option value="return">Retorno</option><option value="colonization">Colonização</option><option value="spy">Espionagem</option><option value="other">Outros</option></select></label>
+          <label>Sentido<select id="directionFilter"><option value="">Todos</option><option value="incoming">Entrada</option><option value="outgoing">Saída</option><option value="internal">Interno</option></select></label>
+          <label>Cidade<input id="cityFilter" placeholder="Origem ou destino" type="search"></label>
+        </div>
+        <div class="table-wrap"><table><thead><tr><th>TIPO</th><th>JOGADOR</th><th>ORIGEM</th><th>DESTINO</th><th>SENTIDO</th><th>CHEGADA</th><th>DETALHES</th></tr></thead><tbody id="movementRows"></tbody></table></div>
+        <p class="footnote">Movimentos recebidos são exibidos apenas com os dados que o bot realmente conhece; tropas inimigas desconhecidas não são estimadas.</p>
+      </section>
+      <section id="settings" class="panel hidden">
+        <div class="panel-head"><div><div class="eyebrow">CONTROLE INDIVIDUAL</div><h2>Visibilidade da sua conta</h2></div></div>
+        <label class="toggle-card"><input type="checkbox" id="shareToggle"><span><strong>Compartilhar as movimentações das minhas cidades</strong><small>Desativado por padrão. Os outros jogadores deste mundo só veem suas movimentações se você ativar.</small></span></label>
+        <p class="footnote">Sua presença aparece na lista de jogadores cadastrados. Para ficar online e enviar movimentos, o bot deve executar o conector de sincronização.</p>
+        <div id="settingsFeedback" class="muted"></div>
+      </section>
+    </div>
+  </main>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

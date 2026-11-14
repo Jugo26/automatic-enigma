@@ -1,0 +1,29 @@
+'use strict';
+const {contextBridge,ipcRenderer}=require('electron');
+contextBridge.exposeInMainWorld('gpDesktop',{
+  appInfo:()=>ipcRenderer.invoke('app-info'),
+  sharedConfig:()=>ipcRenderer.invoke('shared-config'),
+  sharedConnect:(data)=>ipcRenderer.invoke('shared-connect',data),
+  sharedDisconnect:()=>ipcRenderer.invoke('shared-disconnect'),
+  sharedState:()=>ipcRenderer.invoke('shared-state'),
+  sharedSharing:(enabled)=>ipcRenderer.invoke('shared-sharing',enabled),
+  sharedSync:()=>ipcRenderer.invoke('shared-sync'),
+  onShared:(fn)=>ipcRenderer.on('shared-status',(_e,value)=>fn(value)),
+  onUpdate:(fn)=>ipcRenderer.on('update-status',(_e,value)=>fn(value)),
+  navigate:(value)=>ipcRenderer.invoke('navigate',value),
+  nav:(action)=>ipcRenderer.invoke('nav',action),
+  getState:()=>ipcRenderer.invoke('get-state'),
+  patch:(path,value)=>ipcRenderer.invoke('patch',path,value),
+  startRecruit:()=>ipcRenderer.invoke('start-recruit'),
+  startDodge:()=>ipcRenderer.invoke('start-dodge'),
+  dodgeInfo:(townId)=>ipcRenderer.invoke('dodge-info',townId),
+  setDodgeTarget:(townId,dest)=>ipcRenderer.invoke('dodge-target',townId,dest),
+  applyTemplate:(kind,key,townId,mythUnit)=>ipcRenderer.invoke('apply-template',kind,key,townId,mythUnit),
+  runTest:(id,live)=>ipcRenderer.invoke('run-test',id,live),
+  stopTest:()=>ipcRenderer.invoke('stop-test'),
+  verify:()=>ipcRenderer.invoke('verify'),
+  selectFile:()=>ipcRenderer.invoke('select-json'),
+  saveFile:(text)=>ipcRenderer.invoke('save-json',text),
+  onLocation:(fn)=>ipcRenderer.on('location',(_e,value)=>fn(value)),
+  onEngine:(fn)=>ipcRenderer.on('engine-status',(_e,value)=>fn(value))
+});

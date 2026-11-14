@@ -6,5 +6,8 @@
 credentials.json
 token.json
 node_modules/
+/desktop/dist/
+/desktop/instalador.log
+/desktop/shared-server/data/
 __pycache__/
 .DS_Store

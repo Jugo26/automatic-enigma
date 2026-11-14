@@ -3,49 +3,76 @@ on:
   push:
     branches: [grepopilot-updates]
     paths:
-      - 'releases/GrepoPilot-Desktop-*.zip'
+      - 'desktop/**'
       - '.github/workflows/grepopilot-desktop.yml'
   workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
+concurrency:
+  group: grepopilot-desktop-release
+  cancel-in-progress: false
 jobs:
   windows:
+    if: github.ref == 'refs/heads/grepopilot-updates'
     runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Unpack desktop source
-        shell: pwsh
-        run: |
-          Expand-Archive -Path 'releases/GrepoPilot-Desktop-v0.2.4-central-compartilhada.zip' -DestinationPath '.' -Force
-          Move-Item -Path 'GrepoPilot-Desktop-v0.2.4' -Destination 'desktop'
       - name: Install dependencies
         working-directory: desktop
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Test Desktop
         working-directory: desktop
         run: npm run check
       - name: Test central server
         working-directory: desktop/shared-server
         run: npm test
-      - name: Build Windows NSIS installer and latest.yml
-        working-directory: desktop
-        run: npx electron-builder --win nsis --x64 --publish never
-      - name: Read Desktop version
-        id: version
+      - name: Check release version
+        id: release
         shell: bash
-        run: echo "number=$(node -p 'require("./desktop/package.json").version')" >> "$GITHUB_OUTPUT"
-      - name: Publish auto-update release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ steps.version.outputs.number }}
-          name: GrepoPilot Desktop v${{ steps.version.outputs.number }}
-          target_commitish: grepopilot-updates
-          generate_release_notes: true
-          make_latest: true
-          files: |
-            desktop/dist/*.exe
-            desktop/dist/*.blockmap
-            desktop/dist/latest.yml
+        run: |
+          version=$(node -p 'require("./desktop/package.json").version')
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version"; then
+            echo "v$version já tem tag; preserve o instalador publicado e aumente a versão para lançar outro."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            [[ $? = 2 ]]
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build Windows NSIS installer
+        if: steps.release.outputs.publish == 'true'
+        working-directory: desktop
+        run: npm run dist -- --publish never
+      - name: Validate and publish auto-update release
+        if: steps.release.outputs.publish == 'true'
+        working-directory: desktop/dist
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DESKTOP_VERSION: ${{ steps.release.outputs.version }}
+        shell: pwsh
+        run: |
+          $version = $env:DESKTOP_VERSION
+          $installer = "GrepoPilot-Desktop-$version-x64.exe"
+          $manifest = Get-Content -LiteralPath latest.yml -Raw
+          $feed = Get-Content -LiteralPath win-unpacked/resources/app-update.yml -Raw
+          $hash = [Convert]::ToBase64String([Convert]::FromHexString((Get-FileHash -LiteralPath $installer -Algorithm SHA512).Hash))
+          if ($manifest -notmatch "(?m)^version: $([regex]::Escape($version))\r?$" -or
+              $manifest -notmatch "(?m)^path: $([regex]::Escape($installer))\r?$" -or
+              $manifest -notmatch "(?m)^sha512: $([regex]::Escape($hash))\r?$" -or
+              $feed -notmatch '(?m)^provider: github\r?$' -or
+              $feed -notmatch '(?m)^owner: Jugo26\r?$' -or
+              $feed -notmatch '(?m)^repo: automatic-enigma\r?$') {
+            throw 'Manifesto do atualizador incompatível com o instalador ou repositório.'
+          }
+          if (Test-Path -LiteralPath "$installer.blockmap") {
+            gh release create "v$version" $installer "$installer.blockmap" latest.yml --target $env:GITHUB_SHA --title "GrepoPilot Desktop v$version" --generate-notes --latest
+          } else {
+            throw "Blockmap ausente para $installer"
+          }
+          exit $LASTEXITCODE
