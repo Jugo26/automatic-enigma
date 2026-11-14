@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GrepoPilot - Painel de Automacao
 // @namespace    https://grepolis.com/
-// @version      1.0.3
+// @version      1.0.4
 // @updateURL    https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.meta.js
 // @downloadURL  https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.user.js
 // @homepageURL  https://github.com/Jugo26/automatic-enigma/tree/grepopilot-updates
@@ -120,7 +120,7 @@
     cave: {minIron:15000,keepIron:5000},
     commands: {jobs:[]},
     alerts: {desktop:true,checkAll:true},
-    dodge: {version:2,leadSeconds:60,returnAfterSeconds:15,waveGapSeconds:12,land:true,naval:true,targets:{},colonizationPolicy:'review',colonyConflictWindowSeconds:180,attackMarks:{},colonyBaselineMinutes:{},colonyTimeTolerancePercent:5},
+    dodge: {version:2,leadSeconds:60,returnAfterSeconds:15,waveGapSeconds:12,land:true,naval:true,targets:{},destinationMode:'allies_first',colonizationPolicy:'review',colonyConflictWindowSeconds:180,attackMarks:{},colonyBaselineMinutes:{},colonyTimeTolerancePercent:5},
     attackTest: {delay:120,wave:0,mode:'preview'},
     sync: {role:'primary'},
     security: {notify:true,resumeAfterSeconds:15,pacingEnabled:true,minActionIntervalSeconds:45,maxActionsPerHour:60,postCaptchaCooldownMinutes:45},
@@ -253,7 +253,7 @@
     return output;
   };
   const templatePayload=()=>({
-    format:'grepopilot-template',schema:1,version:'1.0.3',
+    format:'grepopilot-template',schema:1,version:'1.0.4',
     exportedAt:new Date().toISOString(),settings:templateSettings()
   });
   const templateExport=()=>JSON.stringify(templatePayload(),null,2);
@@ -1634,7 +1634,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
   if(delay*1000<dodgeLead()+16000)throw Error('Teste prático: configure o impacto após pelo menos '+Math.ceil((dodgeLead()+16000)/1000)+' segundos');
   if(syncRole()==='standby')throw Error('O teste prático exige PC principal');
     if(!dodgeCanOperate())throw Error('Grepolis não está disponível');
-    if(!targetId)throw Error('Teste prático precisa de outra cidade própria na mesma ilha');
+    if(!targetId)throw Error('Teste prático: nenhuma cidade identificada na mesma ilha');
     if(dodgeTracked(dodgeRead()).some(j=>Number(j.townId)===Number(id)))throw Error('Há esquiva real pendente nesta cidade');
     if(!Object.values(dodgeUnits(town)).some(group=>Object.keys(group).length))throw Error('A cidade não tem tropas disponíveis');
     if(dodgeIncoming().some(a=>!a.simulated&&a.townId===Number(id)&&a.arrivalMs>now&&a.arrivalMs<now+delay*1000+30000))throw Error('Ataque verdadeiro próximo: teste prático bloqueado nesta cidade');
@@ -2221,37 +2221,133 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
         Number.isSafeInteger(dodgeMoveId(m))&&dodgeMoveId(m)>0;
     });
   }
+  const dodgeWorld={towns:[],loading:null,loadedAt:0,nextTry:0,error:''};
+  function dodgeAllianceId(){
+    let p=null;try{p=W.MM?.getModelByNameAndPlayerId?.('Player')?.attributes}catch{}
+    return [W.Game?.alliance_id,W.Game?.player_alliance_id,W.Game?.allianceId,
+      W.Game?.player?.alliance_id,p?.alliance_id].map(Number).find(x=>Number.isSafeInteger(x)&&x>0)||0;
+  }
+  async function dodgeWorldFile(name){
+    for(const suffix of ['.txt','.txt.gz']){
+      try{
+        const r=await fetch('/data/'+name+suffix,{credentials:'same-origin'});
+        if(!r.ok)continue;
+        const value=suffix==='.txt'?await r.text():
+          typeof DecompressionStream==='function'&&r.body?
+            await new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).text():'';
+        if(value.length>20&&value.length<35000000&&!value.slice(0,256).includes('<html'))return value;
+      }catch{}
+    }
+    throw Error('Não foi possível acessar /data/'+name+'.txt neste mundo');
+  }
+  function dodgeLoadWorld(){
+    const at=Date.now();
+    if(dodgeWorld.loading||at<dodgeWorld.nextTry||
+      dodgeWorld.loadedAt&&at-dodgeWorld.loadedAt<6*3600000)return;
+    dodgeWorld.nextTry=at+300000;
+    dodgeWorld.loading=(async()=>{
+      const [rawT,rawP]=await Promise.all([dodgeWorldFile('towns'),dodgeWorldFile('players')]);
+      const islandKeys=new Set(towns().map(t=>
+        String(t.getIslandCoordinateX?.()??t.attributes?.island_x)+':'+
+        String(t.getIslandCoordinateY?.()??t.attributes?.island_y)));
+      const rows=[],players=new Set();
+      for(const line of rawT.split(/\r?\n/)){
+        const p=line.split(',');
+        if(p.length<7)continue;
+        const id=Number(p[0]),owner=Number(p[1]),ix=Number(p[3]),iy=Number(p[4]);
+        if(!Number.isSafeInteger(id)||id<1||!islandKeys.has(ix+':'+iy))continue;
+        let name=p[2];try{name=decodeURIComponent(name.replace(/\+/g,'%20'))}catch{}
+        rows.push({id,name,owner,island_x:ix,island_y:iy,slot:Number(p[5])||0});
+        players.add(owner);
+      }
+      const alliances=new Map();
+      for(const line of rawP.split(/\r?\n/)){
+        const p=line.split(',');
+        if(p.length>=3&&players.has(Number(p[0])))alliances.set(Number(p[0]),Number(p[2])||0);
+      }
+      dodgeWorld.towns=rows.map(row=>({...row,alliance:alliances.get(row.owner)||0}));
+      dodgeWorld.loadedAt=Date.now();dodgeWorld.error='';
+      log('Esquiva: catálogo carregado, '+rows.length+' cidades nas ilhas da sua conta');
+    })().catch(e=>{
+      dodgeWorld.error=String(e.message||e);
+      log('Esquiva: catálogo público indisponível; usando cidades conhecidas do cliente: '+dodgeWorld.error,'WARN');
+    }).finally(()=>{dodgeWorld.loading=null});
+  }
+  function dodgeTownRow(t){
+    const a=t?.attributes||t||{};
+    const id=Number(a.id??t?.id),ix=Number(t?.getIslandCoordinateX?.()??a.island_x),
+      iy=Number(t?.getIslandCoordinateY?.()??a.island_y);
+    if(!Number.isSafeInteger(id)||id<1||!Number.isFinite(ix)||!Number.isFinite(iy))return null;
+    return {id,name:String(t?.getName?.()??a.name??('Cidade '+id)),island_x:ix,island_y:iy,
+      slot:Number(a.number_on_island)||0,owner:Number(a.player_id??a.owner??a.owner_id)||0,
+      alliance:Number(a.alliance_id)||0};
+  }
+  function dodgeTownDirectory(){
+    dodgeLoadWorld();
+    const map=new Map(dodgeWorld.towns.map(x=>[x.id,x]));
+    try{
+      for(const key of ['Town','Towns']){
+        const raw=W.MM?.getModels?.()?.[key]||{};
+        for(const t of (Array.isArray(raw)?raw:Object.values(raw)).slice(0,3000)){
+          const row=dodgeTownRow(t);
+          if(row)map.set(row.id,{...map.get(row.id),...row});
+        }
+      }
+    }catch{}
+    for(const t of towns()){
+      const row=dodgeTownRow(t);
+      if(row)map.set(row.id,{...map.get(row.id),...row,owner:currentPlayerId()});
+    }
+    return [...map.values()];
+  }
+  function dodgeTownRelation(t){
+    if(t.owner===currentPlayerId()&&t.owner>0)return 'own';
+    if(dodgeAllianceId()>0&&t.alliance===dodgeAllianceId())return 'ally';
+    return 'other';
+  }
+  const dodgeTownLabel=t=>t.name+' (#'+t.id+' · '+
+    ({own:'sua',ally:'aliado',other:'outra'}[dodgeTownRelation(t)])+')';
+  const dodgeTargetName=id=>dodgeTownDirectory().find(x=>x.id===Number(id))?.name||('Cidade #'+id);
   function dodgeSameIsland(a,b){
     if(!a||!b||Number(a.id)===Number(b.id))return false;
-    const ax=a.getIslandCoordinateX?.()??a.attributes?.island_x;
-    const ay=a.getIslandCoordinateY?.()??a.attributes?.island_y;
-    const bx=b.getIslandCoordinateX?.()??b.attributes?.island_x;
-    const by=b.getIslandCoordinateY?.()??b.attributes?.island_y;
+    const ax=a.getIslandCoordinateX?.()??a.island_x??a.attributes?.island_x;
+    const ay=a.getIslandCoordinateY?.()??a.island_y??a.attributes?.island_y;
+    const bx=b.getIslandCoordinateX?.()??b.island_x??b.attributes?.island_x;
+    const by=b.getIslandCoordinateY?.()??b.island_y??b.attributes?.island_y;
     if([ax,ay,bx,by].every(x=>x!==undefined&&x!==null))
       return String(ax)===String(bx)&&String(ay)===String(by);
-    const island1=a.getIslandId?.()??a.attributes?.island_id;
-    const island2=b.getIslandId?.()??b.attributes?.island_id;
-    return island1!=null&&island2!=null&&String(island1)===String(island2);
+    const i=a.getIslandId?.()??a.attributes?.island_id;
+    const j=b.getIslandId?.()??b.attributes?.island_id;
+    return i!=null&&j!=null&&String(i)===String(j);
   }
   const dodgeLead=()=>Math.max(20,Math.min(180,Math.floor(num(config.dodge.leadSeconds,60))))*1000;
   const dodgeAfter=()=>Math.max(10,Math.min(90,Math.floor(num(config.dodge.returnAfterSeconds,15))))*1000;
   const dodgeWaveGap=()=>Math.max(1,Math.min(60,Math.floor(num(config.dodge.waveGapSeconds,12))))*1000;
   function dodgeDestinations(id,incoming=[]){
-    const origin=townBy(id),now=dodgeNow(),margin=dodgeLead()+dodgeAfter()+dodgeWaveGap();
-    return towns().filter(t=>dodgeSameIsland(origin,t))
-      .sort((a,b)=>{
-        const risk=t=>incoming.some(x=>Number(x.townId)===Number(t.id)&&
-          x.arrivalMs>=now-10000&&x.arrivalMs<=now+margin);
-        return Number(risk(a))-Number(risk(b))||Number(a.id)-Number(b.id);
-      });
+    const origin=townBy(id);if(!origin)return [];
+    const now=dodgeNow(),margin=dodgeLead()+dodgeAfter()+dodgeWaveGap();
+    const mode=config.dodge.destinationMode||'allies_first';
+    const ref=dodgeTownRow(origin);
+    const risk=t=>incoming.some(a=>Number(a.townId)===t.id&&
+      a.arrivalMs>=now-10000&&a.arrivalMs<=now+margin);
+    const priority=t=>{
+      const rel=dodgeTownRelation(t);
+      if(mode==='all_island')return 0;
+      if(mode==='own_first')return rel==='own'?0:rel==='ally'?1:2;
+      return rel==='ally'?0:rel==='own'?1:2;
+    };
+    const distance=t=>ref?.slot&&t.slot?Math.abs(ref.slot-t.slot):999;
+    return dodgeTownDirectory().filter(t=>dodgeSameIsland(origin,t)).sort((a,b)=>
+      Number(risk(a))-Number(risk(b))||priority(a)-priority(b)||
+      distance(a)-distance(b)||a.id-b.id);
   }
   function dodgeDestination(id,incoming=[]){
-    const all=dodgeDestinations(id,incoming),now=dodgeNow(),margin=dodgeLead()+dodgeAfter()+dodgeWaveGap();
-    const safe=all.filter(t=>!incoming.some(a=>Number(a.townId)===Number(t.id)&&
-      a.arrivalMs>=now-10000&&a.arrivalMs<=now+margin));
-    const configured=Number(config.dodge.targets?.[id]);
-    if(configured&&safe.some(t=>Number(t.id)===configured))return configured;
-    return Number(safe[0]?.id)||0;
+    const now=dodgeNow(),margin=dodgeLead()+dodgeAfter()+dodgeWaveGap();
+    const safe=dodgeDestinations(id,incoming).filter(t=>!incoming.some(a=>
+      Number(a.townId)===t.id&&a.arrivalMs>=now-10000&&a.arrivalMs<=now+margin));
+    const choice=Number(config.dodge.targets?.[id]);
+    if(choice&&safe.some(t=>t.id===choice))return choice;
+    return safe[0]?.id||0;
   }
   function dodgeUnits(t){
     const groups={land:{},naval:{}};
@@ -2374,7 +2470,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
       }else if(job.commandId){
         job.startedAtMs=job.sentAtMs;job.state='sent';dodgeSaveRecord(store,job);
       }
-      log('Esquiva: apoio único '+tName(townBy(townId))+' → '+tName(townBy(targetId))+
+      log('Esquiva: apoio único '+tName(townBy(townId))+' → '+dodgeTargetName(targetId)+
         ' com '+Object.values(units).reduce((sum,x)=>sum+num(x),0)+' unidades; '+(job.commandId?'#'+job.commandId:'identificando comando'));
       return true;
     }catch(e){
@@ -2520,7 +2616,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
           const last=Number(store.lastWarning?.[townId])||0;
           if(now-last>60000){
             store.lastWarning??={};store.lastWarning[townId]=now;dodgeWrite(store);
-            log('Esquiva '+tName(town)+': sem destino próprio seguro na mesma ilha','WARN');
+            log('Esquiva '+tName(town)+': nenhum destino seguro e identificado na mesma ilha','WARN');
           }
           continue;
         }
@@ -2576,7 +2672,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
         </div></div>`;
     }).join('');
     const records=Object.values(store.jobs||{}).filter(j=>dodgeActive(j)||j.state==='needs_attention'||(j.state==='cancelled'&&now-num(j.cancelledAtMs)<900000)).slice(-12).map(j=>
-      `<div class="city"><b>${cleanStr(tName(townBy(j.townId)))} → ${cleanStr(tName(townBy(j.targetId)))}</b>
+      `<div class="city"><b>${cleanStr(tName(townBy(j.townId)))} → ${cleanStr(dodgeTargetName(j.targetId))}</b>
       <div>${cleanStr(j.group)} · apoio #${cleanStr(j.commandId||'identificando')} · ${cleanStr(j.state)}</div>
       <div class="smallnote">${j.cancelAtMs?'Cancelar às '+new Date(j.cancelAtMs).toLocaleTimeString('pt-BR',{hour12:false}):'Aguardando movimento'}
       ${j.returnAtMs?' · retorno planejado '+new Date(j.returnAtMs).toLocaleTimeString('pt-BR',{hour12:false}):''}</div>
@@ -2604,8 +2700,14 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
       <p class="smallnote">Se um colono confirmado ou suspeito chegar próximo de um ataque de limpeza, a esquiva automática aguarda revisão para não retirar a defesa. Um colono identificado após envio de apoio provoca tentativa de cancelamento antecipado, com alerta se não houver tempo suficiente de retorno.</p>
       ${section('Destino do apoio')}
       <div class="formrow"><span>Cidade protegida</span>${selectTown('dodgeSource',src?.id)}</div>
-      <div class="formrow"><span>Enviar para</span><select id="dodgeTarget"><option value="0">Automático · mesma ilha</option>${optionList(destinations.map(t=>[t.id,tName(t)]),selected)}</select><button data-action="dodgeSaveTarget">Salvar</button></div>
-      <p class="smallnote">${destinations.length?`${destinations.length} cidade(s) disponível(is) na mesma ilha.`:'Nenhuma outra cidade própria na mesma ilha: esquiva não pode enviar apoio terrestre automaticamente.'}</p>
+      <div class="formrow"><span>Prioridade</span><select data-setting="dodge.destinationMode">${optionList([
+        ['allies_first','Aliados próximos → suas cidades → demais na ilha'],
+        ['all_island','Qualquer cidade da ilha, por proximidade'],
+        ['own_first','Suas cidades → aliados → demais na ilha']
+      ],config.dodge.destinationMode||'allies_first')}</select></div>
+      <div class="formrow"><span>Enviar para</span><select id="dodgeTarget"><option value="0">Automático · prioridade escolhida</option>${optionList(destinations.map(t=>[t.id,dodgeTownLabel(t)]),selected)}</select><button data-action="dodgeSaveTarget">Salvar</button></div>
+      <div class="formrow"><span>Ou informar ID</span><input id="dodgeTargetManual" type="number" min="1" placeholder="ID de cidade da ilha"><button data-action="dodgeSaveTarget">Definir ID</button></div>
+      <p class="smallnote">${destinations.length?destinations.length+' cidade(s) identificada(s) na mesma ilha.':'Aguardando cidades da ilha.'} ${dodgeWorld.error?cleanStr(dodgeWorld.error):''}</p>
       ${section('Ataques identificados')}
       <div class="cityscroll">${listed||'<p class="smallnote">Nenhum ataque inimigo com horário confirmado agora.</p>'}</div>
       ${section('Apoios e cancelamentos pendentes')}
@@ -2848,7 +2950,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const ajaxOK=typeof W.gpAjax?.ajaxPost==='function';
     const role=syncRole();
     const checks=[
-      healthCheck('script','GrepoPilot carregado','ok','v1.0.3 · inicialização em '+new Date(health.startedAt).toLocaleTimeString('pt-BR')),
+      healthCheck('script','GrepoPilot carregado','ok','v1.0.4 · inicialização em '+new Date(health.startedAt).toLocaleTimeString('pt-BR')),
       healthCheck('page','Página do Grepolis',location.protocol==='https:'&&/^\/game(?:\/|$)/.test(location.pathname)?'ok':'error',
         String(location.host)+String(location.pathname||''),'Abra a página do jogo em https://SEU-MUNDO.grepolis.com/game/'),
       healthCheck('api','Acesso aos dados do jogo',W!==window?'ok':'warn',
@@ -2900,7 +3002,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const critical=checks.filter(x=>x.status==='error');
     const warnings=checks.filter(x=>x.status==='warn');
     const active=ready&&critical.length===0&&config.enabled&&role==='primary'&&!config.dryRun&&!securityBlocked()&&n>0;
-    return {version:'1.0.3',time:new Date(now).toISOString(),world:location.host,
+    return {version:'1.0.4',time:new Date(now).toISOString(),world:location.host,
       playerId:player||null,userAgent:typeof navigator!=='undefined'?navigator.userAgent:'',
       active,critical:critical.length,warnings:warnings.length,
       runtime:{uptimeSeconds:Math.floor((now-health.startedAt)/1000),
@@ -3189,7 +3291,7 @@ let queueKindSelected='building';
         '<div class="tools"><button data-tab="VERIFICAR">Abrir verificação</button></div>';
     }
     shadow.querySelector('#gp-app').innerHTML=`
-      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v1.0.3</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
+      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v1.0.4</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
       ${config.ui.collapsed?'':`<div class="status"><i class="dot ${config.enabled?(config.dryRun?'sim':'live'):''}"></i>${cleanStr(STATUS())}</div>
       <div class="tabs">${[...(config.onboarding?.completed?[]:['COMEÇAR']),'INÍCIO','CIDADES','TROPAS','FILA','ALDEIAS','COMBATE','ESQUIVA','ECONOMIA','MISSÕES','AJUSTES','VERIFICAR','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
       <div class="body">${body}</div><div class="foot"><button class="${config.enabled?'stop':'go'}" data-action="toggle">${config.enabled?'■ PARAR TUDO':'▶ INICIAR'}</button><span>${Object.values(config.modules).filter(Boolean).length} módulos ativos</span></div>`}`;
@@ -3294,7 +3396,7 @@ let queueKindSelected='building';
             startedAt:dodgeStarted(m.data),arrivalAt:dodgeArrival(m.data)
           }));
           download('GrepoPilot-esquiva-'+location.host+'.json',JSON.stringify({
-            version:'1.0.3',world:location.host,at:new Date().toISOString(),
+            version:'1.0.4',world:location.host,at:new Date().toISOString(),
             clock:dodgeClock,settings:config.dodge,attacks:dodgeIncoming(),
             movementFields:dodgeMovements().map(m=>({keys:Object.keys(m.data||{}),
               details:Object.fromEntries(Object.entries(m.data||{}).filter(([k])=>/(?:speed|modifier|power|spell|effect|hero|conquest|colon|takeover|revolt|unit|time|arriv|start)/i.test(k)).slice(0,25))})),
@@ -3326,7 +3428,7 @@ let queueKindSelected='building';
         }
         case 'diagRefresh':log('Diagnóstico: condições reavaliadas');break;
         case 'diagExport':download('GrepoPilot-diagnostico-'+location.host+'.json',JSON.stringify({
-          version:'1.0.3',world:location.host,at:new Date().toISOString(),summary:diagSnapshot()},null,2));break;
+          version:'1.0.4',world:location.host,at:new Date().toISOString(),summary:diagSnapshot()},null,2));break;
         case 'diagReset':{
           const rt=readRuntime();delete rt.diagnostics;writeRuntime(rt);log('Diagnóstico: contadores reiniciados');break;
         }
@@ -3392,7 +3494,17 @@ let queueKindSelected='building';
           testStart(id,config.attackTest.mode,config.attackTest.delay,config.attackTest.wave);break;
         }
         case 'testStop':testStop();break;
-        case 'dodgeSaveTarget': { const src=getSelected(); if(!src)throw Error('Cidade inválida'); const dest=Number(el('dodgeTarget')?.value||0); if(dest&&!dodgeSameIsland(src,townBy(dest)))throw Error('Escolha outra cidade própria da mesma ilha');config.dodge.targets[src.id]=dest;save();log(`Esquiva: destino de ${tName(src)} definido`);break; }
+        case 'dodgeSaveTarget': {
+          const src=getSelected();if(!src)throw Error('Cidade inválida');
+          const manual=String(el('dodgeTargetManual')?.value||'').trim();
+          const dest=manual?Number(manual):Number(el('dodgeTarget')?.value||0);
+          if(!Number.isSafeInteger(dest)||dest<0)throw Error('ID de cidade inválido');
+          if(dest&&!dodgeDestinations(src.id,dodgeIncoming()).some(t=>t.id===dest))
+            throw Error('Cidade #'+dest+' não identificada na mesma ilha. Aguarde o catálogo ou escolha na lista.');
+          config.dodge.targets[src.id]=dest;save();
+          log('Esquiva: '+tName(src)+' → '+(dest?dodgeTargetName(dest):'automático'));
+          break;
+        }
         case 'setBootcampHome': {
           const id=num(el('bootcampHome').value);
           if(!townBy(id))throw new Error('Escolha uma cidade válida da ilha inicial');
