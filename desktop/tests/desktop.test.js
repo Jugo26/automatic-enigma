@@ -2,6 +2,7 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
+const {runInNewContext}=require('node:vm');
 const {ANCHOR,patchEngineSource}=require('../src/engine-hooks');
 const {EXPRESSION}=require('../src/game-state');
 const src=fs.readFileSync(require('node:path').join(__dirname,'..','src','renderer.js'),'utf8');
@@ -59,4 +60,45 @@ test('a esquiva na HUD configura aliados, destino e mostra bloqueios',()=>{
   assert.match(src,/start-dodge/);
   assert.match(src,/configurações pausadas|Esquiva não está operacional/);
   assert.match(EXPRESSION,/recruitPlan:api\.recruitPlan\(\)/);
+});
+
+test('as opções exibem português e preservam chaves e valores gravados pelo motor',()=>{
+ const engine=fs.readFileSync(require('node:path').join(__dirname,'../../GrepoPilot.user.js'),'utf8');
+ const window={},nodes={};
+ runInNewContext(engine.replace("  if(document.readyState==='loading')",
+   "  window.settings=config;return;\n  if(document.readyState==='loading')"),{
+   window,location:{host:'teste.grepolis.com'},localStorage:{getItem:()=>null}
+ });
+ window.settings.recruit.targets={'42':{bireme:10}};
+ window.settings.dodge.colonyBaselineMinutes={'2:42':100};
+ window.settings.trade.routes=[{from:42,to:2,wood:500}];
+ runInNewContext(src.slice(0,src.indexOf('// Eventos delegados'))+
+   "\nS={ready:true,config,catalog:{cities:[{id:'42',name:'Esparta'}]}};active='AVANÇADO';rendered()",{
+   config:window.settings,document:{getElementById:id=>nodes[id]??={}}
+ });
+ const html=nodes['panel-content'].innerHTML,menu=nodes.nav.innerHTML;
+ assert.doesNotMatch(html,/Opção adicional/);
+ assert.match(html,/>Intervalos de execução</);
+ assert.match(html,/>Duração da coleta/);
+ assert.match(html,/>Construção automática</);
+ assert.match(html,/data-number="intervals\.farm"/);
+ assert.match(html,/data-choice="sync\.role"[^>]*>[^<]*<option value="primary" selected>Principal/);
+ assert.match(html,/>Esparta</);
+ assert.match(html,/>Birreme</);
+ assert.match(html,/data-number="recruit\.targets\.42\.bireme" value="10"/);
+ assert.match(html,/data-json-text="trade\.routes"[^>]*>[\s\S]*?&quot;wood&quot;: 500/);
+ assert.match(html,/data-json-text="dodge\.colonyBaselineMinutes"[^>]*>[\s\S]*?&quot;2:42&quot;: 100/);
+ assert.doesNotMatch(html,/>\s*(intervals|farm|build|bridge|dryRun|primary|intelligent)\s*</);
+ for(const page of ['CIDADES','FILA','AUTOMAÇÕES']){
+   assert.match(menu,new RegExp('data-page="'+page+'"[^>]*><span[^>]+ui-icon'));
+ }
+});
+
+test('o registro apresenta a ação simulada e permite consultar o comando original',()=>{
+ const message='SIMULACAO frontend_bridge/execute {"action_name":"storeIron","arguments":{"iron_to_store":500}}';
+ const html=runInNewContext(src.slice(0,src.indexOf('// Eventos delegados'))+
+   "\nS={status:{logs:[{level:'INFO',stamp:'10:00',message}]}};logPage()",{message});
+ assert.match(html,/>Informação</);
+ assert.match(html,/>Simulação · depósito de prata na Gruta</);
+ assert.match(html,/<details[^>]*><summary>Detalhes do comando<\/summary><pre>SIMULACAO frontend_bridge\/execute /);
 });

@@ -22,4 +22,16 @@ input,select,textarea{background:#101921;border:1px solid #596675;border-radius:
 
 .unit-plan{display:block;width:100%;font-size:9px;line-height:1.3;overflow-wrap:anywhere;text-align:center;color:#c5cfd2}.unit-plan.ready{color:#a9e0bb}.unit-plan.blocked{color:#f0a39b}.unit-plan.done{color:#d9c38c}.unit-plan.wait{color:#d7c49c}
 
+.sidebar{overflow-x:hidden;scrollbar-color:#6e6250 #1d2a34;scrollbar-width:thin}
+.navbtn>span:last-child{min-width:0;overflow-wrap:anywhere}
+.ui-icon{display:inline-grid;place-items:center;flex-shrink:0;color:#efcd8f;font:20px/1 "Segoe MDL2 Assets"}
+.panel-top h2 .ui-icon,.card-head>.ui-icon{font-size:23px}
+@media(max-width:1250px){.sidebar{padding-inline:6px}.navbtn{gap:7px;padding-inline:6px}.navbtn .nav-img{width:32px;height:32px}}
+.advanced-field>span{min-width:0;overflow-wrap:anywhere}
+.advanced-field>input{flex-shrink:0}
+.advanced-field>select{flex:0 0 45%;min-width:0}
+.advanced-group>.section-title{letter-spacing:normal;text-transform:none;margin-bottom:0}
+.technical summary{cursor:pointer}
+.technical pre{white-space:pre-wrap;overflow-wrap:anywhere}
+
 .shared-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:10px 0}.shared-stats>div{padding:9px;background:#29333c;border:1px solid #43535f;border-radius:9px;text-align:center}.shared-stats small{display:block;color:#a6b5be}.shared-stats b{font-size:19px;color:#efcd8f}.shared-list{margin:8px 0}.shared-user{padding:8px 10px;border-bottom:1px solid #334854;display:flex;align-items:center;gap:9px;flex-wrap:wrap}.shared-user small{width:100%;padding-left:18px;color:#a6b7c1}.shared-on{color:#7bd0a9}.shared-off{color:#8d949b}.shared-filters{display:grid;grid-template-columns:1fr 1fr;gap:7px}.shared-filters>*{min-width:0;width:100%}.shared-movement{padding:9px}.shared-movement small{display:block;color:#adb9c2;font-size:11px}.shared-route{margin:5px 0;font-weight:650;overflow-wrap:anywhere}
