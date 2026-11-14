@@ -2301,7 +2301,9 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     }catch{}
     for(const t of towns()){
       const row=dodgeTownRow(t);
-      if(row)map.set(row.id,{...map.get(row.id),...row,owner:currentPlayerId()});
+      if(row){const previous=map.get(row.id)||{};
+        map.set(row.id,{...previous,...row,owner:currentPlayerId(),
+          alliance:row.alliance||previous.alliance||0,slot:row.slot||previous.slot||0});}
     }
     dodgeTownCache.rows=[...map.values()];dodgeTownCache.at=Date.now();
     return dodgeTownCache.rows;
@@ -2333,7 +2335,8 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const origin=townBy(id);if(!origin)return [];
     const now=dodgeNow(),margin=dodgeLead()+dodgeAfter()+dodgeWaveGap();
     const mode=config.dodge.destinationMode||'allies_first';
-    const ref=dodgeTownRow(origin);
+    const known=dodgeTownDirectory();
+    const ref=known.find(t=>t.id===Number(id))||dodgeTownRow(origin);
     const risk=t=>incoming.some(a=>Number(a.townId)===t.id&&
       a.arrivalMs>=now-10000&&a.arrivalMs<=now+margin);
     const priority=t=>{
@@ -2343,7 +2346,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
       return rel==='ally'?0:rel==='own'?1:2;
     };
     const distance=t=>ref?.slot&&t.slot?Math.abs(ref.slot-t.slot):999;
-    return dodgeTownDirectory().filter(t=>dodgeSameIsland(origin,t)).sort((a,b)=>
+    return known.filter(t=>dodgeSameIsland(origin,t)).sort((a,b)=>
       Number(risk(a))-Number(risk(b))||priority(a)-priority(b)||
       distance(a)-distance(b)||a.id-b.id);
   }
