@@ -16,6 +16,13 @@ O Tampermonkey verifica [GrepoPilot.meta.js](./GrepoPilot.meta.js) e instala uma
 
 Documentação: https://www.tampermonkey.net/documentation.php?locale=pt_BR
 
+## GrepoPilot 1.0.5 — Gruta e retorno da esquiva
+
+- A Gruta respeita a reserva de prata, os limites por nível e a prata em trânsito com espiões. Limiares legados acima da capacidade do armazém passam a usar a capacidade como teto.
+- A esquiva calcula em que momento cancelar o apoio para mirar o retorno um segundo depois do impacto. Nos ataques comuns, usa a última onda agrupada. Ao esquivar de um colono identificado, usa o impacto da colonização como referência.
+- Em **Defender o colono**, o motor mantém a guarnição ou chama de volta um apoio em viagem que possa deixar a cidade descoberta. **Esquivar do colono** mantém a estratégia de retirada. O jogo determina a chegada e a resolução do cerco.
+- Os cenários de colonização consideram Navegar, Cartografia, Farol, Atalanta, Sereias, Ares no Olimpo e efeitos de movimento. O [Elmo de Hades](https://support.innogames.com/kb/Grepolis/pt_BR/3491) atrasa a visibilidade. A hora de impacto continua sendo a informada pelo cliente Grepolis.
+
 ## GrepoPilot 0.3.2
 
 Ataques automáticos ao acampamento de bandidos usam **todas as tropas terrestres presentes na cidade de origem**, inclusive defesa e unidades míticas disponíveis. Navios e milícia ficam fora. As antigas opções de reserva e limite mínimo não afetam mais essa ação. Mantenha a aba COMBATE configurada com a cidade de origem.

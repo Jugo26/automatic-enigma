@@ -1,6 +1,13 @@
 # GrepoPilot Desktop — Central Compartilhada
 
-## Novidades
+## Gruta e esquiva
+
+- **Economia → Depósito na Gruta** mostra o motivo da espera por cidade. O motor preserva a reserva no armazém, limita o depósito ao espaço livre da Gruta e contabiliza a prata carregada por espiões.
+- **Esquiva → Controle de tempo** permite ajustar a antecedência de envio e o agrupamento de ondas. O cancelamento é calculado durante a viagem com alvo de retorno um segundo após o impacto de referência.
+- **Esquiva → Ataque de colonização** permite escolher **Defender o colono** ou **Esquivar do colono**. Defender preserva a guarnição ou antecipa o cancelamento de um apoio em viagem. Esquivar mira a chegada um segundo após o impacto do colono. A chegada efetiva e o combate durante o cerco dependem do servidor.
+- Os cenários usam dados observados e bônus de movimento conhecidos. A opção **É colono** permite confirmar manualmente um ataque que o jogo ainda não identificou. Quando falta a composição, a duração é apresentada como indício.
+
+## Central compartilhada
 
 - **Central compartilhada** integrada à barra lateral do Desktop (não é userscript separado): jogadores online/offline, aliança e movimentos de ataque, apoio, comércio, colonização, espionagem e retorno.
 - Filtros por jogador, tipo, direção e cidade.

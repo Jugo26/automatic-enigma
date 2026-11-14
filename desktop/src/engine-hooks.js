@@ -28,6 +28,7 @@ const HOOK = String.raw`
       }
       if(names[0]==='build')nextRun.build=0;
       if(names[0]==='research')nextRun.research=0;
+      if(names[0]==='cave')nextRun.cave=0;
       if(names[0]==='modules')nextRun[names[1]]=0;
       save();render();
       return true;
@@ -81,23 +82,42 @@ const HOOK = String.raw`
       config.onboarding.completed=true;nextRun.dodge=0;save();render();
       log('Esquiva real ativada pelo Desktop');return true;
     },
+    caveInfo: () => {
+      if(typeof cavePlans!=='function')return null;
+      const last=readRuntime().diagnostics?.cave;
+      return {towns:cavePlans(),reason:diagReason('cave'),
+        lastError:last?.lastState==='error'?last.lastMessage:''};
+    },
+    markDodgeAttack: (id,mark) => {
+      if(typeof dodgeMarkAttack!=='function')throw Error('Aguarde a atualização do motor');
+      return dodgeMarkAttack(id,mark);
+    },
+    setColonyBaseline: (id,minutes) => {
+      if(typeof dodgeSetColonyBaseline!=='function')throw Error('Aguarde a atualização do motor');
+      return dodgeSetColonyBaseline(id,minutes);
+    },
     dodgeInfo: (townId) => {
       const id=Number(townId),all=dodgeIncoming(),jobs=Object.values(dodgeRead().jobs||{});
       return {
         enabled:config.enabled,dryRun:config.dryRun,module:config.modules.dodge,
         role:syncRole(),captcha:securityBlocked(),clock:dodgeClock.source,
         directoryError:dodgeWorld.error,
+        leadSeconds:dodgeLead()/1000,waveGapSeconds:dodgeWaveGap()/1000,
+        colonizationPolicy:config.dodge.colonizationPolicy==='all'?'all':'confirmed',
         destinations:dodgeDestinations(id,all).map(row=>({id:row.id,name:row.name,
           relation:dodgeTownRelation(row)})),
         incoming:all.filter(a=>Number(a.townId)===id&&a.arrivalMs>dodgeNow()).slice(0,12).map(a=>({
           id:a.id,arrivalMs:a.arrivalMs,type:a.type,
-          classification:a.intel?.classification||'unknown',
-          allow:dodgeAttackDecision(a).allow,reason:dodgeAttackDecision(a).reason
+          classification:a.intel?.classification||'unknown',simulated:Boolean(a.simulated),
+          allow:dodgeAttackDecision(a).allow,reason:dodgeAttackDecision(a).reason,
+          travel:a.intel?.travel??null,baselineMinutes:config.dodge.colonyBaselineMinutes?.[a.intel?.travel?.route]
         })),
         jobs:jobs.filter(j=>Number(j.townId)===id&&
-          ['dispatching','identifying','sent','canceling','needs_attention'].includes(j.state))
+          (['dispatching','identifying','sent','canceling','needs_attention'].includes(j.state)||
+            j.state==='cancelled'&&dodgeNow()-Number(j.cancelledAtMs)<900000))
           .map(j=>({id:j.id,state:j.state,commandId:j.commandId,
-            targetId:j.targetId,error:j.error||'',cancelAtMs:j.cancelAtMs||0})),
+            targetId:j.targetId,error:j.error||'',cancelAtMs:j.cancelAtMs||0,returnAtMs:j.returnAtMs||0,
+            estimatedReturnAtMs:j.estimatedArrivalMs||0,confirmedReturnAtMs:j.confirmedReturnAtMs||0})),
         configuredTarget:Number(config.dodge.targets?.[id])||0
       };
     },

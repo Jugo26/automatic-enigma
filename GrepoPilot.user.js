@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GrepoPilot - Painel de Automacao
 // @namespace    https://grepolis.com/
-// @version      1.0.4
+// @version      1.0.5
 // @updateURL    https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.meta.js
 // @downloadURL  https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.user.js
 // @homepageURL  https://github.com/Jugo26/automatic-enigma/tree/grepopilot-updates
@@ -19,6 +19,7 @@
   window.__GREPOPILOT_ACTIVE__ = true;
   const W = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
   const SCRIPT = 'GrepoPilot';
+  const VERSION = '1.0.5';
   const BUILDINGS = ['main','storage','farm','lumber','stoner','ironer','academy','barracks','docks','market','temple','hide','wall'];
   const MODULES = {
     farm: ['🌾 Coleta de aldeias','ECONOMIA',60],
@@ -35,7 +36,7 @@
     banditRewards: ['🎁 Recompensas dos bandidos','MISSÕES',12],
     culture: ['🎭 Festivais e cultura','CIDADES',430],
     bootcamp: ['🏹 Ataques PvE aos bandidos','COMBATE',30],
-    cave: ['🕳️ Guardar ferro na gruta','ECONOMIA',350],
+    cave: ['🕳️ Guardar prata na gruta','ECONOMIA',350],
     commands: ['🚩 Ataques/apoios agendados','COMBATE',2],
     alerts: ['🚨 Alertas de movimentos','COMBATE',8],
     dodge: ['🛡️ Esquiva com retorno calculado','ESQUIVA',0.125]
@@ -117,10 +118,10 @@
     banditRewards: {stashIfPossible:true},
     culture: {festival:false,triumph:false,theater:false},
     bootcamp: {homeTownId:0,stashRewards:true,useHero:true},
-    cave: {minIron:15000,keepIron:5000},
+    cave: {minIron:0,keepIron:5000},
     commands: {jobs:[]},
     alerts: {desktop:true,checkAll:true},
-    dodge: {version:2,leadSeconds:60,returnAfterSeconds:15,waveGapSeconds:12,land:true,naval:true,targets:{},destinationMode:'allies_first',colonizationPolicy:'review',colonyConflictWindowSeconds:180,attackMarks:{},colonyBaselineMinutes:{},colonyTimeTolerancePercent:5},
+    dodge: {version:2,leadSeconds:60,waveGapSeconds:12,land:true,naval:true,targets:{},destinationMode:'allies_first',colonizationPolicy:'confirmed',attackMarks:{},colonyBaselineMinutes:{},colonyTimeTolerancePercent:5},
     attackTest: {delay:120,wave:0,mode:'preview'},
     sync: {role:'primary'},
     security: {notify:true,resumeAfterSeconds:15,pacingEnabled:true,minActionIntervalSeconds:45,maxActionsPerHour:60,postCaptchaCooldownMinutes:45},
@@ -160,13 +161,16 @@
     if(cfg?.ui?.tab==='MILITAR')cfg.ui.tab='TROPAS';
     if(cfg?.ui?.tab==='CONFIG')cfg.ui.tab='AJUSTES';
     if(cfg?.ui?.tab==='PRESENÇA')cfg.ui.tab='INÍCIO';
+    if(!cfg.dodge||typeof cfg.dodge!=='object'||Array.isArray(cfg.dodge))cfg.dodge=clone(BASE.dodge);
     if(raw&&Object.keys(raw).length>0&&Number(raw?.dodge?.version)!==2){
       // Atualiza valores legados projetados para uma janela de 1–5 s, insuficiente para a margem de chegada.
       if(numOrFinite(raw?.dodge?.leadSeconds,5)<=5)cfg.dodge.leadSeconds=60;
-      if(numOrFinite(raw?.dodge?.returnAfterSeconds,1)<10)cfg.dodge.returnAfterSeconds=15;
       cfg.dodge.version=2;
     }
     if(raw?.attackTest?.delay===20&&raw?.dodge?.version!==2)cfg.attackTest.delay=120;
+    delete cfg.dodge.returnAfterSeconds;
+    delete cfg.dodge.colonyConflictWindowSeconds;
+    if(cfg.dodge.colonizationPolicy!=='all')cfg.dodge.colonizationPolicy='confirmed';
     // Migração permanente: perfis antigos não podem reativar F5 temporizado.
     cfg.autoReload ||= {};
     cfg.autoReload.enabled = false;
@@ -253,7 +257,7 @@
     return output;
   };
   const templatePayload=()=>({
-    format:'grepopilot-template',schema:1,version:'1.0.4',
+    format:'grepopilot-template',schema:1,version:VERSION,
     exportedAt:new Date().toISOString(),settings:templateSettings()
   });
   const templateExport=()=>JSON.stringify(templatePayload(),null,2);
@@ -409,13 +413,14 @@
       let done=false;
       const timeout=setTimeout(()=>{if(!done){done=true;reject(new Error(`Resposta não confirmada: ${controller}/${method}`));}},13000);
       try {
-        W.gpAjax.ajaxPost(controller,method,data,false,response=>{
+        const finish=response=>{
           if(done) return;
           done=true;clearTimeout(timeout);
           if(scope!==requestScope||currentScope()!==requestScope)
             return reject(new Error('Conta mudou durante a solicitação; resposta antiga descartada'));
-          if(response?.success===false || response?.json?.success===false || response?.error || response?.json?.error){
-            const reason=JSON.stringify(response?.json?.error || response?.error || 'Falha reportada pelo jogo');
+          if(!response || response?.success===false || response?.json?.success===false || response?.error || response?.json?.error){
+            const detail=response?.json?.error||response?.error||'Resposta não confirmada pelo jogo';
+            const reason=typeof detail==='string'?detail:JSON.stringify(detail);
             if(/(?:too many requests|rate.limi(?:t|ted)|\b429\b|too frequent)/i.test(reason)){
               let backoffMinutes=45;
               try{backoffMinutes=pacingBackoffOnRateLimit();}catch{}
@@ -424,6 +429,10 @@
             return reject(new Error(reason));
           }
           resolve(response);
+        };
+        W.gpAjax.ajaxPost(controller,method,data,false,{
+          success:(_window,response)=>finish(response),
+          error:(_window,response)=>finish(response?.error||response?.json?.error?response:{error:'Resposta não confirmada pelo jogo'})
         });
       } catch(e){if(!done){done=true;clearTimeout(timeout);reject(e)}}
     }).finally(()=>{inFlightActions=Math.max(0,inFlightActions-1);});
@@ -1549,16 +1558,47 @@ function policyForUnit(key,def){
     log(`Bandidos fase ${stage}: ${config.dryRun?'SIMULAÇÃO ':''}ataque por ${tName(home)} com ${total} unidades (${Object.entries(units).map(([k,v])=>`${k} ${v}`).join(', ')})${hero?' · herói '+hero.name+' #'+hero.id:' · sem herói disponível'}`);
     return true;
   }
+  function cavePlans(){
+    const loaded=W.MM.getModels()||{};
+    const globalSpies=loaded.MovementsSpy;
+    const spyCollections=globalSpies?[]:W.MM.getTownAgnosticCollectionsByName?.('MovementsSpy')||[];
+    const keep=Math.max(0,Math.ceil(num(config.cave?.keepIron,BASE.cave.keepIron)));
+    const minimum=Math.max(0,Math.ceil(num(config.cave?.minIron,BASE.cave.minIron)));
+    return towns().map(t=>{
+      const snapshot=resource(t),iron=num(snapshot.iron??t.getCurrentResources?.()?.iron,NaN);
+      const model=loaded.Town?.[t.id],buildings=t.getBuildings?.()??t.buildings?.();
+      const level=num(buildings?.get?.('hide')??buildings?.attributes?.hide);
+      const fullLevel=num(W.GameData?.buildings?.hide?.max_level,10);
+      const warehouse=num(snapshot.storage??t.getStorage?.()??model?.getStorageCapacity?.(),NaN);
+      const threshold=warehouse>0?Math.min(minimum,warehouse):minimum;
+      const stored=num(model?.getEspionageStorage?.()??t.getEspionageStorage?.(),NaN);
+      const limitPerLevel=num(W.Game.constants?.common?.max_storage_limit_per_hide_level,1000);
+      const capacity=num(model?.getHideStorageCapacity?.(),level*limitPerLevel);
+      const spies=globalSpies?Object.values(globalSpies):spyCollections.flatMap(c=>c.fragments?.[t.id]?.models||[]);
+      const away=spies.filter(Boolean).reduce((sum,spy)=>{
+        const a=spy.attributes||spy;
+        return !globalSpies||Number(a.home_town_id)===Number(t.id)?
+          sum+Math.max(0,num(spy.getPayedIron?.()??a.payed_iron)):sum;
+      },0);
+      const space=level>=fullLevel?Infinity:capacity-stored-away;
+      const amount=Math.floor(Math.min(iron-keep,space));
+      const reason=level<1?'Gruta não construída':!Number.isFinite(iron)||Number.isNaN(space)?
+        'Aguardando dados de prata da cidade':space<=0?'Gruta cheia ou capacidade reservada por espionagem':
+        iron<threshold?'Aguardando '+threshold+' moedas no armazém (saldo '+Math.floor(iron)+')':
+        amount<1?'Saldo dentro da reserva de '+keep+' moedas':'Pode depositar '+amount+' moedas';
+      return {townId:Number(t.id),name:tName(t),amount:level>0&&iron>=threshold&&amount>0?amount:0,reason};
+    });
+  }
+  let lastCaveTown={scope:'',id:0};
   async function cave(){
-    for(const t of towns()){
-      if(num(t.buildings?.()?.attributes?.hide)<1)continue;
-      const iron=num(resource(t).iron), keep=num(config.cave.keepIron);
-      const surplus=Math.floor(iron-keep);
-      if(iron<num(config.cave.minIron) || surplus<100)continue;
-      await bridge(t.id,'BuildingHide','storeIron',{iron_to_store:surplus});
-      log(`${tName(t)}: guardar ${surplus} ferro na gruta`);return true;
-    }
-    return false;
+    const plans=cavePlans().filter(plan=>plan.amount>0);
+    if(!plans.length)return false;
+    const previous=lastCaveTown.scope===scope?lastCaveTown.id:0;
+    const plan=plans[(plans.findIndex(row=>row.townId===previous)+1)%plans.length];
+    lastCaveTown={scope,id:plan.townId};
+    const result=await bridge(plan.townId,'BuildingHide','storeIron',{iron_to_store:plan.amount});
+    log(plan.name+': '+(result?.dryRun?'simulação de depósito de ':'depósito solicitado de ')+plan.amount+' moedas de prata na Gruta');
+    return true;
   }
   const readFired=()=>{try{return JSON.parse(localStorage.getItem(FIRED)||'{}')}catch{return {}}};
   const writeFired=v=>localStorage.setItem(FIRED,JSON.stringify(v));
@@ -1642,7 +1682,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
   const a={id:'T-'+now+'-'+Math.random().toString(36).slice(2,7),townId:Number(id),targetId,
     mode,state:'active',stage:'waiting',createdMs:now,impactMs:now+delay*1000,
     secondMs:wave?now+(delay+wave)*1000:0,leadSeconds:dodgeLead()/1000,
-    returnDelay:dodgeAfter()/1000,sentMs:0,cancelledMs:0,returnMs:0,reason:''};
+    waveGapMs:dodgeWaveGap(),sentMs:0,cancelledMs:0,returnMs:0,reason:''};
   testWrite({active:a});
   log(`Teste ${mode==='live'?'PRÁTICO':'SIMULADO'} iniciado em ${tName(town)}: impacto fictício em ${delay}s`);
   return a;
@@ -1663,13 +1703,15 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
   if(scope!==currentScope())return;
   const st=testRead(),a=st.active;
   if(!a||a.state!=='active')return;
-  const now=dodgeNow(),last=Math.max(a.impactMs,a.secondMs||0),after=last+a.returnDelay*1000;
+  const now=dodgeNow(),last=a.secondMs-a.impactMs<=(a.waveGapMs??dodgeWaveGap())?
+    Math.max(a.impactMs,a.secondMs||0):a.impactMs;
   let changed=false;
   if(a.mode==='preview'){
     const sendAt=a.impactMs-a.leadSeconds*1000;
     if(a.stage==='waiting'&&now>=sendAt){
       a.stage='sent';a.sentMs=sendAt;
-      a.cancelDue=after;a.returnDue=after+(after-sendAt);changed=true;
+      const plan=dodgeTiming(sendAt,last);
+      a.cancelDue=plan.cancelAtMs;a.returnDue=plan.returnAtMs;changed=true;
       log('SIMULAÇÃO: apoio virtual enviado; cancelamento programado');
     }
     if(a.stage==='sent'&&now>=a.cancelDue){
@@ -1677,18 +1719,20 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
       log('SIMULAÇÃO: apoio virtual cancelado');
     }
     if(a.stage==='cancelled'&&now>=a.returnDue){
-      a.stage='completed';a.state='completed';a.returnMs=after;changed=true;
+      a.stage='completed';a.state='completed';a.returnMs=a.returnDue;changed=true;
       log('SIMULAÇÃO: retorno previsto após o último impacto');
     }
   }else{
     const jobs=Object.values(dodgeRead().jobs||{}).filter(j=>j.testId===a.id);
     if(jobs.some(j=>j.state==='needs_attention')&&now>last+2000){
       a.stage='attention';a.state='attention';a.reason='Verifique o apoio: falta confirmação de cancelamento';changed=true;
-    }else if(jobs.length&&jobs.every(j=>j.state==='cancelled')&&now>after+3000){
+    }else if(jobs.length&&jobs.every(j=>j.state==='cancelled')&&
+      now>=Math.max(...jobs.map(j=>j.confirmedReturnAtMs||j.estimatedArrivalMs||last+1000))){
       a.stage='completed';a.state='completed';a.sentMs=Math.min(...jobs.map(j=>j.sentAtMs));
       a.cancelledMs=Math.max(...jobs.map(j=>j.cancelledAtMs||0));
-      a.returnMs=Math.max(...jobs.map(j=>j.estimatedArrivalMs||0));changed=true;
-      log('TESTE PRÁTICO: apoios cancelados; retorno calculado. Confira a chegada no jogo');
+      a.returnMs=Math.max(...jobs.map(j=>j.confirmedReturnAtMs||j.estimatedArrivalMs||0));
+      a.returnConfirmed=jobs.every(j=>Boolean(j.confirmedReturnAtMs));changed=true;
+      log('TESTE PRÁTICO: '+(a.returnConfirmed?'horário de volta informado pelo jogo':'cancelamento aceito; horário de volta estimado'));
     }else if(!jobs.length&&now>last+15000){
       a.stage='failed';a.state='failed';a.reason='A esquiva não enviou apoio antes do impacto fictício';changed=true;
     }else{
@@ -1708,15 +1752,15 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
   const destination=t?dodgeDestination(Number(t.id),dodgeIncoming()):0;
   const group=t?dodgeUnits(t):{land:{},naval:{}};
   const count=Object.values(group).reduce((n,g)=>n+Object.values(g).reduce((sum,v)=>sum+num(v),0),0);
-  const difference=a?.returnMs?(a.returnMs-Math.max(a.impactMs,a.secondMs||0))/1000:null;
-  const accuracy=null;
+  const last=a&&a.secondMs-a.impactMs<=(a.waveGapMs??dodgeWaveGap())?Math.max(a.impactMs,a.secondMs||0):a?.impactMs;
+  const difference=a?.returnMs?(a.returnMs-last)/1000:null;
   const status=a?`<div class="city"><b>${a.mode==='live'?'🟠 Teste prático':'🔵 Teste virtual'}</b>
     <div>Cidade: ${cleanStr(tName(townBy(a.townId)))} · destino: ${a.targetId?cleanStr(tName(townBy(a.targetId))):'sem cidade de apoio'}</div>
     <div>Estado: ${cleanStr(a.stage)} (${cleanStr(a.state)})</div>
     <div>Impacto fictício: ${new Date(a.impactMs).toLocaleTimeString('pt-BR',{hour12:false})}${a.secondMs?' · 2ª onda '+new Date(a.secondMs).toLocaleTimeString('pt-BR',{hour12:false}):''}</div>
     <div>Contagem regressiva: <b id="testCountdown">${Math.max(0,(a.impactMs-now)/1000).toFixed(1)}s</b></div>
     <div class="smallnote">Saída: ${a.sentMs?new Date(a.sentMs).toLocaleTimeString('pt-BR',{hour12:false}):'aguardando'} · Cancelamento: ${a.cancelledMs?new Date(a.cancelledMs).toLocaleTimeString('pt-BR',{hour12:false}):'aguardando'} · Retorno: ${a.returnMs?new Date(a.returnMs).toLocaleTimeString('pt-BR',{hour12:false}):a.returnDue?new Date(a.returnDue).toLocaleTimeString('pt-BR',{hour12:false}):'calculando'}</div>
-    ${difference!==null?`<div class="smallnote"><b>Retorno estimado:</b> ${difference.toFixed(1)}s após o último impacto; cancelamento previsto ${Number(a.returnDelay).toFixed(0)}s após a onda. ${a.mode==='live'?'Chegada não confirmada pelo servidor.':'Cálculo virtual.'}</div>`:''}
+        ${difference!==null?`<div class="smallnote"><b>${a.returnConfirmed?'Retorno informado pelo jogo':'Retorno estimado'}:</b> ${difference.toFixed(1)} s em relação ao impacto de referência.</div>`:''}
     ${a.reason?'<div class="smallnote">'+cleanStr(a.reason)+'</div>':''}</div>`:'<p class="smallnote">Nenhum teste executado.</p>';
   return `${section('Simular ataque à cidade')}
     <div class="helpbox">Cria um <b>ataque fictício</b> só no GrepoPilot. O modo virtual não move tropas; o modo prático usa apoio real para testar a saída e o cancelamento cronometrado, sem realizar ataque inimigo.</div>
@@ -1743,7 +1787,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
         const raw=Number(W.Timestamp?.server?.());
         const stamp=raw>1e12?raw:raw>1e9?raw*1000:0;
         if(stamp){
-          dodgeClock.deltaMs=stamp-now;
+          dodgeClock.deltaMs=raw>1e12?stamp-now:stamp-Math.floor(now/1000)*1000;
           dodgeClock.source='servidor';
         }else{dodgeClock.deltaMs=0;dodgeClock.source='local';}
       }catch{dodgeClock.deltaMs=0;dodgeClock.source='local';}
@@ -1781,19 +1825,23 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
   const dodgeDstId=a=>Number(a?.destination_town_id??a?.target_town_id??a?.to_town_id??a?.target_id);
   const dodgeArrival=a=>dodgeEpochMs(a?.arrival_at??a?.arrival_time??a?.time_of_arrival??a?.arrival);
   const dodgeStarted=a=>dodgeEpochMs(a?.started_at??a?.start_time??a?.sent_at??a?.departed_at);
+  const dodgeCancelableUntil=a=>dodgeEpochMs(a?.cancelable_until??a?.cancellable_until);
 
   // A hora de chegada vem sempre do modelo de movimentos do jogo. NÃO recalcular
   // a chegada com velocidades teóricas: heróis, pesquisas, farol, mundo e bônus
   // temporários do atacante podem estar ocultos ao defensor.
   const colonyUnitKeys=new Set(['colonize_ship','colonization_ship','colonisation_ship','colony_ship','colonizer_ship','coloniser_ship']);
-  const colonyTerms=/(?:coloniz|colonis|colony.ship|colono|conquest|takeover|conquer)/i;
+  const colonyTerms=/(?:coloniz|colonis|colony.ship|colono|conquest|take.?over|conquer)/i;
   const speedRelated=/(?:speed|veloc|movement|move.?speed|travel|viagem|cartograph|cartograf|lighthouse|farol|quest|power|spell|hero|heroi|heró|temple|templo|bonus|bônus|research|pesquis|wind|vento)/i;
   const speedEffectsKnown={
     lighthouse:'Farol (naval +15%)',farol:'Farol (naval +15%)',
     cartography:'Cartografia',cartografia:'Cartografia',
-    olympus_ares:'Templo de Ares no Olimpo (+15%)',
-    hades_helmet:'Elmo de Hades (invisibilidade; não aumenta a velocidade)',
-    helmet_of_invisibility:'Elmo de Hades (invisibilidade; não aumenta a velocidade)'
+    olympus_ares:'Templo de Ares no Olimpo (+15% de velocidade)',
+    set_sail:'Navegar (+10% no colonizador)',
+    unit_movement_boost:'Bônus de movimento',
+    unit_movement_boost_alliance:'Bônus de movimento da aliança',
+    cap_of_invisibility:'Elmo de Hades (oculta o primeiro décimo da viagem)',
+    fair_wind:'Vento favorável (força naval)'
   };
   const dodgeNumber=value=>{
     const num=Number(value);
@@ -1810,7 +1858,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
       if(depth>3||value===null||value===undefined)return;
       if(['string','number','boolean'].includes(typeof value)){
         const name=String(path.split('.').at(-1)||'').toLowerCase();
-        if(typeof value==='string'&&value.length<160&&speedRelated.test(value)){
+        if(typeof value==='string'&&value.length<160&&(speedEffectsKnown[value.toLowerCase()]||speedRelated.test(value))){
           names.add(speedEffectsKnown[value.toLowerCase()]||value);
         }else if((typeof value==='number'||typeof value==='boolean')&&speedRelated.test(name)){
           stats.push(path+'='+String(value));
@@ -1850,106 +1898,103 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     return raw.map(dodgeNumber).find(Number.isFinite)||NaN;
   };
 
-  // Velocidades e bônus documentados:
-  // CS 3; Cartografia +10%; Velas ao Vento +10% CS; Farol +15%;
-  // templo Ares no Olimpo +15%; Atalanta 13.2% (nível 1) até 36% (nível 20).
-  // Meteorologia (+10% terrestre) e Elmo de Hades (invisibilidade)
-  // não alteram diretamente a velocidade-base do navio colonizador.
-  const colonyBonusCatalog=Object.freeze([
-    {id:'cartography',name:'Cartografia',percent:10,scope:'naval'},
-    {id:'set_sail',name:'Velas ao Vento',percent:10,scope:'colony'},
-    {id:'lighthouse',name:'Farol',percent:15,scope:'naval'},
-    {id:'olympus_ares',name:'Templo de Ares (Olimpo)',percent:15,scope:'all',conditional:true}
-  ]);
-  const colonyUnitCandidates=Object.freeze([
-    {id:'colonize_ship',label:'Navio colonizador',speed:3},
-    {id:'transport_ship',label:'Transporte comum',speed:8},
-    {id:'light_ship',label:'Navio ligeiro',speed:13},
-    {id:'bireme',label:'Birreme',speed:15},
-    {id:'trireme',label:'Trirreme',speed:15},
-    {id:'fast_transport_ship',label:'Transporte rápido',speed:15}
-  ]);
   const colonyBaselineKey=(source,dest)=>Number(source)>0&&Number(dest)>0?
     String(source)+':'+String(dest):'';
   const colonyTolerance=()=>Math.max(1,Math.min(15,
     Math.floor(num(config.dodge?.colonyTimeTolerancePercent,5))))/100;
+  const colonySetupSeconds=()=>Math.max(60,900/Math.max(0.1,num(W.Game?.game_speed,1)));
   const colonyBonusPercent=value=>{
     const n=Number(value);return Number.isFinite(n)&&n>0&&n<=150?n:NaN;
   };
-  function colonyObservedBonuses(movement){
-    const seen=new Set(),out=[];
-    const add=(id,label,value)=>{
-      const pct=colonyBonusPercent(value),key=String(id||label);
-      if(!Number.isFinite(pct)||seen.has(key))return;
-      seen.add(key);out.push({id:key,label:String(label||key),percent:pct,scope:'all',observed:true});
+  function colonyEffects(movement){
+    const effects=new Map();
+    const add=(raw,key)=>{
+      const item=typeof raw==='object'&&raw?raw:{value:raw};
+      const id=String(item.power_id??item.id??item.name??item.type??key??
+        (typeof raw==='string'?raw:'')).toLowerCase();
+      if(id&&raw!==false&&raw!==0&&raw!==null&&item.active!==false){
+        const identity=id==='unit_movement_boost_alliance'?[id,item.configuration?.type??item.target??'all',
+          item.effect_id??item.cast_id??item.origin??''].join(':'):id;
+        effects.set(identity,{...item,id});
+      }
     };
-    for(const key of ['speed_bonus_percent','movement_speed_bonus_percent',
-        'travel_speed_bonus_percent','quest_speed_bonus_percent','temporary_speed_bonus_percent']){
-      if(movement[key]!==undefined)add(key,key.replace(/_/g,' '),movement[key]);
+    for(const field of ['researches','research','buildings','building','effects','active_effects','powers',
+      'spells','power','spell','speed_modifiers','bonuses','movement_buffs','quest_bonuses']){
+      const value=movement[field];
+      if(Array.isArray(value))value.slice(0,40).forEach(item=>add(item));
+      else if(value&&typeof value==='object'){
+        if(value.power_id||value.id||value.name||value.type)add(value);
+        else for(const [key,item] of Object.entries(value).slice(0,40))add(item,key);
+      }else if(typeof value==='string')add(value);
     }
-    for(const key of ['effects','active_effects','powers','speed_modifiers','bonuses']){
-      const raw=movement[key];
-      if(!raw)continue;
-      const items=Array.isArray(raw)?raw:Object.entries(raw).map(([name,v])=>
-        typeof v==='object'&&v?{id:name,...v}:{id:name,value:v});
-      for(const effect of items.slice(0,30)){
-        if(!effect||typeof effect!=='object')continue;
-        const id=String(effect.id??effect.name??effect.type??'').toLowerCase();
-        if(!/(?:speed|veloc|travell?|movement|quest|buff|boost)/i.test(id))continue;
-        const v=effect.speed_bonus_percent??effect.movement_speed_bonus_percent??
-          effect.travel_speed_percent??effect.bonus_percent??effect.percent;
-        add(id,id,v);
-      }
-    }
-    // Não somar multiplier nativo com bônus que já possam estar embutidos nele.
-    const multiplier=dodgeNumber(movement.speed_multiplier??movement.unit_speed_multiplier??movement.speed_factor);
-    return {items:out.slice(0,5),nativeMultiplier:multiplier>0&&multiplier<=5?multiplier:null};
+    return effects;
   }
-  function colonyScenarioFactors(movement={},unitType='colony'){
-    const observed=colonyObservedBonuses(movement);
-    const variable=observed.items.slice(0,3);
-    const options=[];
-    for(let mask=0;mask<(1<<colonyBonusCatalog.length);mask++){
-      const fixed=colonyBonusCatalog.filter((bonus,i)=>(mask&(1<<i))&&
-        (unitType==='colony'||bonus.scope!=='colony'));
-      // Simula Atalanta ausente ou em cada um de seus 20 níveis; não presume que ela está.
-      for(let level=0;level<=20;level++){
-        const hero=level?{id:'atalanta',name:'Atalanta nível '+level,
-          percent:Number((13.2+(level-1)*1.2).toFixed(1)),scope:'all'}:null;
-        const base=fixed.concat(hero?[hero]:[]);
-        const named=base.map(x=>x.name);
-        // Dois modelos de acumulação, porque a fórmula exata de empilhamento
-        // não é observável a partir de um ataque inimigo.
-        for(const method of ['multiplicative','additive']){
-          let factor=method==='multiplicative'?
-            base.reduce((v,x)=>v*(1+x.percent/100),1):
-            1+base.reduce((v,x)=>v+x.percent/100,0);
-          const notes=[...named],seen=new Set(base.map(x=>x.id));
-          if(observed.nativeMultiplier&&observed.nativeMultiplier!==1){
-            // Quando o servidor informa o multiplicador total, é uma hipótese
-            // completa e exclusiva, NÃO outra melhoria combinável.
-            options.push({factor:observed.nativeMultiplier,
-              effects:['Multiplicador exposto no movimento'],method:'native',conditional:false});
-          }
-          // Bônus adicionais variáveis, somente quando seus valores estão no modelo.
-          if(variable.length){
-            for(const x of variable)if(!seen.has(x.id)){
-              factor=method==='multiplicative'?factor*(1+x.percent/100):factor+x.percent/100;
-              notes.push(x.label+' +'+x.percent+'% (observado)');
-            }
-          }
-          if(factor>0&&factor<=5)options.push({factor,
-            effects:notes,method,conditional:fixed.some(x=>x.conditional)});
-        }
+  function colonyObservedBonuses(movement,unit='colonize_ship',naval=true,effects=colonyEffects(movement)){
+    let power=0,alliance=0,hasPower=false,hasAlliance=false;
+    for(const effect of effects.values()){
+      const id=effect.id;
+      const modifier=effect.configuration||effect;
+      const pct=colonyBonusPercent(modifier.speed_bonus_percent??modifier.movement_speed_bonus_percent??
+        modifier.travel_speed_percent??modifier.bonus_percent??modifier.percent??effect.value);
+      if(!Number.isFinite(pct))continue;
+      if(id==='unit_movement_boost_alliance'||id==='olympus_ares'){
+        const target=String(modifier.type||'all').toLowerCase();
+        if(target==='all'||target===unit||target===(naval?'naval':'ground')){alliance+=pct/100;hasAlliance=true;}
+      }else if(['unit_movement_boost','quest_speed_bonus','temporary_speed_bonus','movement_speed_bonus',
+        'travel_speed_bonus',...(naval?['naval_movement_boost']:[])].includes(id)){power+=pct/100;hasPower=true;}
+    }
+    const summary=['speed_bonus_percent','movement_speed_bonus_percent','travel_speed_bonus_percent',
+      'quest_speed_bonus_percent','temporary_speed_bonus_percent'].map(key=>colonyBonusPercent(movement[key])).find(Number.isFinite);
+    if(!hasPower&&summary){power=summary/100;hasPower=true;}
+    const multiplier=dodgeNumber(movement.speed_multiplier??movement.unit_speed_multiplier??movement.speed_factor);
+    return {effects,power,alliance,hasPower,hasAlliance,nativeMultiplier:multiplier<=10?multiplier:null};
+  }
+  function colonyScenarioFactors(movement,observed,{colony=true,naval=true}={}){
+    const {effects,power,alliance,hasPower,hasAlliance,nativeMultiplier}=observed;
+    if(nativeMultiplier)return [{factor:nativeMultiplier,effects:['Multiplicador informado pelo jogo'],method:'cliente'}];
+    const explicitHero=movement.hero?.type??movement.hero?.id??movement.hero_type??
+      (typeof movement.hero==='string'?movement.hero:null);
+    const level=Number(movement.hero?.level??movement.hero_level);
+    const heroLevels=explicitHero==='atalanta'&&Number.isInteger(level)&&level>=1&&level<=20?[level]:
+      explicitHero&&explicitHero!=='atalanta'||W.Game.features?.heroes_enabled===false?[0]:
+        Array.from({length:explicitHero==='atalanta'?20:21},(_,i)=>i+(explicitHero==='atalanta'?1:0));
+    const heroDef=W.GameData.heroes?.atalanta?.description_args?.[1];
+    const data=W.GameData.research_bonus,extra=W.GameData.additional_runtime_modifier;
+    const townBonuses=naval?[
+      ['cartography','Cartografia',num(data?.cartography_speed,0.10)],
+      ['lighthouse','Farol',num(extra?.lighthouse_speed_bonus,0.15)],
+      ...(colony?[['set_sail','Navegar',num(data?.colony_ship_speed,0.10)]]:[])
+    ]:[['meteorology','Meteorologia',num(data?.meteorology_speed,0.10)]];
+    const publishedBoost=colonyBonusPercent(extra?.default_unit_movement_boost)/100;
+    const powers=hasPower?[power]:Number.isFinite(publishedBoost)?[0,publishedBoost]:[0];
+    const olympus=W.Game.features?.end_game_type??W.Game.end_game_type;
+    const alliances=hasAlliance?[alliance]:effects.has('olympus_ares')?[0.15]:
+      olympus==null||/olympus|olimpo/i.test(String(olympus))?[0,0.15]:[0];
+    const knownSirens=[movement.units,movement.unit_counts,movement.troops,movement.units_sent]
+      .map(units=>units?.siren?.count??units?.siren?.amount??units?.siren)
+      .map(v=>v==null?NaN:Number(v)).find(n=>Number.isSafeInteger(n)&&n>=0);
+    const sirens=!naval?[0]:knownSirens!==undefined?[Math.min(50,knownSirens)]:
+      Object.keys(W.GameData.units||{}).length&&!W.GameData.units.siren?[0]:Array.from({length:51},(_,i)=>i);
+    const unique=new Map();
+    for(let mask=0;mask<(1<<townBonuses.length);mask++){
+      const selected=townBonuses.filter((x,i)=>mask&(1<<i));
+      if(townBonuses.some((x,i)=>effects.has(x[0])&&!(mask&(1<<i))))continue;
+      const townFactor=1+selected.reduce((sum,x)=>sum+x[2],0);
+      for(const heroLevel of heroLevels)for(const powerBonus of powers)for(const allianceBonus of alliances)for(const sirenCount of sirens){
+        const heroBonus=heroLevel?(num(heroDef?.value,0.12)+heroLevel*num(heroDef?.level_mod,0.012)):0;
+        // O cliente soma pesquisas/prédio, aplica poder e herói, soma a aliança e multiplica pelo bônus de sereias.
+        const factor=townFactor*((1+powerBonus)*(1+heroBonus)+allianceBonus)*(1+sirenCount*0.02);
+        const key=factor.toFixed(7);
+        if(unique.has(key))continue;
+        const names=selected.map(x=>x[1]);
+        if(heroLevel)names.push('Atalanta nível '+heroLevel);
+        if(powerBonus)names.push('Movimento +'+Math.round(powerBonus*100)+'%');
+        if(allianceBonus)names.push('Aliança/Ares +'+Math.round(allianceBonus*100)+'%');
+        if(sirenCount)names.push('Sereias +'+(sirenCount*2)+'%');
+        unique.set(key,{factor,effects:names,method:'cliente'});
       }
     }
-    const unique=new Map();
-    for(const opt of options){
-      const key=opt.factor.toFixed(5)+':'+opt.method;
-      const before=unique.get(key);
-      if(!before||opt.effects.length<before.effects.length)unique.set(key,opt);
-    }
-    return [...unique.values()].sort((a,b)=>a.factor-b.factor);
+    return [...unique.values()];
   }
 
   function colonyFindTown(id){
@@ -1972,10 +2017,8 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
   function colonyTownCoordinates(t){
     if(!t)return null;
     const attrs=t.attributes||{};
-    const fromGetter=typeof t.getX==='function'&&typeof t.getY==='function'?
-      [t.getX(),t.getY()]:null;
-    const x=Number(fromGetter?.[0]??attrs.abs_x??attrs.x??t.abs_x??t.x);
-    const y=Number(fromGetter?.[1]??attrs.abs_y??attrs.y??t.abs_y??t.y);
+    const x=Number(t.getAbsX?.()??attrs.abs_x??t.abs_x??t.getX?.()??attrs.x??t.x);
+    const y=Number(t.getAbsY?.()??attrs.abs_y??t.abs_y??t.getY?.()??attrs.y??t.y);
     return Number.isFinite(x)&&Number.isFinite(y)?{x,y,kind:'town'}:null;
   }
   function colonyMovementGeometry(a){
@@ -2036,11 +2079,11 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     if(!model||!Number.isFinite(worldSpeed)||worldSpeed<=0)return null;
     const seconds=model.intercept+model.slope*g.distance/(csSpeed*worldSpeed);
     return seconds>=60&&seconds<=172800?{
-      seconds,source:'calibração automática aproximada ('+model.count+' movimentos próprios)',
+      seconds,setup:model.intercept,source:'calibração automática aproximada ('+model.count+' movimentos próprios)',
       uncertainty:Math.max(0.10,model.residual*2),distance:g.distance,
       calibrationSamples:model.count}:null;
   }
-  function colonyTimeModel(movement,source,dest,arrivalMs,startedAt,id){
+  function colonyTimeModel(movement,source,dest,arrivalMs,startedAt){
     const explicit=moving=>{
       const raw=moving?.colony_ship_base_duration_seconds??
         moving?.colonize_ship_base_seconds??moving?.colony_ship_normal_duration;
@@ -2050,67 +2093,91 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const route=colonyBaselineKey(source,dest);
     const direct=explicit(movement);
     const stored=Number(config.dodge?.colonyBaselineMinutes?.[route]);
-    const auto=Number.isFinite(direct)||Number.isFinite(stored)&&stored>=1&&stored<=2880?
-      null:colonyAutoBaseline(movement);
+    const speed=Number(W.GameData?.units?.colonize_ship?.speed)||3;
+    const setup=colonySetupSeconds();
+    const nativeDistance=dodgeNumber(movement.distance??movement.travel_distance??movement.route_distance);
+    const manual=Number.isFinite(stored)&&stored>=1&&stored<=2880;
+    const auto=Number.isFinite(direct)||manual||Number.isFinite(nativeDistance)?null:colonyAutoBaseline(movement);
     const baseSeconds=Number.isFinite(direct)?direct:
-      Number.isFinite(stored)&&stored>=1&&stored<=2880?stored*60:
+      manual?stored*60:Number.isFinite(nativeDistance)?setup+Math.floor(nativeDistance*50/speed):
       auto?.seconds??NaN;
     const observedSeconds=Number.isFinite(startedAt)&&startedAt<=arrivalMs?
       (arrivalMs-startedAt)/1000:NaN;
+    const observed=colonyObservedBonuses(movement);
+    const hiding=['cap_of_invisibility','hades_helmet','helmet_of_invisibility'].some(x=>observed.effects.has(x))||
+      Number.isFinite(dodgeEpochMs(movement.cap_of_invisibility_effective_until));
+    const remaining=Math.max(0,(arrivalMs-dodgeNow())/1000);
+    const visibleLowerBoundSeconds=Math.ceil(remaining/(hiding?0.9:1));
+    const evidence={observedSeconds:Number.isFinite(observedSeconds)?Math.round(observedSeconds):null,
+      hiddenFraction:hiding?0.1:0,visibleLowerBoundSeconds,remainingSeconds:Math.round(remaining)};
     if(!Number.isFinite(baseSeconds)){
       return {available:false,route,reason:route?
         'Cadastre a duração-base do CS nesse trajeto, sem bônus, consultando o simulador de ataque do Grepolis.':
         'Origem desconhecida: não é possível calcular o trajeto do CS.',
-        baseSeconds:null,observedSeconds:Number.isFinite(observedSeconds)?observedSeconds:null,
+        baseSeconds:null,...evidence,
         matches:[],alternatives:[],compatibleOnly:false};
     }
-    const speed=Number(W.GameData?.units?.colonize_ship?.speed)||3;
-    const configs=colonyScenarioFactors(movement,'colony');
-    const otherConfigs=colonyScenarioFactors(movement,'naval');
-    const tolerance=Math.max(30,Number.isFinite(observedSeconds)?
-      observedSeconds*Math.max(colonyTolerance(),auto&&(!Number.isFinite(stored)||stored<1)?
-        auto.uncertainty:0):baseSeconds*colonyTolerance());
-    const build=(unit,baseSpeed,options)=>{
-      const speedRatio=speed/baseSpeed;
-      return options.map(c=>{
-        const seconds=baseSeconds*speedRatio/c.factor;
-        return {unit,seconds:Math.round(seconds),factor:Number(c.factor.toFixed(4)),
-          method:c.method,effects:c.effects,conditional:c.conditional,
-          differenceSeconds:Number.isFinite(observedSeconds)?
-            Math.round(Math.abs(seconds-observedSeconds)):null};
-      });
-    };
-    const scenarios=build('colonize_ship',speed,configs);
-    const alternates=colonyUnitCandidates.filter(u=>u.id!=='colonize_ship')
-      .flatMap(unit=>build(unit.id,Number(W.GameData?.units?.[unit.id]?.speed)||unit.speed,otherConfigs));
-    const match=scenarios.filter(x=>Number.isFinite(observedSeconds)&&
-      x.differenceSeconds<=tolerance);
-    const alternativeMatch=alternates.filter(x=>Number.isFinite(observedSeconds)&&
-      x.differenceSeconds<=tolerance);
-    const sortMatches=x=>x.sort((a,b)=>a.differenceSeconds-b.differenceSeconds||
-      a.effects.length-b.effects.length);
-    const minSeconds=Math.min(...scenarios.map(x=>x.seconds));
-    const maxSeconds=Math.max(...scenarios.map(x=>x.seconds));
-    const remaining=Math.max(0,(arrivalMs-dodgeNow())/1000);
-    const compatibleOnly=!Number.isFinite(observedSeconds)&&remaining<=maxSeconds+tolerance;
+    const tuning=auto?.uncertainty??(manual?colonyTolerance():0);
+    const tolerance=Math.max(10,(Number.isFinite(observedSeconds)?observedSeconds:baseSeconds)*tuning);
+    const fixedDelay=auto?.setup??Math.min(setup,baseSeconds);
+    const baseTravel=Math.max(0,baseSeconds-fixedDelay);
+    const pathFactor=Number.isFinite(nativeDistance)&&!Number.isFinite(direct)&&!manual?nativeDistance*50:baseTravel*speed;
+    const duration=(baseSpeed,factor)=>Math.round(fixedDelay+Math.floor(pathFactor/(baseSpeed*factor)+1e-7));
+    const scenarios=colonyScenarioFactors(movement,observed);
+    const matches=[];
+    let minSeconds=Infinity,maxSeconds=0;
+    for(const c of scenarios){
+      const seconds=duration(speed,c.factor);
+      minSeconds=Math.min(minSeconds,seconds);maxSeconds=Math.max(maxSeconds,seconds);
+      const differenceSeconds=Math.abs(seconds-observedSeconds);
+      if(differenceSeconds<=tolerance)matches.push({unit:'colonize_ship',seconds,factor:c.factor,
+        method:c.method,effects:c.effects,differenceSeconds});
+    }
+    matches.sort((a,b)=>a.differenceSeconds-b.differenceSeconds||a.effects.length-b.effects.length);
+    const alternatives=[];
+    if(matches.length){
+      const from=colonyFindTown(source),to=colonyFindTown(dest);
+      const ax=from?.getIslandCoordinateX?.()??from?.attributes?.island_x;
+      const ay=from?.getIslandCoordinateY?.()??from?.attributes?.island_y;
+      const bx=to?.getIslandCoordinateX?.()??to?.attributes?.island_x;
+      const by=to?.getIslandCoordinateY?.()??to?.attributes?.island_y;
+      const differentIsland=[ax,ay,bx,by].every(v=>v!=null)&&(Number(ax)!==Number(bx)||Number(ay)!==Number(by));
+      const otherFactors=new Map();
+      for(const [unit,data] of Object.entries(W.GameData?.units||{})){
+        if(colonyUnitKeys.has(unit)||unit==='militia'||!Number.isFinite(dodgeNumber(data?.speed))||(!data.is_naval&&differentIsland))continue;
+        const otherObserved=colonyObservedBonuses(movement,unit,Boolean(data.is_naval),observed.effects);
+        const key=[Boolean(data.is_naval),otherObserved.power,otherObserved.hasPower,
+          otherObserved.alliance,otherObserved.hasAlliance].join(':');
+        if(!otherFactors.has(key))otherFactors.set(key,colonyScenarioFactors(movement,otherObserved,
+          {colony:false,naval:Boolean(data.is_naval)}));
+        let closest=null;
+        for(const c of otherFactors.get(key)){
+          const seconds=duration(data.speed,c.factor),differenceSeconds=Math.abs(seconds-observedSeconds);
+          if(differenceSeconds<=tolerance&&(!closest||differenceSeconds<closest.differenceSeconds))
+            closest={unit,seconds,differenceSeconds};
+        }
+        if(closest)alternatives.push(closest);
+      }
+      alternatives.sort((a,b)=>a.differenceSeconds-b.differenceSeconds);
+    }
+    const compatibleOnly=!Number.isFinite(observedSeconds)&&visibleLowerBoundSeconds<=maxSeconds+tolerance;
     return {available:true,route,source:Number.isFinite(direct)?'modelo do jogo':
-      Number.isFinite(stored)&&stored>=1?'duração informada pelo jogador':auto.source,
-      distance:auto?.distance??null,calibrationSamples:auto?.calibrationSamples??0,
-      baseSeconds:Math.round(baseSeconds),observedSeconds:Number.isFinite(observedSeconds)?Math.round(observedSeconds):null,
-      remainingSeconds:Math.round(remaining),toleranceSeconds:Math.round(tolerance),
-      minSeconds,maxSeconds,compatibleOnly,
-      matches:sortMatches(match).slice(0,8),
-      alternatives:sortMatches(alternativeMatch).slice(0,8),
+      manual?'duração informada pelo jogador':Number.isFinite(nativeDistance)?'distância informada pelo jogo':auto.source,
+      distance:Number.isFinite(nativeDistance)?nativeDistance:auto?.distance??null,
+      calibrationSamples:auto?.calibrationSamples??0,
+      baseSeconds:Math.round(baseSeconds),...evidence,toleranceSeconds:Math.round(tolerance),
+      minSeconds,maxSeconds,compatibleOnly,matches:matches.slice(0,8),alternatives:alternatives.slice(0,8),
       scenarioCount:scenarios.length,reason:Number.isFinite(observedSeconds)?
-        match.length?'Duração total compatível com combinações de bônus do colono.':
+        matches.length?'Duração compatível com colono; confira também as outras unidades.':
           'Nenhum cenário testado coincide com a duração total.':
-        compatibleOnly?'Tempo restante cabe em cenários de CS, mas não prova quando partiu.':
-          'Tempo restante excede os cenários calculados de CS sem efeitos desconhecidos.'};
+        compatibleOnly?'Tempo restante compatível com algumas viagens; partida indisponível.':
+          'Tempo restante acima dos cenários calculados com os dados disponíveis.'};
   }
+  const dodgeIntelCache=new Map();
   function dodgeAttackIntel(a,model,townId,source,arrivalMs,id){
     const type=String(a.type??a.command_type??a.movement_type??'').toLowerCase();
     const subtype=String(a.attack_type??a.subtype??a.command_subtype??a.movement_subtype??'').toLowerCase();
-    const explicitFields=[type,subtype,String(a.colonization_type??'')];
+    const explicitFields=[type,subtype,String(a.colonization_type??''),String(a.command_type??'')];
     const effects=dodgeMovementEffects(a),signals=[];
     const startedAt=dodgeStarted(a);
     const elapsed=Number.isFinite(startedAt)&&startedAt<=arrivalMs?arrivalMs-startedAt:NaN;
@@ -2135,11 +2202,11 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const nativeSpeed=dodgeNumber(a.effective_unit_speed??a.movement_unit_speed??a.unit_speed);
     const unitSpeed=dodgeUnitSpeed();
     const multiplier=dodgeNumber(a.speed_multiplier??a.unit_speed_multiplier??a.speed_factor)||1;
-    const expectedShipSpeed=3*unitSpeed*multiplier;
+    const expectedShipSpeed=(num(W.GameData?.units?.colonize_ship?.speed,3))*unitSpeed*multiplier;
     // Velocidade 3 corresponde ao CS em mundos com fator 1.
     // Velocidades dos outros navios e bônus ocultos podem coincidir; indício apenas.
     const candidates=dodgeSpeedCandidates(nativeSpeed,unitSpeed,multiplier);
-    const travel=colonyTimeModel(a,source,townId,arrivalMs,startedAt,id);
+    const travel=colonyTimeModel(a,source,townId,arrivalMs,startedAt);
     const durationMatch=travel.available&&travel.matches.length>0;
     const speedCompatible=Number.isFinite(nativeSpeed)&&Number.isFinite(expectedShipSpeed)&&
       Math.abs(nativeSpeed-expectedShipSpeed)/expectedShipSpeed<=0.12;
@@ -2151,7 +2218,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const mark=String(config.dodge?.attackMarks?.[id]||'');
     let classification=confirmed?'confirmed':speedCompatible||durationMatch?'suspected':revolt?'revolt':'unknown';
     if(mark==='colony')classification='manual_colony';
-    else if(mark==='normal')classification='manual_normal';
+    else if(mark==='normal'&&!confirmed)classification='manual_normal';
     const reasons={confirmed:'Colonização confirmada por dados explícitos',
       suspected:'Possível colonizador: velocidade ou duração total compatível com bônus',
       revolt:'Ataque de revolta — colono não confirmado',
@@ -2171,18 +2238,37 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
   function dodgeAttackDecision(attack){
     if(attack.simulated)return {allow:true,reason:'Teste prático'};
     const status=attack.intel?.classification||'unknown';
-    const policy=String(config.dodge?.colonizationPolicy||'review');
-    if(policy==='all')return {allow:true,reason:'Esquivar de todos os ataques'};
-    if(['confirmed','manual_colony'].includes(status))
-      return {allow:false,reason:'Ataque de colonização: manter tropas até revisão'};
-    if(['review','strict'].includes(policy)&&status==='suspected')
-      return {allow:false,reason:'Possível colonizador: verifique e classifique o movimento'};
-    if(policy==='strict'&&status==='unknown')
-      return {allow:false,reason:'Ataque sem classificação confiável: aguardar revisão'};
-    return {allow:true,reason:status==='unknown'?'Ataque não identificado; defesa padrão':'Ataque comum/revolta'};
+    if(dodgeIsColony(attack))return config.dodge?.colonizationPolicy==='all'?
+      {allow:true,reason:'Colono identificado: esquivar e mirar retorno 1 s após o impacto'}:
+      {allow:false,reason:'Colono identificado: manter ou trazer a defesa'};
+    return {allow:true,reason:status==='suspected'?'Possível colono por duração ou velocidade; presença sem confirmação':
+      status==='unknown'?'Composição oculta; segue a regra da esquiva comum':'Ataque comum ou revolta'};
   }
-  const dodgeConflictWindow=()=>Math.max(60,Math.min(600,
-    Math.floor(num(config.dodge?.colonyConflictWindowSeconds,180))))*1000;
+  const dodgeIsColony=attack=>['confirmed','manual_colony'].includes(attack.intel?.classification);
+  function dodgeMarkAttack(id,mark){
+    if(typeof id!=='string'||!id||id.length>128||!['colony','normal','clear'].includes(mark))
+      throw Error('Classificação inválida');
+    const attack=dodgeIncoming().find(a=>a.id===id&&!a.simulated&&a.arrivalMs>dodgeNow());
+    if(!attack)throw Error('Movimento não está mais visível');
+    if(mark==='normal'&&attack.intel?.classification==='confirmed')
+      throw Error('O jogo confirmou um navio colonizador neste ataque');
+    config.dodge.attackMarks??={};
+    if(mark==='clear')delete config.dodge.attackMarks[id];
+    else config.dodge.attackMarks[id]=mark;
+    if(Object.keys(config.dodge.attackMarks).length>400)
+      config.dodge.attackMarks=Object.fromEntries(Object.entries(config.dodge.attackMarks).slice(-250));
+    save();render();return true;
+  }
+  function dodgeSetColonyBaseline(id,minutes){
+    const attack=dodgeIncoming().find(a=>a.id===id&&!a.simulated&&a.arrivalMs>dodgeNow());
+    if(!attack?.intel?.originTownId)throw Error('Ataque não encontrado ou origem indisponível');
+    if(!Number.isFinite(minutes)||minutes<1||minutes>2880)
+      throw Error('Informe a duração-base do colonizador, entre 1 e 2.880 minutos');
+    const route=colonyBaselineKey(attack.intel.originTownId,attack.townId);
+    config.dodge.colonyBaselineMinutes??={};
+    config.dodge.colonyBaselineMinutes[route]=Number(minutes.toFixed(2));
+    save();render();return true;
+  }
   function dodgeColonyThreat(attacks,townId,start,end){
     return attacks.find(a=>Number(a.townId)===Number(townId)&&!a.simulated&&
       a.arrivalMs>=start&&a.arrivalMs<=end&&!dodgeAttackDecision(a).allow)||null;
@@ -2200,16 +2286,27 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const seen=new Set();
     const real=dodgeMovements().flatMap(({model,data:a})=>{
       const type=String(a.type??a.command_type??a.movement_type??'').toLowerCase();
-      if(!(type==='attack'||type.startsWith('attack_')||type==='attacking'||
-        type==='conquest'||type==='takeover'||type==='colonization'||type==='colonisation'||
-        a.is_colonization===true||a.is_conquest===true||a.has_colony_ship===true))return [];
+      const hasColonyData=colonyTerms.test(String(a.command_type??a.command_subtype??''))||
+        a.is_colonization===true||a.is_colonisation===true||a.is_conquest===true||a.is_takeover===true||
+        a.has_colony_ship===true||a.contains_colony_ship===true;
+      if(!(type==='attack'||type.startsWith('attack_')||type==='attacking'||type==='revolt'||
+        colonyTerms.test(type)||hasColonyData))return [];
       const townId=dodgeDstId(a),source=dodgeSrcId(a),arrivalMs=dodgeArrival(a);
-      if(!owned.has(townId)||(Number.isSafeInteger(source)&&owned.has(source))||!Number.isFinite(arrivalMs))return [];
+      if(!owned.has(townId)||(Number.isSafeInteger(source)&&owned.has(source))||
+        !Number.isFinite(arrivalMs)||arrivalMs<dodgeNow()-60000||model.isReturning?.())return [];
       const id=String(a.command_id??a.id??model.id??'attack-'+townId+'-'+arrivalMs);
       if(seen.has(id))return [];
       seen.add(id);
-      const intel=dodgeAttackIntel(a,model,townId,source,arrivalMs,id);
-      return [{townId,arrivalMs,id,type,intel}];
+      const key=scope+'|'+id;
+      const signature=JSON.stringify([a,config.dodge.attackMarks?.[id],
+        config.dodge.colonyBaselineMinutes?.[colonyBaselineKey(source,townId)],colonyTolerance()]);
+      let intel=dodgeIntelCache.get(key);
+      if(!intel||intel.signature!==signature||Date.now()-intel.at>15000){
+        intel={value:dodgeAttackIntel(a,model,townId,source,arrivalMs,id),signature,at:Date.now()};
+        if(dodgeIntelCache.size>=500)dodgeIntelCache.delete(dodgeIntelCache.keys().next().value);
+        dodgeIntelCache.set(key,intel);
+      }
+      return [{townId,arrivalMs,id,type,intel:intel.value}];
     });
     return real.concat(testAttacks()).sort((a,b)=>a.arrivalMs-b.arrivalMs);
   }
@@ -2220,6 +2317,12 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
         dodgeSrcId(a)===Number(from)&&dodgeDstId(a)===Number(to)&&
         Number.isSafeInteger(dodgeMoveId(m))&&dodgeMoveId(m)>0;
     });
+  }
+  function dodgeReturnArrival(job){
+    const match=dodgeMovements().find(m=>dodgeMoveId(m)===Number(job.commandId)&&
+      dodgeSrcId(m.data)===Number(job.townId)&&dodgeDstId(m.data)===Number(job.townId));
+    const arrival=dodgeArrival(match?.data);
+    return Number.isFinite(arrival)?arrival:0;
   }
   const dodgeWorld={towns:[],loading:null,loadedAt:0,nextTry:0,error:''};
   const dodgeTownCache={rows:[],at:0};
@@ -2328,9 +2431,14 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const j=b.getIslandId?.()??b.attributes?.island_id;
     return i!=null&&j!=null&&String(i)===String(j);
   }
-  const dodgeLead=()=>Math.max(20,Math.min(180,Math.floor(num(config.dodge.leadSeconds,60))))*1000;
-  const dodgeAfter=()=>Math.max(10,Math.min(90,Math.floor(num(config.dodge.returnAfterSeconds,15))))*1000;
-  const dodgeWaveGap=()=>Math.max(1,Math.min(60,Math.floor(num(config.dodge.waveGapSeconds,12))))*1000;
+  function dodgeSeconds(key,min,max){
+    const raw=config.dodge[key];
+    const value=(typeof raw==='number'||typeof raw==='string'&&raw.trim())?num(raw,BASE.dodge[key]):BASE.dodge[key];
+    return Math.max(min,Math.min(max,Math.floor(value)));
+  }
+  const dodgeLead=()=>dodgeSeconds('leadSeconds',20,180)*1000;
+  const dodgeAfter=()=>1000;
+  const dodgeWaveGap=()=>dodgeSeconds('waveGapSeconds',1,60)*1000;
   function dodgeDestinations(id,incoming=[]){
     const origin=townBy(id);if(!origin)return [];
     const now=dodgeNow(),margin=dodgeLead()+dodgeAfter()+dodgeWaveGap();
@@ -2379,25 +2487,25 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     localStorage.setItem(DODGE_LOCK,JSON.stringify({owner:instanceId,until:now+2500}));
     return true;
   }
-  function dodgeLateAttacks(job,attacks){
-    const max=Number(job.firstImpactMs)+dodgeWaveGap();
-    const waves=attacks.filter(a=>Number(a.townId)===Number(job.townId)&&
-      a.arrivalMs>=Number(job.firstImpactMs)-1000&&a.arrivalMs<=max);
-    return Math.max(Number(job.lastImpactMs)||0,...waves.map(a=>a.arrivalMs));
+  function dodgeWave(first,attacks){
+    const waves=attacks.filter(a=>a.townId===first.townId&&a.arrivalMs>=first.arrivalMs&&
+      a.arrivalMs-first.arrivalMs<=dodgeWaveGap());
+    const colonyImpact=config.dodge.colonizationPolicy==='all'?
+      first.colonyImpactMs||[first,...waves].find(dodgeIsColony)?.arrivalMs||0:0;
+    return {impact:colonyImpact||Math.max(first.arrivalMs,first.lastImpactMs||0,...waves.map(a=>a.arrivalMs)),
+      colonyImpact};
   }
-  // Cancelar DEPOIS do último impacto, não no meio do voo para tentar voltar no segundo exato.
-  // Até 10 min após a saída; o retorno será posterior e varia conforme a viagem realizada.
-  const dodgeTiming=(startMs,lastImpactMs)=>({
-    cancelAtMs:lastImpactMs+dodgeAfter(),
-    deadlineMs:startMs+590000
-  });
+  function dodgeTiming(startMs,lastImpactMs){
+    const returnAtMs=lastImpactMs+dodgeAfter();
+    return {returnAtMs,cancelAtMs:startMs+(returnAtMs-startMs)/2,deadlineMs:startMs+590000};
+  }
   const dodgeActive=j=>['dispatching','identifying','sent','canceling'].includes(j?.state);
   const dodgeTracked=d=>Object.values(d.jobs||{}).filter(dodgeActive);
   function dodgeFindCommand(job){
     const outgoing=dodgeOutgoing(job.townId,job.targetId),excluded=new Set((job.existingIds||[]).map(String));
     if(job.commandId){
       const exact=outgoing.find(m=>dodgeMoveId(m)===Number(job.commandId));
-      if(exact)return exact;
+      return exact||null;
     }
     const found=outgoing.filter(m=>{
       if(excluded.has(String(dodgeMoveId(m))))return false;
@@ -2425,23 +2533,42 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     dodgeSaveRecord(store,job);
     notify('Esquiva '+tName(townBy(job.townId))+': '+reason+' (apoio #'+(job.commandId||'?')+')');
   }
+  function dodgeReadCommand(job,found){
+    job.commandId=dodgeMoveId(found);
+    const data=found.data;
+    for(const [field,value] of [['startedAtMs',dodgeStarted(data)],['outboundArrivalMs',dodgeArrival(data)],
+      ['cancelableUntilMs',dodgeCancelableUntil(data)]]){
+      if(Number.isFinite(value))job[field]=value;
+    }
+  }
+  function dodgeRecordReturn(store,job,now,arrival){
+    job.state='cancelled';job.cancelledAtMs=now;
+    if(arrival)job.confirmedReturnAtMs=arrival;
+    job.error='';dodgeSaveRecord(store,job);
+  }
   async function dodgeCancel(store,job,now){
     if(!job.commandId||job.state==='canceling'||job.state==='cancelled')return false;
-    if(now>=Number(job.sentAtMs)+600000){
-      dodgeAttention(store,job,'A janela de cancelamento de 10 minutos passou');
+    const started=Number(job.startedAtMs)||Number(job.sentAtMs);
+    const deadline=Math.min(started+600000,job.cancelableUntilMs||Infinity);
+    if(now>=deadline||job.outboundArrivalMs&&now>=job.outboundArrivalMs){
+      dodgeAttention(store,job,'A janela de cancelamento do apoio passou');
       return false;
     }
     job.state='canceling';job.cancelRequestedAtMs=now;dodgeSaveRecord(store,job);
     try{
       await action('command_info','cancel_command',{id:Number(job.commandId),town_id:Number(job.townId),nl_init:true},true);
-      job.state='cancelled';job.cancelledAtMs=dodgeNow();
-      job.estimatedArrivalMs=2*job.cancelledAtMs-(Number(job.startedAtMs)||Number(job.sentAtMs));
-      job.error='Cancelamento solicitado e aceito pelo cliente; retorno ainda não confirmado';
-      dodgeSaveRecord(store,job);
+      job.estimatedArrivalMs=job.cancelRequestedAtMs+(job.cancelRequestedAtMs-started);
+      dodgeRecordReturn(store,job,dodgeNow(),dodgeReturnArrival(job));
       log('Esquiva '+tName(townBy(job.townId))+': cancelamento do apoio #'+job.commandId+
-        ' aceito; retorno estimado '+new Date(job.estimatedArrivalMs).toLocaleTimeString('pt-BR',{hour12:false}));
+        ' aceito; '+(job.confirmedReturnAtMs?'retorno informado pelo jogo ':'retorno estimado ')+
+        new Date(job.confirmedReturnAtMs||job.estimatedArrivalMs).toLocaleTimeString('pt-BR',{hour12:false}));
       return true;
     }catch(e){
+      const knownReturn=dodgeReturnArrival(job);
+      if(knownReturn){
+        dodgeRecordReturn(store,job,dodgeNow(),knownReturn);
+        return true;
+      }
       job.cancelAttempts=(Number(job.cancelAttempts)||0)+1;
       job.error=String(e?.message||e);
       if(job.cancelAttempts>=3||/invalid|expired|too late|not found|already cancelled|não pode|expirad/i.test(job.error)){
@@ -2459,25 +2586,23 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const job={
       id:'ED-'+townId+'-'+Date.now().toString(36),townId,targetId,group:'all',
       units,testId,state:'dispatching',sentAtMs:now,
-      firstImpactMs:wave.firstImpactMs,lastImpactMs:wave.lastImpactMs,
+      firstImpactMs:wave.firstImpactMs,lastImpactMs:wave.lastImpactMs,colonyImpactMs:wave.colonyImpact,
       existingIds:existing,commandId:0,retryAfterMs:0,cancelAttempts:0
     };
     dodgeSaveRecord(store,job);
     try{
       const result=await action('town_info','send_units',
         {id:Number(targetId),town_id:Number(townId),type:'support',nl_init:true,...units},Boolean(testId));
-      const suppliedId=Number(result?.json?.data?.command_id??result?.json?.command_id??
-        result?.command_id??result?.json?.data?.id);
+      const response=result?.json??result;
+      const suppliedId=Number(response?.data?.command_id??response?.command_id??response?.data?.id);
       if(Number.isSafeInteger(suppliedId)&&suppliedId>0)job.commandId=suppliedId;
       job.state='identifying';job.ackAtMs=dodgeNow();dodgeSaveRecord(store,job);
       const found=dodgeFindCommand(job);
       if(found){
-        job.commandId=dodgeMoveId(found);
-        job.startedAtMs=dodgeStarted(found.data)||job.sentAtMs;
-        job.outboundArrivalMs=dodgeArrival(found.data);
+        dodgeReadCommand(job,found);
         job.state='sent';dodgeSaveRecord(store,job);
       }else if(job.commandId){
-        job.startedAtMs=job.sentAtMs;job.state='sent';dodgeSaveRecord(store,job);
+        job.state='sent';dodgeSaveRecord(store,job);
       }
       log('Esquiva: apoio único '+tName(townBy(townId))+' → '+dodgeTargetName(targetId)+
         ' com '+Object.values(units).reduce((sum,x)=>sum+num(x),0)+' unidades; '+(job.commandId?'#'+job.commandId:'identificando comando'));
@@ -2507,7 +2632,9 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
   async function dodgePulse(){
     if(scope!==currentScope()||dodgeBusy||securityWatch()||!dodgeCanOperate())return;
     const previous=dodgeRead();
-    if((!config.enabled||!config.modules.dodge)&&!dodgeTracked(previous).length&&!testActive())return;
+    if((!config.enabled||!config.modules.dodge)&&!dodgeTracked(previous).length&&!testActive()&&
+      !Object.values(previous.jobs||{}).some(j=>j.state==='cancelled'&&!j.confirmedReturnAtMs&&
+        dodgeNow()-num(j.cancelledAtMs)<120000))return;
     if(!dodgeLeader())return;
     dodgeBusy=true;
     try{
@@ -2515,23 +2642,31 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
       store.jobs??={};store.handled??={};
       dodgeCleanup(store,now);
       const incoming=dodgeIncoming();
-      // Avisos antecipados, não apenas segundos antes da chegada. Uma suspeita não é confirmação.
+      for(const job of Object.values(store.jobs)){
+        if(job.state!=='cancelled'||job.confirmedReturnAtMs||now-num(job.cancelledAtMs)>120000)continue;
+        const eta=dodgeReturnArrival(job);
+        if(eta){job.confirmedReturnAtMs=eta;dodgeSaveRecord(store,job);}
+      }
+      // Mostra suspeitas com antecedência para permitir marcar a composição manualmente.
       if(config.enabled&&config.modules.dodge){
         for(const threat of incoming){
           if(threat.simulated||threat.arrivalMs<now||
             threat.arrivalMs>now+6*3600000)continue;
-          if(dodgeAttackDecision(threat).allow)continue;
+          const decision=dodgeAttackDecision(threat);
+          if(decision.allow&&threat.intel?.classification!=='suspected')continue;
           const key=threat.id+':'+threat.intel.classification;
           if(store.classifiedWarnings?.[key])continue;
           store.classifiedWarnings??={};store.classifiedWarnings[key]=now;
           dodgeWrite(store);
           notify(dodgeClassificationLabel(threat)+' contra '+tName(townBy(threat.townId))+
             '. Chegada '+new Date(threat.arrivalMs).toLocaleTimeString('pt-BR',{hour12:false})+
-            '. Confira os dados em ESQUIVA; defesa mantida.');
+            (decision.allow?'. Confira os cenários em ESQUIVA.':'. Defesa preservada.'));
         }
       }
       // Primeiro processar retornos pendentes, inclusive se o usuário desligou o módulo.
       for(const job of dodgeTracked(store)){
+        const knownReturn=job.commandId&&dodgeReturnArrival(job);
+        if(knownReturn){dodgeRecordReturn(store,job,now,knownReturn);continue;}
         if(job.state==='canceling'){
           if(now-num(job.cancelRequestedAtMs,now)>16000){
             job.state='sent';job.retryAfterMs=now+2000;
@@ -2542,12 +2677,9 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
         if(job.state==='dispatching'||job.state==='identifying'){
           const found=dodgeFindCommand(job);
           if(found){
-            job.commandId=dodgeMoveId(found);
-            job.startedAtMs=dodgeStarted(found.data)||job.sentAtMs;
-            job.outboundArrivalMs=dodgeArrival(found.data);
+            dodgeReadCommand(job,found);
             job.state='sent';dodgeSaveRecord(store,job);
           }else if(job.commandId){
-            job.startedAtMs=job.startedAtMs||job.sentAtMs;
             job.state='sent';dodgeSaveRecord(store,job);
           }else if(now-num(job.sentAtMs)>45000){
             dodgeAttention(store,job,'Movimento não identificado após 45 segundos. Confira o apoio no Grepolis');
@@ -2556,7 +2688,14 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
         }
         if(job.state!=='sent'||num(job.retryAfterMs)>now)continue;
         if(job.forceCancel){await dodgeCancel(store,job,now);return;}
-        const nearbyColony=dodgeColonyThreat(incoming,job.townId,now,now+dodgeConflictWindow());
+        const found=dodgeFindCommand(job);
+        if(found)dodgeReadCommand(job,found);
+        const first={townId:Number(job.townId),arrivalMs:Number(job.firstImpactMs),
+          lastImpactMs:job.lastImpactMs,colonyImpactMs:job.colonyImpactMs};
+        const start=num(job.startedAtMs,job.sentAtMs)||num(job.sentAtMs);
+        const {impact,colonyImpact}=dodgeWave(first,incoming);
+        const plan=dodgeTiming(start,impact);
+        const nearbyColony=dodgeColonyThreat(incoming,job.townId,now,plan.returnAtMs);
         if(nearbyColony){
           if(!job.colonyConflictWarned){
             job.colonyConflictWarned=true;
@@ -2564,48 +2703,40 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
             const projected=2*now-(num(job.startedAtMs)||num(job.sentAtMs));
             notify('Esquiva: '+dodgeClassificationLabel(nearbyColony)+' detectado após envio do apoio #'+
               (job.commandId||'?')+'. Solicitando retorno imediato; '+
-              (projected<=nearbyColony.arrivalMs-10000?'retorno pode chegar antes do impacto.':
+              (projected<nearbyColony.arrivalMs?'retorno pode chegar antes do impacto.':
                 'não há tempo confirmado para retornar antes do impacto.'));
           }
           await dodgeCancel(store,job,now);
           return;
         }
-        job.lastImpactMs=dodgeLateAttacks(job,incoming);
-        const started=num(job.startedAtMs,job.sentAtMs)||num(job.sentAtMs);
-        const plan=dodgeTiming(started,job.lastImpactMs);
-        const cancelAtMs=Math.min(plan.cancelAtMs,plan.deadlineMs);
-        const returnAtMs=cancelAtMs+(cancelAtMs-started);
-        if(job.cancelAtMs!==cancelAtMs||job.returnAtMs!==returnAtMs){
-          job.cancelAtMs=cancelAtMs;job.returnAtMs=returnAtMs;
+        const latest=Math.min(plan.deadlineMs,job.cancelableUntilMs?job.cancelableUntilMs-2000:Infinity,
+          job.outboundArrivalMs?job.outboundArrivalMs-2000:Infinity);
+        const cancelAtMs=Math.min(plan.cancelAtMs,latest);
+        if(job.cancelAtMs!==cancelAtMs||job.returnAtMs!==plan.returnAtMs||job.colonyImpactMs!==colonyImpact){
+          job.lastImpactMs=impact;
+          job.colonyImpactMs=colonyImpact;
+          job.cancelAtMs=cancelAtMs;job.returnAtMs=plan.returnAtMs;
           dodgeSaveRecord(store,job);
-        }
-        const earlyLanding=Number.isFinite(num(job.outboundArrivalMs,NaN))&&
-          num(job.outboundArrivalMs)>0&&num(job.outboundArrivalMs)<=job.cancelAtMs+2500;
-        if(earlyLanding){
-          job.error='Destino próximo: cancelamento antecipado para não deixar o apoio estacionar';
-          job.cancelAtMs=Math.min(job.cancelAtMs,now);
-          dodgeSaveRecord(store,job);
-          await dodgeCancel(store,job,now);return;
-        }
-        if(plan.cancelAtMs>plan.deadlineMs){
-          job.error='Última onda supera a janela de 10 minutos; cancelamento antecipado';
-          log('Esquiva: '+job.error,'WARN');
         }
         if(now>=job.cancelAtMs){
+          if(plan.cancelAtMs>latest)notify('Esquiva: a janela do apoio exige cancelamento antecipado em '+
+            tName(townBy(job.townId))+'; a volta pode ocorrer antes do impacto.');
+          else if(now-plan.cancelAtMs>=1000)log('Esquiva: o cancelamento saiu após o horário planejado','WARN');
           await dodgeCancel(store,job,now);return;
         }
       }
       if(syncRole()==='standby'||((!config.enabled||!config.modules.dodge)&&!testActive()))return;
       const minLead=15000,lead=dodgeLead(),owned=new Map(towns().map(t=>[Number(t.id),t]));
       for(const [townId,town] of owned){
-        if(dodgeTracked(store).some(j=>Number(j.townId)===townId))continue;
+        if(Object.values(store.jobs).some(j=>Number(j.townId)===townId&&
+          (dodgeActive(j)||j.state==='cancelled'&&num(j.confirmedReturnAtMs||j.estimatedArrivalMs)>now)))continue;
         const attacks=incoming.filter(a=>Number(a.townId)===townId&&a.arrivalMs>now&&
           (config.enabled&&config.modules.dodge||a.simulated));
-        const first=attacks[0];
+        const first=attacks.find(a=>!store.handled[a.id]);
         if(!first)continue;
-        const conflict=dodgeColonyThreat(attacks,townId,first.arrivalMs,
-          first.arrivalMs+dodgeConflictWindow());
-        const decision=conflict?{allow:false,reason:'Ataque próximo de possível colonizador #'+conflict.id+
+        const {impact:lastImpact,colonyImpact}=dodgeWave(first,attacks);
+        const conflict=dodgeColonyThreat(attacks,townId,first.arrivalMs,lastImpact+dodgeAfter());
+        const decision=conflict?{allow:false,reason:'Ataque próximo de colonizador #'+conflict.id+
           ': esquiva automática suspensa para preservar defesa'}:dodgeAttackDecision(first);
         if(!decision.allow){
           const key=first.id+':'+first.intel?.classification+':'+(conflict?.id||'');
@@ -2619,7 +2750,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
           continue;
         }
         const before=first.arrivalMs-now;
-        if(before>lead||before<minLead||store.handled[first.id])continue;
+        if(before>lead||before<minLead)continue;
         const targetId=dodgeDestination(townId,incoming);
         if(!targetId){
           const last=Number(store.lastWarning?.[townId])||0;
@@ -2637,14 +2768,16 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
           if(!dodgePreviewed.has(first.id)){
             dodgePreviewed.add(first.id);
             log('SIMULAÇÃO ESQUIVA '+tName(town)+': apoio único com '+Object.keys(units).length+
-              ' tipos, impacto em '+Math.round(before/1000)+' s; cancelamento após última onda');
+              ' tipos, impacto em '+Math.round(before/1000)+' s; alvo de volta 1 s após o impacto de referência');
           }
           continue;
         }
-        const lastImpact=Math.max(first.arrivalMs,...attacks.filter(a=>a.arrivalMs-first.arrivalMs<=dodgeWaveGap()).map(a=>a.arrivalMs));
-        store.handled[first.id]=now;dodgeWrite(store);
         await dodgeDispatch(store,townId,targetId,units,
-          {firstImpactMs:first.arrivalMs,lastImpactMs:lastImpact},first.simulated?first.testId:null);
+          {firstImpactMs:first.arrivalMs,lastImpactMs:lastImpact,colonyImpact},first.simulated?first.testId:null);
+        for(const attack of attacks){
+          if(attack.arrivalMs>=first.arrivalMs&&attack.arrivalMs<=lastImpact)store.handled[attack.id]=now;
+        }
+        dodgeWrite(store);
         return;
       }
     }finally{dodgeBusy=false;}
@@ -2666,7 +2799,8 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
         ${i?.candidateUnits?.length?`<div class="smallnote">Velocidades-base compatíveis (não confirmam unidades): ${cleanStr(i.candidateUnits.map(x=>x.key+' ~'+x.expected).join(', '))}</div>`:''}
         ${travel?.available?`<div class="smallnote">Base: ${cleanStr(travel.source)} ${travel.distance?'· distância '+travel.distance.toFixed(1):''} · CS sem bônus: ${Math.round(travel.baseSeconds/60)} min · CS em cenários: ${Math.round(travel.minSeconds/60)}–${Math.round(travel.maxSeconds/60)} min · ${travel.scenarioCount} variações</div>
         <div class="smallnote">${cleanStr(travel.reason)} ${travel.observedSeconds!==null?'Duração observada: '+Math.round(travel.observedSeconds/60)+' min.':'Tempo restante não informa o instante de envio.'}</div>
-        ${travel.matches?.length?`<div class="smallnote"><b>Cenários compatíveis:</b> ${cleanStr(travel.matches.slice(0,3).map(m=>Math.round(m.seconds/60)+'min ('+(m.effects.join(' + ')||'sem bônus')+', '+m.method+')').join(' | '))}</div>`:''}
+        ${travel.hiddenFraction?`<div class="smallnote">Elmo de Hades · pelo tempo restante, a viagem completa durou pelo menos ${travel.visibleLowerBoundSeconds} s.</div>`:''}
+        ${travel.matches?.length?`<div class="smallnote"><b>Cenários compatíveis:</b> ${cleanStr(travel.matches.slice(0,3).map(m=>m.seconds+' s ('+(m.effects.join(' + ')||'sem bônus')+')').join(' | '))}</div>`:''}
         ${travel.alternatives?.length?`<div class="smallnote">Outras tropas também compatíveis: ${cleanStr([...new Set(travel.alternatives.map(x=>x.unit))].join(', '))}</div>`:''}`:
         `<div class="smallnote">${cleanStr(travel?.reason||'Sem duração-base de CS para este trajeto.')}</div>`}
         ${i?.originTownId?`<div class="formrow compact"><span>Tempo-base do CS sem bônus (minutos)</span>
@@ -2689,24 +2823,18 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     ).join('');
     return `${moduleNames()}
       ${section('Esquiva sincronizada por cidade')}
-      <p class="smallnote">Envia um apoio com terrestres e/ou navios habilitados antes da onda inimiga. Solicita o cancelamento depois do último impacto com margem de segurança. A chegada das tropas de volta não ocorre em um segundo exato.</p>
-      <div class="formrow"><span>Enviar faltando (segundos)</span><input type="number" min="20" max="180" step="5" data-setting="dodge.leadSeconds" value="${dodgeLead()/1000}"></div>
-      <div class="formrow"><span>Cancelar após a última onda (segundos)</span><input type="number" min="10" max="90" step="5" data-setting="dodge.returnAfterSeconds" value="${dodgeAfter()/1000}"></div>
-      <div class="formrow"><span>Agrupar ataques próximos (segundos)</span><input type="number" min="1" max="60" step="1" data-setting="dodge.waveGapSeconds" value="${config.dodge.waveGapSeconds}"></div>
+      <p class="smallnote">O apoio sai antes do ataque. O horário de cancelamento mira a chegada das tropas 1 segundo após o impacto de referência.</p>
+      <label class="formrow"><span>Enviar faltando (20–180 s)</span><input type="number" min="20" max="180" step="1" data-setting="dodge.leadSeconds" value="${dodgeLead()/1000}"></label>
+      <label class="formrow"><span>Agrupar ataques próximos (1–60 s)</span><input type="number" min="1" max="60" step="1" data-setting="dodge.waveGapSeconds" value="${dodgeWaveGap()/1000}"></label>
       <div class="checks"><label><input type="checkbox" data-setting="dodge.land" ${config.dodge.land?'checked':''}> Tropas terrestres</label><label><input type="checkbox" data-setting="dodge.naval" ${config.dodge.naval?'checked':''}> Navios</label></div>
       ${section('Análise de colonização')}
-      <div class="formrow"><span>Janela para ataques próximos de colono (segundos)</span>
-        <input type="number" min="60" max="600" step="30" data-setting="dodge.colonyConflictWindowSeconds" value="${dodgeConflictWindow()/1000}"></div>
-      <div class="formrow"><span>Como tratar possíveis colonizadores</span>
+      <label class="formrow"><span>Quando houver colono confirmado</span>
         <select data-setting="dodge.colonizationPolicy">${optionList([
-          ['review','Conservador: aguardar confirmação e não esquivar de suspeitos'],
-          ['strict','Máxima cautela: aguardar até quando o tipo for desconhecido'],
-          ['confirmed','Pausar apenas colonizadores confirmados'],
-          ['all','Esquivar de todos, inclusive colonizadores']
-        ],config.dodge.colonizationPolicy||'review')}</select></div>
-      <p class="smallnote">Novo cálculo por cenários: Cartografia +10%, Velas ao Vento +10%, Farol +15%, Templo de Ares +15% (somente Olimpo), Atalanta nível 1–20 (+13,2% a +36%), e bônus temporários com percentual explicitamente presente nos dados do movimento. Simula combinações, somas e multiplicações de bônus. Meteorologia é terrestre e o Elmo de Hades oculta tropas, não os acelera.</p>
-      <p class="smallnote">Para comparar durações, informe uma vez o tempo-base do navio colonizador entre a cidade de origem e a cidade atacada, sem bônus, usando o tempo mostrado no jogo. O valor fica associado ao trajeto e pode ser reutilizado. Se a partida do ataque não estiver exposta, somente o tempo restante não prova a presença do navio. O horário de impacto continua sendo o do servidor.</p>
-      <p class="smallnote">Se um colono confirmado ou suspeito chegar próximo de um ataque de limpeza, a esquiva automática aguarda revisão para não retirar a defesa. Um colono identificado após envio de apoio provoca tentativa de cancelamento antecipado, com alerta se não houver tempo suficiente de retorno.</p>
+          ['confirmed','Defender o colono'],
+          ['all','Esquivar do colono · retorno +1 s']
+        ],config.dodge.colonizationPolicy==='all'?'all':'confirmed')}</select></label>
+      <p class="smallnote">Defender mantém as tropas na cidade ou tenta antecipar o retorno de um apoio já enviado. Esquivar usa o impacto do colono como referência. A batalha durante o cerco depende da resolução do Grepolis.</p>
+      <p class="smallnote">A análise considera Navegar, Cartografia, Farol, Atalanta, Sereias, Ares no Olimpo e bônus de movimento conhecidos. O Elmo de Hades atrasa a aparição. Sem dados da partida ou da composição, o painel mostra a incerteza.</p>
       ${section('Destino do apoio')}
       <div class="formrow"><span>Cidade protegida</span>${selectTown('dodgeSource',src?.id)}</div>
       <div class="formrow"><span>Prioridade</span><select data-setting="dodge.destinationMode">${optionList([
@@ -2755,6 +2883,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
         const pending=plan.rows.filter(x=>x.state==='wait').length;
         return pending?pending+' tarefa(s) aguardando recursos, nível, população ou espaço':'Metas concluídas ou bloqueadas';
       }
+      if(id==='cave')return cavePlans().map(p=>p.name+': '+p.reason).join(' · ')||'Nenhuma cidade disponível';
       if(id==='recruit')return Object.keys(config.recruit.targets||{}).length?'Aguardando lote mínimo, recursos e espaço no quartel/porto':'Sem metas de tropas';
       if(id==='build')return Object.keys(config.build.targets||{}).length?'Aguardando recursos, população ou espaço de construção':'Sem metas de construção';
       if(id==='research')return Object.keys(config.research.queue||{}).length?'Aguardando pontos, academia e recursos':'Sem pesquisas planejadas';
@@ -2959,7 +3088,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const ajaxOK=typeof W.gpAjax?.ajaxPost==='function';
     const role=syncRole();
     const checks=[
-      healthCheck('script','GrepoPilot carregado','ok','v1.0.4 · inicialização em '+new Date(health.startedAt).toLocaleTimeString('pt-BR')),
+      healthCheck('script','GrepoPilot carregado','ok','v'+VERSION+' · inicialização em '+new Date(health.startedAt).toLocaleTimeString('pt-BR')),
       healthCheck('page','Página do Grepolis',location.protocol==='https:'&&/^\/game(?:\/|$)/.test(location.pathname)?'ok':'error',
         String(location.host)+String(location.pathname||''),'Abra a página do jogo em https://SEU-MUNDO.grepolis.com/game/'),
       healthCheck('api','Acesso aos dados do jogo',W!==window?'ok':'warn',
@@ -3011,7 +3140,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     const critical=checks.filter(x=>x.status==='error');
     const warnings=checks.filter(x=>x.status==='warn');
     const active=ready&&critical.length===0&&config.enabled&&role==='primary'&&!config.dryRun&&!securityBlocked()&&n>0;
-    return {version:'1.0.4',time:new Date(now).toISOString(),world:location.host,
+    return {version:VERSION,time:new Date(now).toISOString(),world:location.host,
       playerId:player||null,userAgent:typeof navigator!=='undefined'?navigator.userAgent:'',
       active,critical:critical.length,warnings:warnings.length,
       runtime:{uptimeSeconds:Math.floor((now-health.startedAt)/1000),
@@ -3125,7 +3254,8 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     <button class="primary" data-action="addRoute">Adicionar rota</button>
     ${config.trade.routes.map((r,i)=>`<div class="city compact">${cleanStr(tName(townBy(r.from)))} → ${cleanStr(tName(townBy(r.to)))} · ${num(r.wood)}/${num(r.stone)}/${num(r.iron)} <button data-remove-route="${i}">×</button></div>`).join('')}
     ${section('Gruta')}
-    <div class="formrow"><span>Ferro mínimo</span><input type="number" data-setting="cave.minIron" value="${config.cave.minIron}"><span>Reserva</span><input type="number" data-setting="cave.keepIron" value="${config.cave.keepIron}"></div>`;
+    <div class="formrow"><label>Prata mínima no armazém <input type="number" min="0" data-setting="cave.minIron" value="${num(config.cave?.minIron,BASE.cave.minIron)}"></label><label>Reserva de prata <input type="number" min="0" data-setting="cave.keepIron" value="${num(config.cave?.keepIron,BASE.cave.keepIron)}"></label></div>
+    <div class="cityscroll">${cavePlans().map(p=>`<div class="city"><b>${cleanStr(p.name)}</b><div class="smallnote">${cleanStr(p.reason)}</div></div>`).join('')||'<p class="smallnote">Nenhuma cidade disponível.</p>'}</div>`;
   const troopsContent=()=>{
     const t=getSelected();const unitNames=Object.keys(W.GameData?.units||{}).filter(k=>typeof W.GameData.units[k]==='object');
     return `${moduleNames()}
@@ -3300,7 +3430,7 @@ let queueKindSelected='building';
         '<div class="tools"><button data-tab="VERIFICAR">Abrir verificação</button></div>';
     }
     shadow.querySelector('#gp-app').innerHTML=`
-      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v1.0.4</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
+      <div class="head" id="drag"><span class="logo">♜ GREPOPILOT</span><span class="v">v${VERSION}</span><button class="collapse" data-action="collapse">${config.ui.collapsed?'□':'─'}</button></div>
       ${config.ui.collapsed?'':`<div class="status"><i class="dot ${config.enabled?(config.dryRun?'sim':'live'):''}"></i>${cleanStr(STATUS())}</div>
       <div class="tabs">${[...(config.onboarding?.completed?[]:['COMEÇAR']),'INÍCIO','CIDADES','TROPAS','FILA','ALDEIAS','COMBATE','ESQUIVA','ECONOMIA','MISSÕES','AJUSTES','VERIFICAR','LOG'].map(tab=>`<button data-tab="${tab}" class="${config.ui.tab===tab?'active':''}">${tab}</button>`).join('')}</div>
       <div class="body">${body}</div><div class="foot"><button class="${config.enabled?'stop':'go'}" data-action="toggle">${config.enabled?'■ PARAR TUDO':'▶ INICIAR'}</button><span>${Object.values(config.modules).filter(Boolean).length} módulos ativos</span></div>`}`;
@@ -3365,27 +3495,11 @@ let queueKindSelected='building';
         case 'templateImport':templateImport(el('templateImportText')?.value||'');break;
         case 'dodgeSaveColonyBase':{
           const id=String(trg.dataset.attack||'');
-          const attack=dodgeIncoming().find(x=>x.id===id);
-          if(!attack?.intel?.originTownId)throw Error('Ataque não encontrado ou origem indisponível');
-          const route=colonyBaselineKey(attack.intel.originTownId,attack.townId);
           const input=shadow?.getElementById('dodgeColonyBase-'+id);
-          const minutes=Number(input?.value);
-          if(!Number.isFinite(minutes)||minutes<1||minutes>2880)
-            throw Error('Informe o tempo-base do CS em minutos (1–2880), sem bônus');
-          config.dodge.colonyBaselineMinutes??={};
-          config.dodge.colonyBaselineMinutes[route]=Number(minutes.toFixed(2));
-          save();log('Análise de colono: trajeto '+route+' com duração-base '+minutes+' minutos');break;
+          dodgeSetColonyBaseline(id,Number(input?.value));return;
         }
         case 'dodgeMarkAttack':{
-          const id=String(trg.dataset.attack||''),mark=String(trg.dataset.mark||'');
-          if(!id||id.length>128||!['colony','normal','clear'].includes(mark))throw Error('Classificação inválida');
-          if(!dodgeIncoming().some(a=>a.id===id))throw Error('Movimento não está mais visível');
-          config.dodge.attackMarks??={};
-          if(mark==='clear')delete config.dodge.attackMarks[id];
-          else config.dodge.attackMarks[id]=mark;
-          if(Object.keys(config.dodge.attackMarks).length>400)
-            config.dodge.attackMarks=Object.fromEntries(Object.entries(config.dodge.attackMarks).slice(-250));
-          save();log('Classificação manual #'+id+': '+mark);break;
+          dodgeMarkAttack(String(trg.dataset.attack||''),String(trg.dataset.mark||''));return;
         }
         case 'dodgeForceCancel':{
           const id=trg.dataset.job,store=dodgeRead(),job=store.jobs?.[id];
@@ -3405,7 +3519,7 @@ let queueKindSelected='building';
             startedAt:dodgeStarted(m.data),arrivalAt:dodgeArrival(m.data)
           }));
           download('GrepoPilot-esquiva-'+location.host+'.json',JSON.stringify({
-            version:'1.0.4',world:location.host,at:new Date().toISOString(),
+            version:VERSION,world:location.host,at:new Date().toISOString(),
             clock:dodgeClock,settings:config.dodge,attacks:dodgeIncoming(),
             movementFields:dodgeMovements().map(m=>({keys:Object.keys(m.data||{}),
               details:Object.fromEntries(Object.entries(m.data||{}).filter(([k])=>/(?:speed|modifier|power|spell|effect|hero|conquest|colon|takeover|revolt|unit|time|arriv|start)/i.test(k)).slice(0,25))})),
@@ -3437,7 +3551,7 @@ let queueKindSelected='building';
         }
         case 'diagRefresh':log('Diagnóstico: condições reavaliadas');break;
         case 'diagExport':download('GrepoPilot-diagnostico-'+location.host+'.json',JSON.stringify({
-          version:'1.0.4',world:location.host,at:new Date().toISOString(),summary:diagSnapshot()},null,2));break;
+          version:VERSION,world:location.host,at:new Date().toISOString(),summary:diagSnapshot()},null,2));break;
         case 'diagReset':{
           const rt=readRuntime();delete rt.diagnostics;writeRuntime(rt);log('Diagnóstico: contadores reiniciados');break;
         }
@@ -3608,12 +3722,18 @@ let queueKindSelected='building';
       render();return;
     }
     if(t.dataset.setting){
+      if(t.type==='number'&&(!t.value.trim()||t.validity&&!t.validity.valid)){
+        t.reportValidity?.();
+        t.value=t.defaultValue;
+        return;
+      }
       if(t.dataset.setting==='sync.role'&&t.value==='standby'){
         const test=testRead().active;
         if(test?.state==='active'&&test.mode==='live')testStop();
         config.enabled=false;
       }
       setPath(t.dataset.setting,t.type==='checkbox'?t.checked:t.type==='number'?num(t.value):t.value);
+      if(t.dataset.setting.startsWith('cave.'))nextRun.cave=0;
       if(t.dataset.setting==='quests.autoObjectives'&&t.checked){
         config.modules.quests=true;nextRun.quests=0;save();
       }

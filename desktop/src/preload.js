@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld('gpDesktop',{
   startDodge:()=>ipcRenderer.invoke('start-dodge'),
   dodgeInfo:(townId)=>ipcRenderer.invoke('dodge-info',townId),
   setDodgeTarget:(townId,dest)=>ipcRenderer.invoke('dodge-target',townId,dest),
+  markDodgeAttack:(id,mark)=>ipcRenderer.invoke('dodge-mark',id,mark),
+  setColonyBaseline:(id,minutes)=>ipcRenderer.invoke('dodge-colony-baseline',id,minutes),
   applyTemplate:(kind,key,townId,mythUnit)=>ipcRenderer.invoke('apply-template',kind,key,townId,mythUnit),
   runTest:(id,live)=>ipcRenderer.invoke('run-test',id,live),
   stopTest:()=>ipcRenderer.invoke('stop-test'),

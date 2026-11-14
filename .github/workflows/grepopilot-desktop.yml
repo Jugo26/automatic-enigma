@@ -4,6 +4,8 @@ on:
     branches: [grepopilot-updates]
     paths:
       - 'desktop/**'
+      - 'GrepoPilot.user.js'
+      - 'GrepoPilot.meta.js'
       - '.github/workflows/grepopilot-desktop.yml'
   workflow_dispatch:
 permissions:

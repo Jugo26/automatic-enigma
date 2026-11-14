@@ -152,7 +152,17 @@ function templatesPage(){
  return `${section('Modelos de cidades')}${Object.entries(cities).map(([key,v])=>renderTemplate('city',key,v)).join('')}
  ${section('Modelos de tropas')}${Object.entries(troops).map(([key,v])=>renderTemplate('troops',key,v)).join('')}`;
 }
-function numberField(key,title,icon,min=0,max=1000000){return `<div class="card"><div class="card-head">${bImage(icon)}<div class="grow"><b>${safe(title)}</b><small>${safe(key)}</small></div><input data-number="${safe(key)}" type="number" min="${min}" max="${max}" value="${Number(val(key,0))}" style="width:88px"></div></div>`}
+function numberField(key,title,icon,min=0,max=1000000,show=val(key,0)){
+ return `<label class="card"><span class="card-head">${bImage(icon)}<span class="grow"><b>${safe(title)}</b><small>${min}–${max}</small></span><input data-number="${safe(key)}" type="number" min="${min}" max="${max}" value="${Number(show)}" style="width:88px"></span></label>`;
+}
+function cavePage(){
+ const cave=S?.cave;
+ return `${section('Depósito na Gruta')}
+ ${numberField('cave.minIron','Prata mínima no armazém','hide',0,1000000)}
+ ${numberField('cave.keepIron','Reserva de prata no armazém','storage',0,1000000)}
+ ${cave?`<p class="note">${safe(cave.lastError||cave.reason)}</p>`:'<p class="note">Aguardando dados da Gruta no motor atualizado.</p>'}
+ ${(cave?.towns||[]).map(t=>infoCard(t.name,t.reason,'hide')).join('')}`;
+}
 function settingsPage(){
  return `${section('Preferências')}<div class="card"><div class="field"><span><b>Modo simulação</b></span><input type="checkbox" data-path="dryRun" ${val('dryRun',true)?'checked':''}></div><div class="field"><span><b>Notificações</b></span><input type="checkbox" data-path="security.notify" ${val('security.notify',true)?'checked':''}></div></div>
  ${section('Segurança e sessão')}${numberField('security.minActionIntervalSeconds','Intervalo mínimo (s)','wall',45,3600)}${numberField('security.maxActionsPerHour','Máximo de ações por hora','wall',1,60)}${numberField('security.postCaptchaCooldownMinutes','Pausa após verificação (min)','wall',45,240)}
@@ -190,11 +200,15 @@ function dodgePage(){
  if(d.captcha)blockers.push('verificação CAPTCHA ativa');
  const dst=d.destinations||[],group={own:'Sua cidade',ally:'Aliado',other:'Outra cidade'};
  const destination=d.configuredTarget||0,mode=val('dodge.destinationMode','allies_first');
+ const colony=d.colonizationPolicy||'confirmed';
+ const clock=ms=>ms?new Date(ms).toLocaleTimeString('pt-BR',{hour12:false}):'aguardando cálculo';
+ const labels={confirmed:'Colono confirmado',manual_colony:'Colono marcado',manual_normal:'Ataque comum marcado',
+  suspected:'Possível colono',revolt:'Revolta',unknown:'Composição oculta'};
  return `${section('Situação da esquiva')}
  <div class="card"><div class="card-head">${bImage('wall')}<div class="grow"><b>${running?'Esquiva real em funcionamento':'Esquiva não está operacional'}</b>
  <small>${safe(running?'Monitorando ataques e horários de envio':blockers.join(' · ')||'Aguardando estado do motor')}</small></div></div>
  <button class="cta" data-action="start-dodge">Ativar esquiva real</button>
- <p class="note">O envio ocorre na janela anterior ao impacto. Ataques classificados como possível colonizador podem ser retidos conforme a política de defesa.</p></div>
+ <p class="note">Apoio antes do impacto. A volta é planejada para 1 segundo após o impacto de referência.</p></div>
  ${moduleCard(MODULES.find(x=>x[0]==='dodge'))}
  ${section('Para onde retirar as tropas')}
  <div class="card"><div class="field"><label>Prioridade</label>
@@ -211,14 +225,37 @@ function dodgePage(){
  <p class="note">${dst.length} cidades identificadas na mesma ilha. ${safe(d.directoryError||'')}
  Os destinos de outras pessoas são identificados pelos dados públicos do mundo.</p></div>
  ${section('Controle de tempo')}
- ${numberField('dodge.leadSeconds','Enviar antes do impacto (segundos)','wall',20,180)}
- ${numberField('dodge.returnAfterSeconds','Cancelar após a última onda (segundos)','wall',10,90)}
- ${numberField('dodge.waveGapSeconds','Agrupar ondas (segundos)','wall',1,60)}
+ ${numberField('dodge.leadSeconds','Enviar antes do impacto (segundos)','wall',20,180,d.leadSeconds??60)}
+ ${numberField('dodge.waveGapSeconds','Agrupar ondas (segundos)','wall',1,60,d.waveGapSeconds??12)}
+ ${section('Ataque de colonização')}
+ <div class="card"><label class="field"><b>Quando houver colono confirmado</b>
+ <select data-choice="dodge.colonizationPolicy">
+ <option value="confirmed" ${colony==='confirmed'?'selected':''}>Defender o colono</option>
+ <option value="all" ${colony==='all'?'selected':''}>Esquivar do colono</option>
+ </select></label>
+ <p class="note">${colony==='all'?'Mira a volta 1 segundo após o impacto do colono. O jogo resolve se há batalha no cerco.':'Mantém as tropas na cidade ou solicita a volta antecipada de um apoio em viagem.'}</p></div>
  ${section('Ataques recebidos')}
- ${(d.incoming||[]).map(a=>`<div class="card"><b>${safe(a.classification)}</b><small>${new Date(a.arrivalMs).toLocaleString('pt-BR')}</small>
- <p class="note">${safe(a.reason)} · ${a.allow?'Esquiva autorizada':'Esquiva bloqueada pela política'}</p></div>`).join('')||'<div class="empty">Nenhum ataque recebido identificado nesta cidade.</div>'}
+ ${(d.incoming||[]).map(a=>{
+  const travel=a.travel;
+  const scenarios=(travel?.matches||[]).slice(0,3);
+  return `<div class="card"><div class="row space"><b>${safe(a.simulated?'Teste prático':labels[a.classification]||a.classification)}</b><small>${clock(a.arrivalMs)}</small></div>
+  <p class="note">${safe(a.reason)}</p>
+  ${travel?`<p class="note">${safe(travel.reason)} ${travel.observedSeconds===null?'':('Duração informada: '+travel.observedSeconds+' s.')}</p>`:''}
+  ${travel?.hiddenFraction?`<p class="note">Elmo de Hades · primeiros 10% da viagem ocultos · duração total de pelo menos ${travel.visibleLowerBoundSeconds} s.</p>`:''}
+  ${scenarios.length?`<details><summary>Cenários de colono compatíveis</summary><ul>${scenarios.map(m=>`<li>${m.seconds} s · ${safe(m.effects.join(' + ')||'Sem bônus')}</li>`).join('')}</ul>
+  ${travel.alternatives?.length?`<p class="note">Outras unidades compatíveis: ${safe(travel.alternatives.slice(0,5).map(x=>PT_UNITS[x.unit]||x.unit).join(', '))}</p>`:''}</details>`:''}
+  ${travel?.route&&(!travel.available||a.baselineMinutes)?`<div class="row wrap">
+  <label>Viagem sem bônus (min) <input type="number" min="1" max="2880" step="0.01" data-colony-baseline value="${safe(a.baselineMinutes??'')}"></label>
+  <button class="ghost" data-action="colony-baseline" data-attack="${safe(a.id)}">Calcular cenários</button></div>`:''}
+  ${!a.simulated&&a.classification!=='confirmed'?`<div class="row wrap">
+  <button class="ghost" data-action="mark-colony" data-attack="${safe(a.id)}">É colono</button>
+  <button class="ghost" data-action="mark-normal" data-attack="${safe(a.id)}">Ataque comum</button>
+  ${a.classification.startsWith('manual_')?`<button class="ghost" data-action="mark-clear" data-attack="${safe(a.id)}">Limpar marcação</button>`:''}</div>`:''}</div>`;
+ }).join('')||'<div class="empty">Nenhum ataque recebido identificado nesta cidade.</div>'}
  ${section('Apoios e cancelamentos')}
- ${(d.jobs||[]).map(j=>`<div class="card"><b>${safe(j.state)}</b><small>Destino #${j.targetId} · comando #${j.commandId||'identificando'}</small>
+ ${(d.jobs||[]).map(j=>`<div class="card"><b>${safe(j.state==='cancelled'?'Apoio cancelado':j.state)}</b><small>Destino #${j.targetId} · comando #${j.commandId||'identificando'}</small>
+ ${j.cancelAtMs?`<p class="note">Cancelamento planejado às ${clock(j.cancelAtMs)} · alvo de retorno às ${clock(j.returnAtMs)}</p>`:''}
+ ${j.confirmedReturnAtMs?`<p class="note">Chegada informada pelo jogo às ${clock(j.confirmedReturnAtMs)}</p>`:j.estimatedReturnAtMs?`<p class="note">Chegada estimada às ${clock(j.estimatedReturnAtMs)}</p>`:''}
  <p class="note">${safe(j.error||'Acompanhando comando')}</p></div>`).join('')||'<div class="empty">Nenhum apoio em acompanhamento.</div>'}
  `;
 }
@@ -296,9 +333,8 @@ function rendered(){
   const relevant=MODULES.filter(x=>x[3]===active);
   body=section('Automações · '+active)+(relevant.length?relevant:MODULES).map(moduleCard).join('');
   if(active==='CIDADES')body=infoCard('Cidades encontradas',String(S.catalog.cities.length)+' cidades','farm')+body;
-  if(active==='ESQUIVA')body+=numberField('dodge.leadSeconds','Antecedência da esquiva (s)','wall',10,1800);
   if(active==='ALDEIAS')body+=numberField('ruralUpgrade.targetLevel','Nível desejado','market',1,6);
-  if(active==='ECONOMIA')body+=numberField('trade.minReserve','Reserva mínima','storage',0,500000);
+  if(active==='ECONOMIA')body+=numberField('trade.minReserve','Reserva mínima do comércio','storage',0,500000)+cavePage();
   if(active==='FILA')body+=infoCard('Fila inteligente','Metas avançadas disponíveis em Opções completas','storage');
  }
  const error=sharedError||sharedConfig.lastError;
@@ -312,7 +348,7 @@ async function load(){
   if(active==='ESQUIVA'&&s?.ready&&town)S.dodgeInfo=await window.gpDesktop.dodgeInfo(town);
   if(s?.url)el('address').value=s.url;
   el('engine-status').textContent=s?.ready?'Motor conectado':(s?.reason||'Aguardando o Grepolis');
-  if(!document.activeElement?.matches('input,textarea,select'))rendered();
+  if(!busy&&!document.activeElement?.matches('input,textarea,select'))rendered();
   else{el('state-text').textContent=statusText()}
  }catch(e){el('engine-status').textContent=e.message}
 }
@@ -341,6 +377,15 @@ document.addEventListener('click',async(e)=>{
    try{await save(path,JSON.parse(text))}catch(e){notify('JSON inválido: '+e.message,true)}return;
  }
  const action=e.target.closest('[data-action]');if(!action)return;
+ if(action.dataset.action==='colony-baseline'){
+   const input=action.parentElement.querySelector('[data-colony-baseline]');
+   try{await window.gpDesktop.setColonyBaseline(action.dataset.attack,input.valueAsNumber);await loadForced()}
+   catch(ex){notify(ex.message,true)}return;
+ }
+ if(['mark-colony','mark-normal','mark-clear'].includes(action.dataset.action)){
+   try{await window.gpDesktop.markDodgeAttack(action.dataset.attack,action.dataset.action.slice(5));await loadForced()}
+   catch(ex){notify(ex.message,true)}return;
+ }
  if(action.dataset.action==='shared-connect'){
    try{
      busy=true;
@@ -419,7 +464,14 @@ document.addEventListener('change',async(e)=>{
  if(t.matches('[data-dodge-target]')){try{await window.gpDesktop.setDodgeTarget(town,Number(t.value));notify('Destino atualizado');await loadForced()}catch(e){notify(e.message,true)}return}
  if(t.dataset.path)await save(t.dataset.path,t.checked);
  if(t.dataset.choice)await save(t.dataset.choice,t.value);
- if(t.dataset.number)await save(t.dataset.number,Number(t.value));
+ if(t.dataset.number){
+   if(!t.value.trim()||!Number.isFinite(t.valueAsNumber)||t.validity.rangeUnderflow||t.validity.rangeOverflow){
+     t.reportValidity();
+     t.value=t.defaultValue;
+     return;
+   }
+   await save(t.dataset.number,t.valueAsNumber);
+ }
  if(t.dataset.string)await save(t.dataset.string,t.value);
  if(t.dataset.unit)await save('recruit.targets.'+town+'.'+t.dataset.unit,Math.max(0,Math.trunc(Number(t.value)||0)));
  if(t.dataset.continuous)await save('recruit.continuous.'+town+'.'+t.dataset.continuous,Math.max(0,Math.min(999,Math.trunc(Number(t.value)||0))));
