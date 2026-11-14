@@ -82,6 +82,8 @@ const HOOK = String.raw`
       config.onboarding.completed=true;nextRun.dodge=0;save();render();
       log('Esquiva real ativada pelo Desktop');return true;
     },
+    tutorialInfo: () => typeof tutorialInfo==='function'?tutorialInfo():null,
+    islandQuestStatus: () => typeof islandQuestStatus==='function'?islandQuestStatus():[],
     caveInfo: () => {
       if(typeof cavePlans!=='function')return null;
       const last=readRuntime().diagnostics?.cave;

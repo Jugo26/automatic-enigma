@@ -26,7 +26,7 @@ const NAV=[
 ];
 const MODULES=[
  ['farm','Coleta de aldeias','pin','ALDEIAS','Coleta recursos nas aldeias desbloqueadas quando a coleta está disponível e há espaço no armazém.'],
- ['build','Construção automática','main','SENADO','Evolui edifícios até as metas de cada cidade, conforme recursos e espaço na fila.'],
+ ['build','Construção automática','main','SENADO','Escolhe a obra disponível mais rápida. Se os prazos empatarem ou faltarem, escolhe a de menor custo.'],
  ['smartQueue','Fila inteligente','queue','FILA','Prioriza construções, pesquisas e tropas cadastradas na fila.'],
  ['finishFree','Conclusão grátis','clock','SENADO','Conclui obras quando o Grepolis libera a opção gratuita.'],
  ['recruit','Recrutamento automático','barracks','QUARTEL','Treina tropas e constrói navios até as metas cadastradas, ou em lotes contínuos.'],
@@ -35,7 +35,8 @@ const MODULES=[
  ['ruralTrade','Trocas com aldeias','market','ALDEIAS','Troca recursos com aldeias que atendem à relação mínima configurada.'],
  ['ruralUnlock','Desbloquear aldeias','pin','ALDEIAS','Usa pontos de batalha para desbloquear aldeias disponíveis.'],
  ['ruralUpgrade','Evoluir aldeias','pin','ALDEIAS','Usa pontos de batalha para evoluir aldeias já desbloqueadas.'],
- ['quests','Recompensas de missões','document','MISSÕES','Resgata recompensas de missões de ilha e pode executar objetivos compatíveis.'],
+ ['tutorial','Missões do tutorial','document','MISSÕES','Cumpre os objetivos reconhecidos no tutorial do Grepolis e resgata as recompensas liberadas.'],
+ ['quests','Missões da ilha','pin','MISSÕES','Resgata as recompensas da ilha e acompanha os objetivos disponíveis.'],
  ['banditRewards','Recompensas dos bandidos','document','MISSÕES','Guarda ou usa as recompensas disponíveis do acampamento de bandidos.'],
  ['culture','Festivais e cultura','document','CIDADES','Inicia as celebrações marcadas quando a cidade atende aos requisitos.'],
  ['bootcamp','Ataques ao acampamento de bandidos','barracks','COMBATE','Envia tropas terrestres da cidade configurada contra o acampamento.'],
@@ -60,7 +61,7 @@ const OPTION_INFO={
  'farm.duration':['Duração da coleta (min)','Seleciona a duração da próxima coleta na aldeia.'],
  'farm.captainBulk':['Coleta em lote com Capitão','Solicita coletas de várias cidades de uma vez quando o conselheiro Capitão está ativo.'],
  'build.targets':['Metas de nível por cidade','Define até que nível construir cada edifício. Edite também no Senado.'],
- 'build.priority':['Ordem de construção','Define quais edifícios são considerados primeiro quando há mais de uma meta disponível.'],
+ 'build.priority':['Ordem de desempate das obras','Define quais edifícios entram na fila comum e qual vem primeiro quando prazo e custo empatam.'],
  'build.allowDemolition':['Permitir demolição','Autoriza baixar o nível de um edifício para alcançar a meta cadastrada.'],
  'finishFree.maxRemainingSeconds':['Tempo restante máximo (s)','Limita a conclusão automática à fase gratuita da obra.'],
  'recruit.targets':['Metas de tropas por cidade','Define o total desejado, contando as unidades que já existem ou estão na fila.'],
@@ -97,7 +98,7 @@ const OPTION_INFO={
    stash:'Guardar',use:'Usar ou receber'
  }],
  'quests.onlySatisfied':['Somente missões concluídas (perfil antigo)','O motor atual verifica se cada recompensa está pronta para resgate.'],
- 'quests.autoObjectives':['Executar objetivos de missões','Tenta cumprir objetivos de missões de ilha que o bot reconhece.'],
+ 'quests.autoObjectives':['Cumprir objetivos das missões da ilha','Escolhe e executa as tarefas compatíveis conforme o lado e os limites de gastos configurados.'],
  'quests.preferred':['Escolha em missões com decisão','Indica qual caminho preferir quando a missão oferece uma escolha.',{
    wise:'Sábio',aggressive:'Agressivo'
  }],
@@ -276,7 +277,7 @@ function researchPage(){
 }
 function buildPage(){
  const goals=val('build.targets.'+town,{}),current=S?.catalog?.cities?.find(c=>c.id===town)?.buildings||{};
- return `${section('Senado · construções originais')}<p class="note">Cada construção utiliza sua imagem oficial e possui uma meta independente nesta cidade.</p>
+ return `${section('Metas de construção')}<p class="note">Defina as metas desta cidade. O modelo Colonização prioriza as obras necessárias para pesquisar e construir o navio colonizador.</p>
  ${BLD.map(([key,label])=>`<div class="card"><div class="card-head">${bImage(key)}<div class="grow"><b>${safe(label)}</b><small>Nível atual: ${Number(current[key]||0)}</small></div><input data-building="${key}" aria-label="Meta de ${safe(label)}" type="number" min="0" max="60" style="width:70px" value="${Number(goals[key]||0)}"></div></div>`).join('')}
  ${moduleCard(MODULES.find(x=>x[0]==='build'))}${moduleCard(MODULES.find(x=>x[0]==='finishFree'))}`;
 }
@@ -306,6 +307,19 @@ function settingsPage(){
  ${section('Segurança e sessão')}${numberField('security.minActionIntervalSeconds','Intervalo mínimo (s)','wall',45,3600)}${numberField('security.maxActionsPerHour','Máximo de ações por hora','wall',1,60)}${numberField('security.postCaptchaCooldownMinutes','Pausa após verificação (min)','wall',45,240)}
  ${infoCard('Atualizar o jogo','Use o botão ↻ na barra do navegador para recarregar a página.','history')}
  ${section('Perfis')}<div class="row wrap"><button class="ghost" data-action="export">Exportar JSON</button><button class="ghost" data-action="import">Importar JSON</button></div>`;
+}
+function missionsPage(){
+ const tutorial=S?.tutorial;
+ const states={viable:'Disponível',running:'Em andamento',satisfied:'Recompensa pronta',closed:'Concluída'};
+ const rows=list=>(list||[]).map(row=>`<div class="card"><div class="row space"><b>${safe(row.name)}</b><small>${safe(states[row.state]||'Aguardando')}</small></div><p class="note">${safe(row.reason)}</p></div>`).join('');
+ return `${section('Tutorial do Grepolis')}${moduleCard(MODULES.find(x=>x[0]==='tutorial'))}
+ ${tutorial?.total>0?`<p class="note">${safe(tutorial.completed)} de ${safe(tutorial.total)} missões resgatadas</p>`:''}
+ ${rows(tutorial?.rows)||'<p class="note">Nenhuma missão do tutorial disponível na sessão atual.</p>'}
+ ${moduleCard(MODULES.find(x=>x[0]==='quests'))}
+ <div class="card">${advancedField('quests.autoObjectives',val('quests.autoObjectives',false))}
+ ${advancedField('quests.rewardAction',val('quests.rewardAction','stash'))}</div>
+ ${rows(S?.islandQuests)||'<p class="note">Nenhuma missão da ilha disponível na sessão atual.</p>'}
+ ${section('Acampamento')}${moduleCard(MODULES.find(x=>x[0]==='banditRewards'))}`;
 }
 function advancedField(path,v,depth=0){
  if(v==null||/(__proto__|constructor|prototype)/.test(path.split('.').at(-1)))return '';
@@ -504,6 +518,7 @@ function rendered(){
  else if(active==='AJUSTES')body=settingsPage();
  else if(active==='AVANÇADO')body=advancedPage();
  else if(active==='LOG')body=logPage();
+ else if(active==='MISSÕES')body=missionsPage();
  else if(active==='TESTE')body=testPage();
  else if(active==='ESQUIVA')body=dodgePage();
  else if(active==='VERIFICAR')body=infoCard('Verificação do motor','Use Verificar agora para analisar o estado de cada componente.','check')+`<button class="cta" data-action="verify">Verificar agora</button><div id="health-results"></div>`;

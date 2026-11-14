@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GrepoPilot - Painel de Automacao
 // @namespace    https://grepolis.com/
-// @version      1.0.5
+// @version      1.0.6
 // @updateURL    https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.meta.js
 // @downloadURL  https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.user.js
 // @homepageURL  https://github.com/Jugo26/automatic-enigma/tree/grepopilot-updates
@@ -19,8 +19,9 @@
   window.__GREPOPILOT_ACTIVE__ = true;
   const W = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
   const SCRIPT = 'GrepoPilot';
-  const VERSION = '1.0.5';
+  const VERSION = '1.0.6';
   const BUILDINGS = ['main','storage','farm','lumber','stoner','ironer','academy','barracks','docks','market','temple','hide','wall'];
+  const COLONY_SHIP = 'colonize_ship';
   const MODULES = {
     farm: ['🌾 Coleta de aldeias','ECONOMIA',60],
     build: ['🏗️ Construção automática','CIDADES',55],
@@ -32,6 +33,7 @@
     ruralTrade: ['🏺 Trocas com aldeias','ECONOMIA',250],
     ruralUnlock: ['🔓 Desbloquear aldeias','ALDEIAS',60],
     ruralUpgrade: ['⬆️ Evoluir aldeias','ALDEIAS',75],
+    tutorial: ['🎁 Missões do tutorial','MISSÕES',20],
     quests: ['🎁 Recompensas de missões de ilha','MISSÕES',20],
     banditRewards: ['🎁 Recompensas dos bandidos','MISSÕES',12],
     culture: ['🎭 Festivais e cultura','CIDADES',430],
@@ -671,6 +673,23 @@ const queueManagesTown=id=>Boolean(config.modules.smartQueue && config.smartQueu
   const queueSum = cost=>cost?cost.wood+cost.stone+cost.iron:Infinity;
   const queueMoney = cost=>cost?`${Math.floor(cost.wood)} madeira · ${Math.floor(cost.stone)} pedra · ${Math.floor(cost.iron)} ferro`:'Custo indisponível';
   const queueJobs=()=>Array.isArray(config.smartQueue.items)?config.smartQueue.items:[];
+  const buildingData=id=>W.MM?.getModels?.()?.BuildingBuildData?.[id]?.attributes?.building_data||{};
+  const unitOrders=t=>t.getUnitOrdersCollection?.()?.models||[];
+  const unitTotals=(t,key,orders=unitOrders(t))=>({
+    owned:Math.max(0,num(t.units?.()?.[key]))+Math.max(0,num(t.unitsOuter?.()?.[key])),
+    queued:orders.reduce((sum,o)=>sum+(o.attributes?.unit_type===key?
+      Math.max(0,num(o.attributes?.units_left??o.attributes?.count??o.attributes?.amount)):0),0)
+  });
+  const hasResearch=(t,key)=>Boolean(t.researches?.()?.attributes?.[key]??t.getResearches?.()?.hasResearch?.(key));
+  const researchOrders=t=>t.getResearchOrdersCollection?.()?.models||t.researchOrders?.()?.models||
+    Object.values(W.MM?.getModels?.()?.ResearchOrder||{}).filter(o=>String(o.attributes?.town_id)===String(t.id));
+  const modifiedCost=(raw,multiplier)=>{
+    const cost=queueCost(raw);
+    if(!cost||!Number.isFinite(multiplier)||multiplier<=0)return null;
+    return queueCost(Object.fromEntries(Object.entries(cost).map(([key,value])=>[key,value*multiplier])));
+  };
+  const researchCost=(t,def)=>modifiedCost(def?.resources||def?.costs,
+    Number(W.GeneralModifications?.getResearchResourcesModification?.(Number(t.id))??1));
   const queueName = j=>{
     const town=townBy(j.townId);
     const kind={building:'Construção',troop:'Tropa',ship:'Navio',research:'Pesquisa'}[j.kind]||j.kind;
@@ -694,21 +713,25 @@ function policyForUnit(key,def){
    const expectedGod=String(def.god_id||def.god||MYTH_GODS[key]||'').toLowerCase();
    if(expectedGod&&godOf(t)&&expectedGod!==godOf(t))return result('blocked','Unidade de outra divindade');
  }
- const orders=t.getUnitOrdersCollection?.()?.models||[];
+ const orders=unitOrders(t);
  const laneOrders=orders.filter(o=>{
    const item=W.GameData?.units?.[o.attributes?.unit_type];
    return !item||!!item.is_naval===policy.naval;
  });
- const owned=Math.max(0,num(t.units?.()?.[key]))+Math.max(0,num(t.unitsOuter?.()?.[key]));
- const queued=orders.reduce((sum,o)=>sum+(o.attributes?.unit_type===key?Math.max(0,num(o.attributes?.units_left??o.attributes?.count??o.attributes?.amount)):0),0);
+ const {owned,queued}=unitTotals(t,key,orders);
  const missing=Math.max(0,Math.floor(num(goal))-owned-queued);
  if(!missing)return result(owned>=num(goal)?'done':'wait',owned>=num(goal)?'Meta atingida':'Tropas em treinamento');
+ for(const [name,required] of unitBuildingLevels(key,def)){
+   if(queueBuildingLevel(t,name)<required)return result('wait',`Requer ${W.GameData?.buildings?.[name]?.name||name} nível ${required}`);
+ }
+ const requiredResearch=unitResearches(key,def).find(research=>!hasResearch(t,research));
+ if(requiredResearch)return result('wait','Aguardando pesquisa: '+(W.GameData?.researches?.[requiredResearch]?.name||requiredResearch));
  if(orders.length>=6||laneOrders.length>=policy.maxSlots)return result('wait','Limite de fila: '+laneOrders.length+'/'+policy.maxSlots+' espaços usados');
  const raw=queueCost(def.resources);
  if(!raw)return result('blocked','Custo por unidade indisponível');
  const multiplier=Number(W.GeneralModifications?.getUnitBuildResourcesModification?.(Number(t.id),def)??1);
  if(!Number.isFinite(multiplier)||multiplier<=0)return result('blocked','Modificador de custo inválido');
- const per=queueCost(Object.fromEntries(['wood','stone','iron'].map(k=>[k,raw[k]*multiplier])));
+ const per=modifiedCost(raw,multiplier);
  if(!per)return result('blocked','Custo calculado indisponível');
  const res=resource(t),popCost=Math.max(1,num(def.population,1));
  const freePop=Math.max(0,num(t.getAvailablePopulation?.()??res.population,0));
@@ -757,23 +780,24 @@ function policyForUnit(key,def){
     const target=Math.max(1,Math.floor(num(j.target,1)));
     if(j.kind==='building'){
       const currentBuildings=t.buildings?.()?.attributes||{};
-      if(!(j.key in currentBuildings))return out('blocked','Edifício não identificado');
+      const data=buildingData(t.id)[j.key];
+      if(!(j.key in currentBuildings)&&!data)return out('blocked','Edifício não identificado');
       const orders=t.buildingOrders?.()?.models||[];
       const current=num(currentBuildings[j.key]);
       const same=orders.filter(o=>String(o.attributes?.building_type)===j.key);
       const planned=current+same.reduce((sum,o)=>sum+(o.attributes?.tear_down?-1:1),0);
       if(current>=target)return out('done',`Nível ${current} alcançado`);
       const cap=num(W.GameData?.buildings?.[j.key]?.max_level,0);
-      if(cap>0&&current>=cap)return out('blocked',`Nível máximo ${cap} atingido`);
+      if(data?.has_max_level===true||cap>0&&current>=cap)return out('blocked','Nível máximo atingido');
       if(planned>=target || same.length)return out('wait','Construção deste edifício em andamento');
       const capacity=W.GameDataPremium?.isAdvisorActivated?.('curator')?7:2;
       if(orders.length>=capacity)return out('wait','Fila de obras do jogo cheia');
-      const data=W.MM?.getModels?.()?.BuildingBuildData?.[t.id]?.attributes?.building_data?.[j.key];
-      for(const [name,required] of [...queueLevelDependencies(W.GameData?.buildings?.[j.key]?.requirements),...queueLevelDependencies(data?.requirements)]){
+      for(const [name,required] of buildingRequirements(j.key,data)){
         if(num(currentBuildings[name])<required)return out('wait',`Requer ${name} nível ${required}`);
       }
       const cost=queueCost(data?.resources_for);
       if(!cost)return out('blocked','Custo da próxima obra não encontrado');
+      if(data.can_upgrade===false)return out('wait','Obra indisponível no Senado',cost);
       if(num(t.getAvailablePopulation?.())<num(data.population_for))return out('wait','População insuficiente',cost);
       if(!availableRes(t,cost))return out('wait','Aguardando recursos',cost);
       return out('ready',`Construir nível ${current+1}`,cost,1);
@@ -782,29 +806,23 @@ function policyForUnit(key,def){
       const def=W.GameData?.units?.[j.key];
       if(!def)return out('blocked','Unidade não disponível neste mundo');
       if(!!def.is_naval!==(j.kind==='ship'))return out('blocked','Tipo de unidade incompatível');
-      const current=t.buildings?.()?.attributes||{};
-      for(const [name,required] of [...queueLevelDependencies(def.requirements),...queueLevelDependencies(def.required_buildings)]){
-        if(num(current[name])<required)return out('wait',`Requer ${name} nível ${required}`);
-      }
       const plan=planRecruitBatch(t,j.key,target,num(config.smartQueue.maxBatch,35));
       return out(plan.state,plan.reason,plan.cost,plan.amount);
     }
     if(j.kind==='research'){
       const def=W.GameData?.researches?.[j.key];
       if(!def)return out('blocked','Pesquisa não disponível neste mundo');
-      if(t.researches?.()?.attributes?.[j.key])return out('done','Pesquisa concluída');
-      const orders=t.getResearchOrdersCollection?.()?.models || t.researchOrders?.()?.models || [];
-      if(orders.some(o=>String(o.attributes?.research_type||o.attributes?.research_id||o.attributes?.research)===j.key))return out('wait','Pesquisa em andamento');
+      if(hasResearch(t,j.key))return out('done','Pesquisa concluída');
+      const orders=researchOrders(t);
+      if(orders.some(o=>String(o.getType?.()||o.attributes?.research_type||o.attributes?.research_id||o.attributes?.research)===j.key))return out('wait','Pesquisa em andamento');
       if(orders.length)return out('wait','Outra pesquisa em andamento');
-      const academyReq=num(def.academy_level??def.building_level??def.building_lvl,0);
-      if(academyReq && num(t.buildings?.()?.attributes?.academy)<academyReq)return out('wait',`Academia precisa do nível ${academyReq}`);
       const current=t.buildings?.()?.attributes||{};
-      for(const [name,required] of [...queueLevelDependencies(def.requirements),...queueLevelDependencies(def.required_buildings)]){
+      for(const [name,required] of researchBuildingLevels(j.key,def)){
         if(num(current[name])<required)return out('wait',`Requer ${name} nível ${required}`);
       }
       const pointsReq=num(def.research_points,0);
       if(pointsReq && typeof t.getAvailableResearchPoints==='function' && num(t.getAvailableResearchPoints())<pointsReq)return out('wait','Pontos de pesquisa insuficientes');
-      const cost=queueCost(def.resources||def.costs);
+      const cost=researchCost(t,def);
       if(!cost)return out('blocked','Custo da pesquisa não identificado');
       if(!availableRes(t,cost))return out('wait','Aguardando recursos',cost);
       return out('ready','Iniciar pesquisa',cost,1);
@@ -821,8 +839,28 @@ function policyForUnit(key,def){
   };
   const queueLevelDependencies=raw=>{
     if(!raw||typeof raw!=='object'||Array.isArray(raw))return [];
-    return Object.entries(raw).filter(([key,value])=>BUILDINGS.includes(key)&&Number.isFinite(Number(value))&&Number(value)>0)
-      .map(([key,value])=>[key,Math.floor(Number(value))]);
+    return Object.entries(raw).map(([key,value])=>[value?.id||key,Math.floor(num(value?.needed_level??value?.level??value))])
+      .filter(([key,value])=>BUILDINGS.includes(key)&&value>0);
+  };
+  const definitionLevels=def=>[...queueLevelDependencies(def?.building_dependencies),
+    ...queueLevelDependencies(def?.requirements),...queueLevelDependencies(def?.required_buildings)];
+  const buildingRequirements=(key,data)=>[...queueLevelDependencies(W.GameData?.buildings?.[key]?.dependencies),
+    ...definitionLevels(W.GameData?.buildings?.[key]),...queueLevelDependencies(data?.requirements),
+    ...queueLevelDependencies(data?.missing_dependencies)];
+  const unitResearches=(key,def)=>Array.isArray(def?.research_dependencies)?def.research_dependencies:
+    key===COLONY_SHIP&&W.GameData?.researches?.[key]?[key]:[];
+  const unitBuildingLevels=(key,def)=>{
+    const levels=definitionLevels(def);
+    if(key===COLONY_SHIP&&!levels.some(([k])=>k==='docks'))
+      levels.push(['docks',num(W.GameData?.colonization_requirements?.docks,10)]);
+    return levels;
+  };
+  const researchBuildingLevels=(key,def)=>{
+    const levels=definitionLevels(def);
+    const fallback=key===COLONY_SHIP?num(W.GameData?.colonization_requirements?.academy,13):0;
+    const academy=num(def?.academy_level??def?.building_level??def?.building_lvl,fallback);
+    if(academy>0&&!levels.some(([k])=>k==='academy'))levels.push(['academy',academy]);
+    return levels;
   };
   function queueStructuralNeed(job,assessment){
     if(assessment.state==='done'||assessment.state==='ready'||!assessment.town)return null;
@@ -840,8 +878,6 @@ function policyForUnit(key,def){
     const unit=W.GameData?.units?.[job.key],research=W.GameData?.researches?.[job.key];
     const def=job.kind==='building'?W.GameData?.buildings?.[job.key]:job.kind==='research'?research:unit;
     if(job.kind==='research'){
-      const min=num(research?.academy_level??research?.building_level??research?.building_lvl,0);
-      if(min>0)requireLevel('academy',min,'academia necessária para pesquisa');
       const points=num(research?.research_points,0);
       if(points>0&&typeof t.getAvailableResearchPoints==='function'&&num(t.getAvailableResearchPoints())<points){
         requireLevel('academy',Math.max(1,num(snapshot.academy)+1),'pontos de pesquisa insuficientes');
@@ -851,16 +887,10 @@ function policyForUnit(key,def){
       if(!unit)return null;
       requireLevel(job.kind==='ship'?'docks':'barracks',1,'edifício militar necessário');
     }
-    for(const entry of queueLevelDependencies(def?.requirements)){
-      requireLevel(entry[0],entry[1],'pré-requisito conhecido do jogo');
-    }
-    for(const entry of queueLevelDependencies(def?.required_buildings)){
-      requireLevel(entry[0],entry[1],'pré-requisito conhecido do jogo');
-    }
-    if(job.kind==='building'){
-      const data=W.MM?.getModels?.()?.BuildingBuildData?.[t.id]?.attributes?.building_data?.[job.key];
-      for(const entry of queueLevelDependencies(data?.requirements))requireLevel(entry[0],entry[1],'pré-requisito de construção');
-    }
+    const data=job.kind==='building'?buildingData(t.id)[job.key]:null;
+    const levels=job.kind==='building'?buildingRequirements(job.key,data):
+      job.kind==='research'?researchBuildingLevels(job.key,def):unitBuildingLevels(job.key,def);
+    for(const [key,level] of levels)requireLevel(key,level,'pré-requisito conhecido do jogo');
     const res=resource(t),cap=num(res.storage,0);
     const requireStorage=(cost)=>{
       if(cap<=0||!cost)return;
@@ -869,13 +899,12 @@ function policyForUnit(key,def){
       }
     };
     if(job.kind==='building'){
-      const d=W.MM?.getModels?.()?.BuildingBuildData?.[t.id]?.attributes?.building_data?.[job.key];
-      requireStorage(queueCost(d?.resources_for));
-      if(num(d?.population_for,0)>num(t.getAvailablePopulation?.()??res.population,0)){
+      requireStorage(queueCost(data?.resources_for));
+      if(num(data?.population_for,0)>num(t.getAvailablePopulation?.()??res.population,0)){
         requireLevel('farm',num(snapshot.farm)+1,'população insuficiente para a obra');
       }
     }else if(job.kind==='research'){
-      requireStorage(queueCost(research?.resources||research?.costs));
+      requireStorage(researchCost(t,research));
     }else if(unit){
       const policy=policyForUnit(job.key,unit);
       const min=Math.min(policy.minimum,Math.max(1,num(job.target)));
@@ -969,30 +998,80 @@ function policyForUnit(key,def){
       return true;
     }
   }
+  function pendingColony(t){
+    if(config.cityProfiles?.[t.id]!=='colony'||!W.GameData?.units?.[COLONY_SHIP])return false;
+    const {owned,queued}=unitTotals(t,COLONY_SHIP);
+    return num(config.recruit.targets?.[t.id]?.[COLONY_SHIP])>owned+queued;
+  }
+  const pendingColonyResearch=t=>unitResearches(COLONY_SHIP,W.GameData?.units?.[COLONY_SHIP])
+    .filter(key=>!hasResearch(t,key));
+  function colonyBuildingPlan(t,data){
+    const ship=W.GameData.units[COLONY_SHIP],pending=pendingColonyResearch(t),goals=new Map();
+    const res=resource(t),free=num(t.getAvailablePopulation?.()??res.population);
+    function requireLevel(key,target){
+      const current=queueBuildingLevel(t,key),cap=num(W.GameData?.buildings?.[key]?.max_level);
+      const level=cap>0?Math.min(target,cap):target;
+      if(level<=current||level<=num(goals.get(key)))return;
+      goals.set(key,level);
+      for(const [parent,minimum] of buildingRequirements(key,data[key]))requireLevel(parent,minimum);
+      requireCapacity(queueCost(data[key]?.resources_for),data[key]?.population_for);
+    }
+    function requireCapacity(cost,population){
+      if(cost&&num(res.storage)>0&&Object.values(cost).some(value=>value>num(res.storage)))
+        requireLevel('storage',queueBuildingLevel(t,'storage')+1);
+      if(num(population)>free)requireLevel('farm',queueBuildingLevel(t,'farm')+1);
+    }
+    for(const [key,level] of unitBuildingLevels(COLONY_SHIP,ship))requireLevel(key,level);
+    const modifier=Number(W.GeneralModifications?.getUnitBuildResourcesModification?.(Number(t.id),ship)??1);
+    requireCapacity(modifiedCost(ship.resources,modifier),ship.population);
+    for(const key of pending){
+      const def=W.GameData?.researches?.[key];
+      for(const [building,level] of researchBuildingLevels(key,def))requireLevel(building,level);
+      if(num(def?.research_points)>0&&typeof t.getAvailableResearchPoints==='function'&&
+        num(t.getAvailableResearchPoints())<num(def.research_points))requireLevel('academy',queueBuildingLevel(t,'academy')+1);
+      requireCapacity(researchCost(t,def),0);
+    }
+    const list=config.research.queue?.[t.id];
+    const active=pending.length?config.modules.research&&pending.some(key=>list?.includes?.(key)):config.modules.recruit;
+    return {goals,active};
+  }
   async function build(){
+    const candidates=[];
+    let demolition;
+    const priority=Array.isArray(config.build.priority)?config.build.priority:BUILDINGS;
     for(const [id,targets] of Object.entries(config.build.targets)){
-      const t=townBy(id); if(!t || !targets || !Object.keys(targets).length || queueManagesTown(id)) continue;
-      const current={...(t.buildings?.()?.attributes||{})};
-      const queued=t.buildingOrders?.()?.models || [];
-      const full=W.GameDataPremium?.isAdvisorActivated?.('curator') ? 7 : 2;
-      if(queued.length>=full) continue;
-      for(const q of queued){const n=q.attributes?.building_type;if(n in current)current[n]+=q.attributes?.tear_down?-1:1;}
-      for(const k of config.build.priority){
-        if(!Object.prototype.hasOwnProperty.call(targets,k)) continue;
-        const wanted=num(targets[k]);const lvl=num(current[k]);
-        if(wanted===lvl) continue;
-        if(wanted<lvl){
-          if(!config.build.allowDemolition) continue;
-          await bridge(id,'BuildingOrder','tearDown',{building_id:k});
-          log(`${tName(t)}: demolir ${k}`);return true;
+      const t=townBy(id);
+      if(!t||!targets||queueManagesTown(id))continue;
+      const orders=t.buildingOrders?.()?.models||[];
+      if(orders.length>=(W.GameDataPremium?.isAdvisorActivated?.('curator')?7:2))continue;
+      const data=buildingData(id);
+      const colony=pendingColony(t)?colonyBuildingPlan(t,data):null;
+      const focused=Boolean(colony?.goals.size);
+      if(colony?.active&&!focused)continue;
+      const keys=focused?[...new Set([...priority,...colony.goals.keys()])]:priority;
+      for(const [index,key] of keys.entries()){
+        const target=focused?colony.goals.get(key):Object.hasOwn(targets,key)?num(targets[key]):undefined;
+        if(target===undefined||orders.some(o=>o.attributes?.building_type===key))continue;
+        const current=queueBuildingLevel(t,key);
+        if(target<current&&config.build.allowDemolition&&!colony&&data[key]?.can_tear_down!==false){
+          demolition??={id,key,t};
         }
-        const data=W.MM.getModels?.()?.BuildingBuildData?.[id]?.attributes?.building_data?.[k];
-        if(!data || !availableRes(t,data.resources_for,5) || num(t.getAvailablePopulation?.())<num(data.population_for)) continue;
-        await bridge(id,'BuildingOrder','buildUp',{building_id:k});
-        log(`${tName(t)}: construir ${k} ${lvl+1}`);return true;
+        if(target<=current)continue;
+        const next=queueAnalyze({townId:id,kind:'building',key,target});
+        if(next.state!=='ready')continue;
+        const seconds=num(data[key]?.building_time);
+        candidates.push({id,key,t,level:current+1,focused,seconds:seconds>0?seconds:Infinity,cost:next.score,index});
       }
     }
-    return false;
+    candidates.sort((a,b)=>Number(b.focused)-Number(a.focused)||a.seconds-b.seconds||a.cost-b.cost||a.index-b.index);
+    const next=candidates[0]||demolition;
+    if(!next)return false;
+    const {id,key,t,level,seconds,focused}=next;
+    await bridge(id,'BuildingOrder',level?'buildUp':'tearDown',{building_id:key});
+    const name=W.GameData?.buildings?.[key]?.name||key;
+    const detail=level?(focused?' · prioridade Colonização':'')+(Number.isFinite(seconds)?' · '+seconds+' s':''):'';
+    log(tName(t)+(level?' · construir '+name+' nível '+level:' · demolir '+name)+detail);
+    return true;
   }
   async function recruit(){
     const candidates=[],continuous=config.recruit.continuous||{};
@@ -1001,25 +1080,26 @@ function policyForUnit(key,def){
     for(const id of ids){
       const t=townBy(id),goals=config.recruit.targets?.[id]||{},loops=continuous[id]||{};
       if(!t||queueManagesTown(id))continue;
+      const colonizing=pendingColony(t);
+      const plannedResearch=config.research.queue?.[id];
+      const colonyPriority=colonizing&&pendingColonyResearch(t).every(key=>config.modules.research&&plannedResearch?.includes?.(key));
       for(const [unit,wanted] of Object.entries(goals)){
-        if(Number(loops[unit])>0)continue;
+        if(Number(loops[unit])>0||colonyPriority&&unit!==COLONY_SHIP)continue;
         const plan=planRecruitBatch(t,unit,wanted);
-        if(plan.state==='ready')candidates.push({t,unit,plan,continuous:false,lastAt:0});
+        if(plan.state==='ready')candidates.push({t,unit,plan,priority:colonyPriority,continuous:false,lastAt:0});
       }
       for(const [unit,batchRaw] of Object.entries(loops)){
+        if(colonyPriority&&unit!==COLONY_SHIP)continue;
         const def=W.GameData?.units?.[unit],batch=Math.floor(Number(batchRaw));
         if(!def||!Number.isSafeInteger(batch)||batch<1||batch>999)continue;
-        const owned=Math.max(0,num(t.units?.()?.[unit]))+Math.max(0,num(t.unitsOuter?.()?.[unit]));
-        const orders=t.getUnitOrdersCollection?.()?.models||[];
-        const queued=orders.reduce((sum,o)=>sum+
-          (o.attributes?.unit_type===unit?Math.max(0,num(o.attributes?.units_left??o.attributes?.count??o.attributes?.amount)):0),0);
+        const {owned,queued}=unitTotals(t,unit);
         // Meta móvel: assim que a fila liberar espaço, outro lote pode ser criado.
         const plan=planRecruitBatch(t,unit,owned+queued+batch,batch);
-        if(plan.state==='ready')candidates.push({t,unit,plan,continuous:true,
+        if(plan.state==='ready')candidates.push({t,unit,plan,priority:colonyPriority,continuous:true,
           lastAt:num(runtime.continuousRecruitLast?.[id+':'+unit])});
       }
     }
-    candidates.sort((a,b)=>Number(a.continuous)-Number(b.continuous)||
+    candidates.sort((a,b)=>Number(b.priority)-Number(a.priority)||Number(a.continuous)-Number(b.continuous)||
       (a.continuous?a.lastAt-b.lastAt:queueSum(a.plan.cost)-queueSum(b.plan.cost))||
       queueSum(a.plan.cost)-queueSum(b.plan.cost));
     const best=candidates[0];if(!best)return false;
@@ -1040,13 +1120,11 @@ function policyForUnit(key,def){
   async function research(){
     for(const [id,list] of Object.entries(config.research.queue)){
       const t=townBy(id);if(!t || !Array.isArray(list) || queueManagesTown(id))continue;
-      const done=t.researches?.()?.attributes||{};
-      for(const key of list){
-        if(done[key] || !W.GameData?.researches?.[key])continue;
-        const def=W.GameData.researches[key];
-        if(!availableRes(t,def.resources||{}))continue;
+      const colony=pendingColony(t)?pendingColonyResearch(t).filter(key=>list.includes(key)):[];
+      for(const key of colony.length?colony:list){
+        if(queueAnalyze({townId:id,kind:'research',key,target:1}).state!=='ready')continue;
         await bridge(id,'ResearchOrder','research',{id:key});
-        log(`${tName(t)}: pesquisar ${key}`);return true;
+        log(`${tName(t)}: pesquisar ${W.GameData.researches[key].name||key}`);return true;
       }
     }
     return false;
@@ -1320,15 +1398,17 @@ function policyForUnit(key,def){
     }
     return false;
   }
-  const townForQuest=a=>{
+  const townsForQuest=(a,native)=>{
     const coords=a.configuration||{};
     const x=coords.island_x??a.island_x, y=coords.island_y??a.island_y;
-    if(x!==undefined&&y!==undefined){
-      const match=towns().find(t=>String(t.getIslandCoordinateX?.())===String(x)&&String(t.getIslandCoordinateY?.())===String(y));
-      return match||null;
+    if(x!=null&&y!=null){
+      const matches=towns().filter(t=>String(t.getIslandCoordinateX?.())===String(x)&&String(t.getIslandCoordinateY?.())===String(y));
+      const current=matches.find(t=>Number(t.id)===Number(W.Game?.townId));
+      return native&&current?[current,...matches.filter(t=>t!==current)]:matches;
     }
-    if(a.town_id&&townBy(a.town_id))return townBy(a.town_id);
-    return towns().sort((a,b)=>Number(a.id)-Number(b.id))[0]||null;
+    if(native)return [];
+    const byId=a.town_id&&townBy(a.town_id);
+    return byId?[byId]:towns().sort((a,b)=>Number(a.id)-Number(b.id));
   };
 
   const islandQuestAll=()=>{
@@ -1339,20 +1419,66 @@ function policyForUnit(key,def){
       return Array.isArray(raw)?raw:Object.values(raw);
     }catch{return [];}
   };
-  const questRows=()=>islandQuestAll().filter(q=>q.attributes?.state==='satisfied'&&
-    q.attributes?.progressable_id!==undefined&&q.attributes?.progressable_id!==null);
   const islandQuestInfo=(q)=>{
     const a=q?.attributes||q||{},cfg=a.configuration||{};
+    const rewardId=a.progressable_id;
+    const metadata=q?.staticData||W.GameData?.progressable?.[rewardId]||{};
+    const native=metadata.type==='island_quest'||typeof metadata.challenge_type==='string';
     const objective=[a.objective,a.task,a.current_task,cfg.objective,cfg.task,cfg.requirements]
       .find(x=>x&&typeof x==='object'&&!Array.isArray(x))||null;
-    const type=String(objective?.type??objective?.kind??a.objective_type??a.quest_type??'').toLowerCase();
-    const id=a.progressable_id??a.id??q?.id;
-    const town=townForQuest(a);
+    const type=String(metadata.challenge_type??objective?.type??objective?.kind??a.objective_type??a.quest_type??'').toLowerCase();
+    const id=rewardId??a.id??q?.id;
+    const instance=a.id??q?.id??[id,cfg.island_x??a.island_x,cfg.island_y??a.island_y].join(':');
+    const matches=townsForQuest(a,native);
     const state=String(a.state??'unknown').toLowerCase();
-    return {id,state,type,objective,town,
-      name:String(a.name||a.title||'Missão '+String(id??'?')),
+    return {id,rewardId,instance,state,type,objective,native,side:metadata.side,town:matches[0],towns:matches,
+      name:String(metadata.name||a.name||a.title||'Missão '+String(id??'?')),
       model:q,raw:a};
   };
+  const questRows=(rows=islandQuestAll().map(islandQuestInfo))=>
+    rows.filter(info=>info.state==='satisfied'&&info.rewardId!=null&&info.rewardId!=='');
+
+  const questResourceKeys=['wood','stone','iron'];
+  function questResources(raw){
+    const values=questResourceKeys.map(k=>{
+      const value=raw?.[k];
+      return typeof value==='number'||typeof value==='string'&&/^\d+$/.test(value)?Number(value):NaN;
+    });
+    if(values.every(n=>Number.isSafeInteger(n)&&n>=0))return Object.fromEntries(questResourceKeys.map((k,i)=>[k,values[i]]));
+    return null;
+  }
+  function nativeIslandQuestPlan(info){
+    const wait=why=>({type:'wait',why});
+    if(config.quests.autoObjectives!==true)return wait('Execução automática de objetivos desativada');
+    if(!info.rewardId||!['viable','running'].includes(info.state))return wait('Aguardando estado válido do jogo');
+    const timeBased=['wait_time','bear_effect'].includes(info.type);
+    if(!timeBased&&info.type!=='spend_resources')return {type:'unsupported',why:'Objetivo exige ação manual no jogo'};
+    const op=(name,args,why,town=info.town)=>({type:'action',why,town,op:{
+      model_url:'IslandQuests',name,arguments:{...args,progressable_name:info.rewardId}
+    }});
+    const required=timeBased?null:questResources(info.raw.configuration?.resources);
+    if(!timeBased){
+      if(!required)return wait('Aguardando custo de recursos da missão');
+      const cost=Object.values(required).reduce((sum,n)=>sum+n,0);
+      if(cost>0&&(config.quests.allowResourceCost!==true||cost>num(config.quests.maxResourceCost)))
+        return wait('Custo de recursos fora da autorização configurada');
+    }
+    if(info.state==='viable'){
+      const side=info.side==='good'?'wise':info.side==='evil'?'aggressive':null;
+      if(!side||side!==config.quests.preferred)return wait('Opção fora da preferência configurada');
+      return op('decide',{decision:info.side},'Escolher a opção configurada');
+    }
+    if(timeBased){
+      if(info.raw.progress?.wait_till!==null)return wait('Aguardando conclusão do prazo no jogo');
+      return op('challenge',{challenge:{current_town_id:true}},'Iniciar o prazo da missão');
+    }
+    const remaining=questResources(info.raw.progress?.resources);
+    if(!remaining||questResourceKeys.some(k=>remaining[k]>required[k]))return wait('Aguardando saldo de recursos válido');
+    if(!Object.values(remaining).some(n=>n>0))return wait('Aguardando confirmação da entrega pelo jogo');
+    const town=info.towns.find(candidate=>availableRes(candidate,remaining));
+    if(!town)return wait('Nenhuma cidade da ilha tem os recursos restantes');
+    return op('challengeResources',{challenge:remaining},'Entregar os recursos restantes da missão',town);
+  }
   function questActionCandidates(info){
     const a=info.raw,model=info.model;
     let modelActions=null;
@@ -1386,9 +1512,10 @@ function policyForUnit(key,def){
     return true;
   };
   function islandQuestPlan(info){
-    if(info.state==='satisfied')return {type:'reward',why:'Recompensa pronta'};
-    if(['closed','completed','done','expired','failed'].includes(info.state))return {type:'skip',why:'Missão encerrada'};
+    if(['closed','completed','done','expired','failed','aborted'].includes(info.state))return {type:'skip',why:'Missão encerrada'};
     if(!info.town)return {type:'wait',why:'Cidade da missão indisponível'};
+    if(info.state==='satisfied')return {type:'reward',why:'Recompensa pronta'};
+    if(info.native)return nativeIslandQuestPlan(info);
     const objective=info.objective||{},key=String(objective.building_type??objective.research_type??
       objective.unit_type??objective.building??objective.research??objective.unit??objective.key??objective.id??'');
     const target=Math.floor(num(objective.target_level??objective.target??objective.level??objective.count??objective.amount,1));
@@ -1413,11 +1540,16 @@ function policyForUnit(key,def){
     return {type:'unsupported',why:actions.length?'Opções não autorizadas pelo limite de custo ou preferência':
       'Objetivo ainda sem ação compatível identificada no cliente'};
   }
-  async function islandQuestProgress(){
+  function islandQuestStatus(){
+    return islandQuestAll().map(q=>{
+      const info=islandQuestInfo(q),plan=islandQuestPlan(info);
+      return plan.type==='skip'?null:{name:info.name,state:info.state,reason:plan.why};
+    }).filter(Boolean);
+  }
+  async function islandQuestProgress(rows){
     if(config.quests.autoObjectives!==true)return false;
     const rt=readRuntime(),now=Date.now();rt.islandQuestActions??={};
-    for(const q of islandQuestAll()){
-      const info=islandQuestInfo(q);
+    for(const info of rows){
       if(info.id===undefined||info.id===null||info.state==='satisfied')continue;
       const plan=islandQuestPlan(info),id=String(info.id);
       if(plan.type==='build'||plan.type==='research'||plan.type==='recruit'){
@@ -1439,14 +1571,15 @@ function policyForUnit(key,def){
         save();log('Missão '+id+': objetivo programado na cidade '+plan.townId+' — '+plan.why);return true;
       }
       if(plan.type!=='action'||!plan.op||!info.town)continue;
-      const key=id+':'+plan.op.name;
-      if(now-num(rt.islandQuestActions[key])<120000)continue;
+      const key=info.instance+':'+plan.op.name;
+      if(now-num(rt.islandQuestActions[key]??rt.islandQuestActions[id+':'+plan.op.name])<120000)continue;
       if(!config.dryRun){
         // Marcar antes do envio para não repetir um consumo de tropas/recursos se a resposta falhar.
-        rt.islandQuestActions[key]=now;writeRuntime(rt);
+        rt.islandQuestActions[key]=now;
+        rt.islandQuestActions=Object.fromEntries(Object.entries(rt.islandQuestActions).filter(([,v])=>now-num(v)<3600000));
+        writeRuntime(rt);
       }
-      await action('frontend_bridge','execute',{model_url:plan.op.model_url,action_name:plan.op.name,
-        arguments:plan.op.arguments,town_id:Number(info.town.id),nl_init:true});
+      await bridge((plan.town||info.town).id,plan.op.model_url,plan.op.name,plan.op.arguments);
       log('Missão '+id+': '+plan.why+' ('+plan.op.name+')'+(config.dryRun?' — SIMULAÇÃO':''));
       return true;
     }
@@ -1454,20 +1587,159 @@ function policyForUnit(key,def){
   }
 
   async function quests(){
-    const ready=questRows();
-    if(!ready.length)return islandQuestProgress();
+    const rows=islandQuestAll().map(islandQuestInfo),ready=questRows(rows);
+    if(!ready.length)return islandQuestProgress(rows);
     const rt=readRuntime(),now=Date.now();rt.questAttempts??={};
-    for(const q of ready){
-      const a=q.attributes||{},pid=a.progressable_id,key=String(pid),town=townForQuest(a);
+    for(const info of ready){
+      const {rewardId,instance,town}=info;
       if(!town)continue;
-      if(now-num(rt.questAttempts[key])<60000)continue;
-      const args={reward_action:config.quests.rewardAction==='use'?'use':'stash',state:'closed',progressable_id:pid};
-      await action('frontend_bridge','execute',{model_url:'IslandQuests',action_name:'claimReward',arguments:args,town_id:Number(town.id),nl_init:true});
-      if(!config.dryRun){rt.questAttempts[key]=now;rt.questAttempts=Object.fromEntries(Object.entries(rt.questAttempts).filter(([,v])=>now-num(v)<3600000));writeRuntime(rt);}
-      log(`Missão ${key}: recompensa ${args.reward_action==='stash'?'guardada':'recebida'} (${tName(town)})`);return true;
+      if(now-num(rt.questAttempts[instance]??rt.questAttempts[String(rewardId)])<60000)continue;
+      const mode=config.quests.rewardAction==='use'||info.model?.areRewardsStashable?.()===false?'use':'stash';
+      const rewardAction=W.Game?.constants?.island_quest?.reward?.['reward_'+mode]??mode;
+      if(!config.dryRun){
+        rt.questAttempts[instance]=now;
+        rt.questAttempts=Object.fromEntries(Object.entries(rt.questAttempts).filter(([,v])=>now-num(v)<3600000));
+        writeRuntime(rt);
+      }
+      await bridge(town.id,'IslandQuests','claimReward',{reward_action:rewardAction,state:'closed',progressable_id:rewardId});
+      log(`Missão ${rewardId}: ${mode==='stash'?'guardar':'receber'} recompensa em ${tName(town)}${config.dryRun?' — SIMULAÇÃO':' — solicitação enviada'}`);
+      return true;
     }
-    return islandQuestProgress();
+    return islandQuestProgress(rows);
   }
+  const TUTORIAL_BUILDINGS=Object.freeze({
+    StartTutorialQuest:'lumber',BuildLumberMinorQuest:'lumber',BuildIronerQuest:'ironer',
+    BuildStonerQuest:'stoner',BuildStorageQuest:'storage',BuildStorageMinorQuest:'storage',
+    BuildFarmQuest:'farm',BuildFarmMinorQuest:'farm',BuildBarracksQuest:'barracks',
+    BuildTempleQuest:'temple',BuildTempleMinorQuest:'temple',BuildAcademyQuest:'academy',
+    BuildMarketQuest:'market',BuildDocksQuest:'docks',BuildHideQuest:'hide',BuildWallQuest:'wall'
+  });
+  const TUTORIAL_TROOPS=Object.freeze({
+    RecruitSwordsmanQuest:'sword',RecruitSwordsmanMinorQuest:'sword',RecruitGodsentQuest:'godsent'
+  });
+  const TUTORIAL_RESEARCH=Object.freeze({ResearchSlingerQuest:'slinger',ResearchBiremeQuest:'bireme'});
+  const tutorialBridge=(townId,model_url,action_name,args,reason)=>({reason,command:[
+    'frontend_bridge','execute',{town_id:townId,model_url,action_name,arguments:args,captcha:null}
+  ]});
+  function tutorialReward(q,town,id,pid){
+    const townId=Number(town.id),rewards=q.getRewardsWithResourcesOrFavor();
+    const amounts={wood:0,stone:0,iron:0,favor:0};
+    for(const {data} of rewards){
+      if(!data||typeof data!=='object')return {reason:'Dados da recompensa indisponíveis'};
+      for(const key of Object.keys(amounts)){
+        if(!Object.hasOwn(data,key))continue;
+        const amount=Number(data[key]);
+        if(!Number.isFinite(amount)||amount<0)return {reason:'Quantidade da recompensa indisponível'};
+        amounts[key]+=amount;
+      }
+    }
+    const current=rewards.length?resource(town):{};
+    for(const [key,amount] of Object.entries(amounts)){
+      if(!amount)continue;
+      const favor=key==='favor',used=Number(current[key]);
+      const cap=Number(favor?W.MM.getModels().PlayerGods?.[currentPlayerId()]?.getMaxFavor?.():current.storage);
+      if(favor&&!godOf(town)||!Number.isFinite(used)||!Number.isFinite(cap)||cap<=0)
+        return {reason:'Capacidade para a recompensa indisponível'};
+      if(used+amount>cap)return {reason:favor?'Aguardando espaço de favor':'Aguardando espaço no armazém'};
+    }
+    return tutorialBridge(townId,'Progressable/'+id,'progressTo',{progressable_id:pid,state:'closed'},'Resgatar recompensa');
+  }
+  function tutorialQueue(job){
+    const tried=new Set();
+    while(!tried.has(job.key)){
+      tried.add(job.key);
+      const {kind,key,townId}=job,next=queueAnalyze(job);
+      if(next.state==='ready'){
+        if(kind==='building')
+          return tutorialBridge(townId,'BuildingOrder','buildUp',{building_id:key,build_for_gold:false},key+': '+next.why);
+        if(kind==='research')
+          return tutorialBridge(townId,'ResearchOrder','research',{id:key},'Pesquisar '+key);
+        return {reason:'Recrutar '+next.amount+' '+key,command:[
+          'building_barracks','build',{town_id:townId,unit_id:key,amount:next.amount}
+        ]};
+      }
+      const need=queueStructuralNeed(job,next);
+      if(!need)return {reason:next.why};
+      job={...need,kind:'building',townId};
+    }
+    return {reason:'Aguardando pré-requisitos da missão'};
+  }
+  function tutorialObjective(q,town,pid){
+    if(q.getTasks()?.length>1)return {reason:'Confira os objetivos desta missão no jogo'};
+    const progress=q.getProgressForTaskId(0),current=Number(progress?.curr),max=Number(progress?.max);
+    if(progress===true||(Number.isFinite(current)&&Number.isFinite(max)&&current>=max))
+      return {reason:'Aguardando confirmação da missão pelo jogo'};
+    const level=pid.match(/^Build(Main|Farm|Lumber|Stoner|Ironer|Barracks|Temple)Level([1-9]\d?)$/);
+    const building=level?.[1].toLowerCase()??(Object.hasOwn(TUTORIAL_BUILDINGS,pid)?TUTORIAL_BUILDINGS[pid]:'');
+    const troop=Object.hasOwn(TUTORIAL_TROOPS,pid)?TUTORIAL_TROOPS[pid]:'';
+    const research=Object.hasOwn(TUTORIAL_RESEARCH,pid)?TUTORIAL_RESEARCH[pid]:'';
+    const target=Number.isSafeInteger(max)&&max>0?max:0,townId=Number(town.id);
+    if(building){
+      const data=W.GameData?.buildings?.[building],goal=level?Number(level[2]):target||1;
+      if(data&&goal<=num(data.max_level,goal)){
+        if(!target&&!level&&(progress!==false||queueBuildingLevel(town,building)>=goal))
+          return {reason:'Nível da construção não informado pelo jogo'};
+        if(!buildingData(townId)[building])
+          return tutorialBridge(townId,'BuildingBuildData/'+townId,'forceUpdate',null,'Atualizar dados de construção');
+        return tutorialQueue({kind:'building',key:building,townId,target:goal});
+      }
+    }else if(troop&&target){
+      return tutorialQueue({kind:'troop',key:troop,townId,target});
+    }else if(research){
+      return tutorialQueue({kind:'research',key:research,townId,target:1});
+    }else if(troop)return {reason:'Quantidade de tropas não informada pelo jogo'};
+    return {reason:'Objetivo exige uma ação no jogo'};
+  }
+  function tutorialPlans(){
+    return models('Progressable').filter(q=>q?.getGroupId?.()==='quest').flatMap(q=>{
+      const state=q.getState(),id=String(q.getId()??''),pid=String(q.getProgressableId()??'');
+      if(['closed','aborted','inactive'].includes(state))return [];
+      const row={id,state,name:String(q.getSummary()||pid)};
+      if(!/^[\w-]{1,100}$/.test(id)||!/^[\w-]{1,100}$/.test(pid))
+        return [{...row,reason:'Identificação da missão indisponível'}];
+      const townId=Number(q.getConfiguration('town_id')??q.get('town_id')??W.Game.townId);
+      const town=Number.isSafeInteger(townId)&&townId>0?townBy(townId):null;
+      if(!town)return [{...row,reason:'Cidade da missão indisponível'}];
+      try{
+        const plan=state==='satisfied'?tutorialReward(q,town,id,pid):
+          state==='running'?tutorialObjective(q,town,pid):{reason:'Aguardando início pelo jogo'};
+        return [{...row,...plan}];
+      }catch{
+        return [{...row,reason:'Dados da missão indisponíveis no cliente'}];
+      }
+    }).sort((a,b)=>Number(b.state==='satisfied')-Number(a.state==='satisfied'));
+  }
+  function tutorialInfo(){
+    const total=num(W.Game?.tutorial_bar_quests),player=W.MM?.getModels?.()?.Player?.[currentPlayerId()];
+    const rows=tutorialPlans().map(({id,name,state,reason})=>({id,name,state,reason}));
+    return {rows,total,completed:num(player?.getQuestsClosed?.())};
+  }
+  async function tutorial(){
+    const rt=readRuntime(),now=Date.now(),attempts=rt.tutorialAttempts||{};
+    for(const row of tutorialPlans()){
+      if(!row.command)continue;
+      const key=JSON.stringify(row.command);
+      if(Object.hasOwn(attempts,key)&&now-num(attempts[key])<60000)continue;
+      if(!config.dryRun){
+        rt.tutorialAttempts=Object.fromEntries(Object.entries(attempts).filter(([,ts])=>now-num(ts)<60000));
+        rt.tutorialAttempts[key]=now;
+        writeRuntime(rt);
+      }
+      const result=await action(...row.command);
+      if(result?.captcha_required===true||result?.json?.captcha_required===true)
+        throw Error('O jogo solicitou verificação para esta missão');
+      if(row.command[0]==='building_barracks'){
+        const {town_id,unit_id}=row.command[2];
+        const town=townBy(town_id);
+        if(town)markRecruitLane(town,W.GameData.units[unit_id]);
+      }
+      log((config.dryRun?'SIMULAÇÃO ':'')+'Tutorial · '+row.name+': '+row.reason);
+      return true;
+    }
+    return false;
+  }
+
+
   async function banditRewards(){
     const camp=W.MM?.getModelByNameAndPlayerId?.('PlayerAttackSpot');
     if(!camp?.hasReward?.())return false;
@@ -2897,6 +3169,10 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
       }
       if(id==='ruralTrade'||id==='ruralUpgrade'||id==='ruralUnlock')return 'Aguardando aldeias, recursos ou disponibilidade';
       if(id==='bootcamp')return 'Aguardando nível do acampamento, tropas ou recarga';
+      if(id==='tutorial'){
+        const rows=tutorialPlans();
+        return rows.find(row=>row.command)?.reason||rows[0]?.reason||'Nenhuma missão do tutorial ativa';
+      }
       if(id==='quests'){
         const all=islandQuestAll().map(q=>islandQuestPlan(islandQuestInfo(q)));
         if(!all.length)return 'Nenhuma missão de ilha carregada pelo cliente';
@@ -2954,7 +3230,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
       </div>
       <p class="smallnote">Se um módulo não executou uma ação, isso não é necessariamente falha: pode estar aguardando recursos, tempo ou condição. Em modo simulação, ações não são contabilizadas como executadas no jogo. Dados de diagnóstico são armazenados somente neste PC.</p>`;
   };
-  const handlers={farm,build,smartQueue,finishFree,recruit,research,trade,ruralTrade,ruralUnlock,ruralUpgrade,culture,bootcamp,quests,banditRewards,cave,commands,alerts};
+  const handlers={farm,build,smartQueue,finishFree,recruit,research,trade,ruralTrade,ruralUnlock,ruralUpgrade,culture,bootcamp,tutorial,quests,banditRewards,cave,commands,alerts};
   const lock = () => {
     const now=Date.now();
     try{
@@ -2979,7 +3255,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     running=true;
     try {
       const now=Date.now();
-      const order=['commands','alerts','finishFree','smartQueue','banditRewards','quests','bootcamp','ruralUnlock','ruralUpgrade','farm','build','recruit','research','trade','ruralTrade','culture','cave'];
+      const order=['commands','alerts','finishFree','smartQueue','tutorial','banditRewards','quests','bootcamp','ruralUnlock','ruralUpgrade','farm','build','recruit','research','trade','ruralTrade','culture','cave'];
       for(const id of order){
         if(!config.modules[id] || num(nextRun[id])>now)continue;
         if(id!=='commands'&&id!=='alerts'){
@@ -3356,10 +3632,13 @@ let queueKindSelected='building';
     <button data-action="askNotif">Permitir notificações</button>`;
   };
   const rewardsContent=()=>{
-    const ready=questRows();const camp=W.MM?.getModelByNameAndPlayerId?.('PlayerAttackSpot');
-    const tasks=islandQuestAll().map(q=>{const info=islandQuestInfo(q);return {info,plan:islandQuestPlan(info)};});
-    const rewards=ready.map(q=>`<div class="city"><b>${cleanStr(q.attributes?.name||q.attributes?.progressable_id)}</b><div>✅ Concluída · ilha ${cleanStr(String(q.attributes?.configuration?.island_x??'?'))}:${cleanStr(String(q.attributes?.configuration?.island_y??'?'))}</div></div>`).join('');
+    const rows=islandQuestAll().map(islandQuestInfo),ready=questRows(rows);
+    const camp=W.MM?.getModelByNameAndPlayerId?.('PlayerAttackSpot');
+    const tasks=rows.map(info=>({info,plan:islandQuestPlan(info)}));
+    const rewards=ready.map(info=>`<div class="city"><b>${cleanStr(info.name)}</b><div>✅ Concluída · ilha ${cleanStr(String(info.raw.configuration?.island_x??'?'))}:${cleanStr(String(info.raw.configuration?.island_y??'?'))}</div></div>`).join('');
     return `${moduleNames()}<div class="stats"><div><b>${ready.length}</b>Missões prontas</div><div><b>${camp?.hasReward?.()?'1':'0'}</b>Recompensa PvE</div></div>
+      ${section('Missões do tutorial')}
+      ${tutorialInfo().rows.map(x=>'<div class="city"><b>'+cleanStr(x.name)+'</b><div class="smallnote">'+cleanStr(x.reason)+'</div></div>').join('')||'<p class="smallnote">Nenhuma missão do tutorial ativa.</p>'}
       ${section('Missões de ilha')}
       <div class="checks"><label><input type="checkbox" data-setting="quests.autoObjectives" ${config.quests.autoObjectives?'checked':''}> Executar objetivos identificados automaticamente</label></div>
       <div class="formrow"><span>Lado preferido</span><select data-setting="quests.preferred">${optionList([['wise','Sabedoria'],['aggressive','Guerra']],config.quests.preferred)}</select></div>
@@ -3367,7 +3646,7 @@ let queueKindSelected='building';
       <label><input type="checkbox" data-setting="quests.allowTroopCost" ${config.quests.allowTroopCost?'checked':''}> Permitir sacrifício de tropas</label></div>
       <div class="formrow"><span>Máximo de recursos por objetivo (total)</span><input type="number" min="0" data-setting="quests.maxResourceCost" value="${config.quests.maxResourceCost}"></div>
       <div class="formrow"><span>Máximo de tropas por objetivo</span><input type="number" min="0" data-setting="quests.maxTroopCost" value="${config.quests.maxTroopCost}"></div>
-      <p class="smallnote">Constrói, pesquisa ou recruta quando a missão fornece uma meta explícita; também escolhe e cumpre etapas quando o próprio modelo expõe um comando com argumentos verificados. Aguarda objetivos de tempo e não inventa comandos para missões desconhecidas. Gastos e sacrifícios vêm bloqueados por padrão.</p>
+      <p class="smallnote">Escolhe a opção configurada, inicia objetivos de espera e entrega recursos autorizados em uma cidade da ilha. As missões que exigem tropas ou ações desconhecidas aparecem para conclusão no jogo.</p>
       ${section('Objetivos detectados')}
       <div class="cityscroll" style="max-height:280px">${tasks.map(x=>`<div class="city"><b>${cleanStr(x.info.name)}</b> · ${cleanStr(x.info.state)}<div class="smallnote">${cleanStr(x.plan.why)}</div></div>`).join('')||'<p class="smallnote">Nenhuma missão carregada pelo cliente.</p>'}</div>
       <div class="tools"><button data-action="questInspect">Exportar dados técnicos das missões</button></div>
@@ -3375,7 +3654,7 @@ let queueKindSelected='building';
       <div class="villages">${rewards||'<p class="smallnote">Nenhuma missão concluída encontrada agora.</p>'}</div>
       ${section('Recompensas do acampamento')}<p class="smallnote">Recebe recompensas após as batalhas dos bandidos. Se a recompensa puder ser guardada, respeita a opção abaixo. Funciona independentemente do ataque PvE.</p>
       <div class="checks"><label><input type="checkbox" data-setting="banditRewards.stashIfPossible" ${config.banditRewards.stashIfPossible?'checked':''}> Guardar quando permitido</label></div>
-      <p class="smallnote">Missões iniciais sem identificação confirmada no cliente não são enviadas por um endpoint presumido; o modo automático cobre missões de ilha concluídas.</p>`;
+`;
   };
   const configContent=()=>`${section('Compartilhar modelo com outros jogadores')}
     <p class="smallnote">Exporta somente configurações gerais, sem suas cidades, metas, rotas e comandos pessoais. Quem importa fica pausado e em simulação.</p>

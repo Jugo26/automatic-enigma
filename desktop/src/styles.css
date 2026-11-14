@@ -25,6 +25,7 @@ input,select,textarea{background:#101921;border:1px solid #596675;border-radius:
 .sidebar{overflow-x:hidden;scrollbar-color:#6e6250 #1d2a34;scrollbar-width:thin}
 .navbtn>span:last-child{min-width:0;overflow-wrap:anywhere}
 .ui-icon{display:inline-grid;place-items:center;flex-shrink:0;color:#efcd8f;font:20px/1 "Segoe MDL2 Assets"}
+label.card{display:block}
 .panel-top h2 .ui-icon,.card-head>.ui-icon{font-size:23px}
 @media(max-width:1250px){.sidebar{padding-inline:6px}.navbtn{gap:7px;padding-inline:6px}.navbtn .nav-img{width:32px;height:32px}}
 .advanced-field>span{min-width:0;overflow-wrap:anywhere}

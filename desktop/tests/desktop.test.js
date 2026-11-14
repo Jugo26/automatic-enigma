@@ -102,3 +102,14 @@ test('o registro apresenta a ação simulada e permite consultar o comando origi
  assert.match(html,/>Simulação · depósito de prata na Gruta</);
  assert.match(html,/<details[^>]*><summary>Detalhes do comando<\/summary><pre>SIMULACAO frontend_bridge\/execute /);
 });
+
+test('a aba Missões separa o tutorial, as missões da ilha e as opções de recompensa',()=>{
+ const html=runInNewContext(src.slice(0,src.indexOf('// Eventos delegados'))+
+   "\nS={config:{modules:{tutorial:true,quests:false}},tutorial:{rows:[{name:'Expandir a Fazenda',state:'running',reason:'Aguardando recursos'}]},islandQuests:[{name:'O pescador',state:'satisfied',reason:'Recompensa pronta'}]};missionsPage()",{});
+ assert.match(html,/data-path="modules\.tutorial" checked/);
+ assert.doesNotMatch(html,/data-path="modules\.quests" checked/);
+ assert.match(html,/data-path="quests\.autoObjectives"/);
+ assert.match(html,/data-choice="quests\.rewardAction"/);
+ assert.match(html,/>Expandir a Fazenda</);
+ assert.match(html,/>O pescador</);
+});

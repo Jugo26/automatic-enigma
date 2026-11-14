@@ -11,7 +11,7 @@ const source = readFileSync(join(__dirname, '../../GrepoPilot.user.js'), 'utf8')
 const epoch = 1_800_000_000_000;
 const scope = 'br123.grepolis.com:1';
 
-function engine({towns = [], townModels = {}, spies = {}, movement = {}, config = {}, gameData = {}, order} = {}) {
+function engine({towns = [], townModels = {}, spies = {}, movement = {}, buildData = {}, config = {}, gameData = {}, order, collections = {}} = {}) {
   const calls = [];
   const storage = new Map([['grepopilot:config:' + scope, JSON.stringify(config)]]);
   let now = epoch;
@@ -21,8 +21,8 @@ function engine({towns = [], townModels = {}, spies = {}, movement = {}, config 
     GameData: {units: {colonize_ship: {speed: 3, is_naval: true}, siren: {speed: 22, is_naval: true}, sword: {speed: 16}}, ...gameData},
     ITowns: {towns: Object.fromEntries(towns.map(t => [t.id, t]))},
     MM: {
-      getModels: () => ({Town: townModels, MovementsSpy: spies, MovementsUnits: movement}),
-      getOnlyCollectionByName: () => ({models: []})
+      getModels: () => ({Town: townModels, MovementsSpy: spies, MovementsUnits: movement, BuildingBuildData: buildData}),
+      getOnlyCollectionByName: name => ({models: collections[name] || []})
     },
     gpAjax: {ajaxPost(controller, name, args, flag, callbacks) {
       calls.push(JSON.parse(JSON.stringify({controller, name, args})));
@@ -54,6 +54,74 @@ const town = (id, iron = 8000, cave = 10) => ({
   resources: () => ({iron, storage: 12000}),
   getIslandCoordinateX: () => 40, getIslandCoordinateY: () => 50,
   units: () => ({sword: 30})
+});
+
+const construction = (levels, orders = [], population = 200) => ({
+  ...town(10), buildings: () => ({attributes: levels}), buildingOrders: () => ({models: orders}),
+  resources: () => ({wood: 20000, stone: 20000, iron: 20000, storage: 20000}),
+  getAvailablePopulation: () => population,
+});
+const workOrder = (building_time, wood, extra = {}) => ({
+  building_time, resources_for: {wood, stone: 50, iron: 50}, population_for: 1, ...extra
+});
+const projectData = building_data => ({10: {attributes: {building_data}}});
+
+test('a construção escolhe o menor prazo e depois o menor custo entre obras que cabem na fila', async () => {
+  const orders = [{attributes: {building_type: 'main'}}];
+  const f = engine({
+    towns: [construction({main: 12, storage: 6, farm: 10, lumber: 8, stoner: 8}, orders)],
+    buildData: projectData({
+      main: workOrder(10, 25), storage: workOrder(600, 100),
+      farm: workOrder(60, 30, {can_upgrade: false}),
+      lumber: workOrder(80, 180), stoner: workOrder(80, 100),
+    }),
+    config: {enabled: true, dryRun: false, modules: {build: true},
+      build: {targets: {10: {main: 15, storage: 9, farm: 12, lumber: 10, stoner: 10}}}}
+  });
+  await f.tick();
+  assert.equal(f.calls[0].args.arguments.building_id, 'stoner');
+});
+
+test('o modelo Colonização prioriza pré-requisitos, pesquisa e navio antes das outras metas', async () => {
+  const levels = {main: 13, storage: 15, farm: 18, lumber: 25, academy: 12, docks: 9, barracks: 8, wall: 3};
+  const techs = {}, dockOrders = [];
+  const t = {...construction(levels), researches: () => ({attributes: techs}),
+    getAvailableResearchPoints: () => 10, getUnitOrdersCollection: () => ({models: dockOrders})};
+  const f = engine({
+    towns: [t],
+    buildData: projectData({main: workOrder(55, 300), lumber: workOrder(30, 75),
+      academy: workOrder(120, 600), docks: workOrder(20, 45), wall: workOrder(10, 30)}),
+    gameData: {buildings: {docks: {dependencies: {main: 14}}},
+      researches: {colonize_ship: {building_dependencies: {academy: 13}, resources: {wood: 1000}, research_points: 1},
+        attack_ship: {resources: {wood: 100}}},
+      units: {colonize_ship: {is_naval: true, building_dependencies: {docks: 10},
+        research_dependencies: ['colonize_ship'], resources: {wood: 10000, iron: 10000, stone: 10000}, population: 170},
+        attack_ship: {is_naval: true, resources: {wood: 500, iron: 500}, population: 8}}},
+    config: {enabled: true, dryRun: false, modules: {build: true, recruit: true, research: true}}
+  });
+  f.api.applyTemplate('city', 'colony', 10);
+  await f.tick();
+  assert.equal(f.calls.at(-1).args.arguments.building_id, 'main');
+  levels.main = 14;
+  f.jump(60000);
+  await f.tick();
+  assert.equal(f.calls.at(-1).args.arguments.building_id, 'docks');
+  levels.docks = 10;
+  f.jump(120000);
+  await f.tick();
+  assert.equal(f.calls.at(-1).args.arguments.building_id, 'academy');
+  levels.academy = 13;
+  f.jump(180000);
+  await f.tick();
+  assert.equal(f.calls.at(-1).args.arguments.id, 'colonize_ship');
+  techs.colonize_ship = true;
+  f.jump(240000);
+  await f.tick();
+  assert.equal(f.calls.at(-1).args.unit_id, 'colonize_ship');
+  dockOrders.push({attributes: {unit_type: 'colonize_ship', units_left: 1}});
+  f.jump(300000);
+  await f.tick();
+  assert.equal(f.calls.at(-1).args.arguments.building_id, 'wall');
 });
 
 test('a Gruta deposita o que cabe, desconta prata do espião e preserva a reserva antiga', async () => {
@@ -259,4 +327,152 @@ test('a Gruta registra a rejeição enviada pelo jogo sem contar o depósito com
   await f.tick();
   assert.equal(f.calls.length, 1);
   assert.equal(f.api.caveInfo().lastError, 'Espionagem em andamento');
+});
+
+const tutorialQuest = ({id, pid, state = 'running', progress = false, townId, rewards = []}) => ({
+  getGroupId: () => 'quest',
+  getState: () => state,
+  getId: () => id,
+  getProgressableId: () => pid,
+  getSummary: () => pid,
+  getConfiguration: key => key === 'town_id' ? townId : undefined,
+  get() {},
+  getTasks: () => [{}],
+  getProgressForTaskId: () => progress,
+  getRewardsWithResourcesOrFavor: () => rewards
+});
+
+const tutorialTown = (id = 10, level = 2, stock = 1000) => ({
+  ...town(id),
+  resources: () => ({wood: stock, stone: stock, iron: stock, storage: 12000, population: 100}),
+  buildings: () => ({attributes: {main: level, barracks: 3, academy: 1}}),
+  units: () => ({}),
+  getAvailablePopulation: () => 100
+});
+
+test('tutorial resgata as recompensas satisfeitas em ciclos separados, sem repetir nem tocar nas missões de ilha', async () => {
+  const rows = [
+    tutorialQuest({id: 5, pid: 'BuildMainLevel3', progress: true}),
+    tutorialQuest({id: 6, pid: 'DoneClosed', state: 'closed'}),
+    tutorialQuest({id: 7, pid: 'CompletedA', state: 'satisfied'}),
+    tutorialQuest({id: 8, pid: 'CompletedB', state: 'satisfied'})
+  ];
+  const f = engine({
+    towns: [tutorialTown()],
+    collections: {Progressable: rows, IslandQuest: [{attributes: {state: 'satisfied', progressable_id: 9}}]},
+    config: {enabled: true, dryRun: false, modules: {tutorial: true}}
+  });
+  assert.equal(f.api.snapshot().modules.quests, false);
+  await f.tick();
+  f.jump(45000);
+  await f.tick();
+  assert.deepEqual(f.calls, [
+    {controller: 'frontend_bridge', name: 'execute', args: {
+      town_id: 10, model_url: 'Progressable/7', action_name: 'progressTo',
+      arguments: {progressable_id: 'CompletedA', state: 'closed'}, captcha: null
+    }},
+    {controller: 'frontend_bridge', name: 'execute', args: {
+      town_id: 10, model_url: 'Progressable/8', action_name: 'progressTo',
+      arguments: {progressable_id: 'CompletedB', state: 'closed'}, captcha: null
+    }}
+  ]);
+});
+
+test('tutorial preserva recompensas que excedem a capacidade e ignora uma cidade que não é do jogador', async () => {
+  const rows = [
+    tutorialQuest({id: 1, pid: 'RewardOverflow', state: 'satisfied', rewards: [{type: 'resources', data: {wood: 2}}]}),
+    tutorialQuest({id: 2, pid: 'WrongTown', state: 'satisfied', townId: 99})
+  ];
+  const f = engine({
+    towns: [tutorialTown(10, 1, 11999)],
+    collections: {Progressable: rows},
+    config: {enabled: true, dryRun: false, modules: {tutorial: true}}
+  });
+  await f.tick();
+  assert.equal(f.calls.length, 0);
+  assert.match(f.api.tutorialInfo().rows[0].reason, /espaço no armazém/);
+  assert.match(f.api.tutorialInfo().rows[1].reason, /cidade.*indisponível/i);
+});
+
+test('tutorial usa o nível indicado pelo jogo, com a opção desligada por padrão e sem alterar metas de construção', async () => {
+  const f = engine({
+    towns: [tutorialTown()],
+    collections: {Progressable: [tutorialQuest({
+      id: 12, pid: 'BuildMainLevel3', progress: {curr: 2, max: 3}
+    })]},
+    buildData: {10: {attributes: {building_data: {main: {
+      can_upgrade: true, resources_for: {wood: 200, stone: 100, iron: 50}, population_for: 1
+    }}}}},
+    gameData: {buildings: {main: {max_level: 25}}},
+    config: {enabled: true, dryRun: false}
+  });
+  assert.equal(f.api.snapshot().modules.tutorial, false);
+  await f.tick();
+  assert.equal(f.calls.length, 0);
+  f.api.patch('modules.tutorial', true);
+  await f.tick();
+  assert.deepEqual(f.calls, [{controller: 'frontend_bridge', name: 'execute', args: {
+    town_id: 10, model_url: 'BuildingOrder', action_name: 'buildUp',
+    arguments: {building_id: 'main', build_for_gold: false}, captcha: null
+  }}]);
+  assert.equal(f.api.snapshot().modules.build, false);
+  assert.deepEqual(JSON.parse(JSON.stringify(f.api.snapshot().build.targets)), {});
+});
+
+test('tutorial respeita pausa, modo secundário e simulação e só arma cooldown quando envia', async () => {
+  const f = engine({
+    towns: [tutorialTown()],
+    collections: {Progressable: [tutorialQuest({id: 3, pid: 'UnknownReward', state: 'satisfied'})]},
+    config: {enabled: false, dryRun: true, modules: {tutorial: true}, sync: {role: 'standby'}}
+  });
+  await f.tick();
+  f.api.patch('enabled', true);
+  await f.tick();
+  f.api.patch('sync.role', 'primary');
+  await f.tick();
+  assert.equal(f.calls.length, 0);
+  f.jump(20000);
+  f.api.patch('dryRun', false);
+  await f.tick();
+  assert.equal(f.calls.length, 1);
+});
+
+test('tutorial limita a automação de objetivos ao progresso reconhecido pelo cliente', async () => {
+  const rows = [
+    tutorialQuest({id: 21, pid: 'PremiumCommanderQuest'}),
+    tutorialQuest({id: 22, pid: 'RecruitSwordsmanQuest', progress: {curr: 0, max: 3}})
+  ];
+  const f = engine({
+    towns: [tutorialTown()],
+    collections: {Progressable: rows},
+    gameData: {units: {sword: {resources: {wood: 20, stone: 20, iron: 20}, population: 1}}},
+    config: {enabled: true, dryRun: false, modules: {tutorial: true}}
+  });
+  await f.tick();
+  assert.deepEqual(f.calls, [{controller: 'building_barracks', name: 'build', args: {
+    town_id: 10, unit_id: 'sword', amount: 3
+  }}]);
+  assert.match(f.api.tutorialInfo().rows[0].reason, /ação no jogo/);
+  assert.equal(f.api.snapshot().modules.recruit, false);
+});
+
+test('tutorial pesquisa a tecnologia identificada com a opção independente e aguarda uma ordem existente', async () => {
+  const orders = [], city = tutorialTown();
+  city.getResearchOrdersCollection = () => ({models: orders});
+  const f = engine({
+    towns: [city],
+    collections: {Progressable: [tutorialQuest({id: 31, pid: 'ResearchSlingerQuest'})]},
+    gameData: {researches: {slinger: {building_dependencies: {academy: 1}, resources: {wood: 100}}}},
+    config: {enabled: true, dryRun: false, modules: {tutorial: true}}
+  });
+  await f.tick();
+  orders.push({attributes: {research_type: 'slinger'}});
+  f.jump(90000);
+  await f.tick();
+  assert.deepEqual(f.calls, [{controller: 'frontend_bridge', name: 'execute', args: {
+    town_id: 10, model_url: 'ResearchOrder', action_name: 'research',
+    arguments: {id: 'slinger'}, captcha: null
+  }}]);
+  assert.match(f.api.tutorialInfo().rows[0].reason, /pesquisa em andamento/i);
+  assert.equal(f.api.snapshot().modules.research, false);
 });

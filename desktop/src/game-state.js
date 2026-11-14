@@ -37,6 +37,7 @@ const EXPRESSION = `(() => {
   const icons={units:{},researches:{}};
   for(const item of catalog.units)icons.units[item.id]=iconFor(item.id,'unit');
   for(const item of catalog.researches)icons.researches[item.id]=iconFor(item.id,'research');
-  return {ready:true,url:location.href,status,config:snapshot,catalog,templates,icons,recruitPlan:api.recruitPlan(),cave:api.caveInfo?.()};
+  return {ready:true,url:location.href,status,config:snapshot,catalog,templates,icons,recruitPlan:api.recruitPlan(),
+    cave:api.caveInfo?.(),tutorial:api.tutorialInfo?.(),islandQuests:api.islandQuestStatus?.()};
 })()`;
 module.exports={EXPRESSION};
