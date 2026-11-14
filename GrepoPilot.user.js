@@ -2222,6 +2222,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     });
   }
   const dodgeWorld={towns:[],loading:null,loadedAt:0,nextTry:0,error:''};
+  const dodgeTownCache={rows:[],at:0};
   function dodgeAllianceId(){
     let p=null;try{p=W.MM?.getModelByNameAndPlayerId?.('Player')?.attributes}catch{}
     return [W.Game?.alliance_id,W.Game?.player_alliance_id,W.Game?.allianceId,
@@ -2266,6 +2267,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
         if(p.length>=3&&players.has(Number(p[0])))alliances.set(Number(p[0]),Number(p[2])||0);
       }
       dodgeWorld.towns=rows.map(row=>({...row,alliance:alliances.get(row.owner)||0}));
+      dodgeTownCache.at=0;
       dodgeWorld.loadedAt=Date.now();dodgeWorld.error='';
       log('Esquiva: catálogo carregado, '+rows.length+' cidades nas ilhas da sua conta');
     })().catch(e=>{
@@ -2284,13 +2286,16 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
   }
   function dodgeTownDirectory(){
     dodgeLoadWorld();
+    if(Date.now()-dodgeTownCache.at<2000)return dodgeTownCache.rows;
     const map=new Map(dodgeWorld.towns.map(x=>[x.id,x]));
     try{
       for(const key of ['Town','Towns']){
         const raw=W.MM?.getModels?.()?.[key]||{};
         for(const t of (Array.isArray(raw)?raw:Object.values(raw)).slice(0,3000)){
           const row=dodgeTownRow(t);
-          if(row)map.set(row.id,{...map.get(row.id),...row});
+          if(row){const previous=map.get(row.id)||{};
+            map.set(row.id,{...previous,...row,owner:row.owner||previous.owner||0,
+              alliance:row.alliance||previous.alliance||0,slot:row.slot||previous.slot||0});}
         }
       }
     }catch{}
@@ -2298,7 +2303,8 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
       const row=dodgeTownRow(t);
       if(row)map.set(row.id,{...map.get(row.id),...row,owner:currentPlayerId()});
     }
-    return [...map.values()];
+    dodgeTownCache.rows=[...map.values()];dodgeTownCache.at=Date.now();
+    return dodgeTownCache.rows;
   }
   function dodgeTownRelation(t){
     if(t.owner===currentPlayerId()&&t.owner>0)return 'own';
