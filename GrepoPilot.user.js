@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GrepoPilot - Painel de Automacao
 // @namespace    https://grepolis.com/
-// @version      1.0.6
+// @version      1.0.7
 // @updateURL    https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.meta.js
 // @downloadURL  https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.user.js
 // @homepageURL  https://github.com/Jugo26/automatic-enigma/tree/grepopilot-updates
@@ -19,28 +19,28 @@
   window.__GREPOPILOT_ACTIVE__ = true;
   const W = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
   const SCRIPT = 'GrepoPilot';
-  const VERSION = '1.0.6';
+  const VERSION = '1.0.7';
   const BUILDINGS = ['main','storage','farm','lumber','stoner','ironer','academy','barracks','docks','market','temple','hide','wall'];
   const COLONY_SHIP = 'colonize_ship';
   const MODULES = {
-    farm: ['🌾 Coleta de aldeias','ECONOMIA',60],
-    build: ['🏗️ Construção automática','CIDADES',55],
-    smartQueue: ['💰 Fila inteligente: menor custo','FILA',25],
-    finishFree: ['⏱️ Conclusão grátis (5 min)','CIDADES',5],
-    recruit: ['⚔️ Recrutamento','TROPAS',40],
-    research: ['🎓 Pesquisas','CIDADES',130],
-    trade: ['🚚 Comércio entre cidades','ECONOMIA',100],
-    ruralTrade: ['🏺 Trocas com aldeias','ECONOMIA',250],
-    ruralUnlock: ['🔓 Desbloquear aldeias','ALDEIAS',60],
-    ruralUpgrade: ['⬆️ Evoluir aldeias','ALDEIAS',75],
-    tutorial: ['🎁 Missões do tutorial','MISSÕES',20],
-    quests: ['🎁 Recompensas de missões de ilha','MISSÕES',20],
-    banditRewards: ['🎁 Recompensas dos bandidos','MISSÕES',12],
-    culture: ['🎭 Festivais e cultura','CIDADES',430],
-    bootcamp: ['🏹 Ataques PvE aos bandidos','COMBATE',30],
-    cave: ['🕳️ Guardar prata na gruta','ECONOMIA',350],
+    farm: ['🌾 Coleta de aldeias','ECONOMIA',10],
+    build: ['🏗️ Construção automática','CIDADES',5],
+    smartQueue: ['💰 Fila inteligente: menor custo','FILA',5],
+    finishFree: ['⏱️ Conclusão grátis (5 min)','CIDADES',3],
+    recruit: ['⚔️ Recrutamento','TROPAS',5],
+    research: ['🎓 Pesquisas','CIDADES',10],
+    trade: ['🚚 Comércio entre cidades','ECONOMIA',15],
+    ruralTrade: ['🏺 Trocas com aldeias','ECONOMIA',20],
+    ruralUnlock: ['🔓 Desbloquear aldeias','ALDEIAS',15],
+    ruralUpgrade: ['⬆️ Evoluir aldeias','ALDEIAS',15],
+    tutorial: ['🎁 Missões do tutorial','MISSÕES',5],
+    quests: ['🎁 Recompensas de missões de ilha','MISSÕES',5],
+    banditRewards: ['🎁 Recompensas dos bandidos','MISSÕES',5],
+    culture: ['🎭 Festivais e cultura','CIDADES',30],
+    bootcamp: ['🏹 Ataques PvE aos bandidos','COMBATE',10],
+    cave: ['🕳️ Guardar prata na gruta','ECONOMIA',10],
     commands: ['🚩 Ataques/apoios agendados','COMBATE',2],
-    alerts: ['🚨 Alertas de movimentos','COMBATE',8],
+    alerts: ['🚨 Alertas de movimentos','COMBATE',3],
     dodge: ['🛡️ Esquiva com retorno calculado','ESQUIVA',0.125]
   };
   // Modelos orientativos: níveis e tropas são metas configuráveis, não garantia de desempenho.
@@ -104,7 +104,7 @@
   const BASE = {
     enabled: false, dryRun: true,
     modules: Object.fromEntries(Object.keys(MODULES).map(x => [x,false])),
-    intervals: Object.fromEntries(Object.entries(MODULES).map(([x,p]) => [x,p[2]])),
+    intervals: {...Object.fromEntries(Object.entries(MODULES).map(([x,p]) => [x,p[2]])),_defaults:2},
     farm: {duration:10,captainBulk:false},
     build: {targets:{},priority:BUILDINGS.slice(),allowDemolition:false},
     finishFree: {maxRemainingSeconds:285},
@@ -157,7 +157,22 @@
   let TEST_STORE = `grepopilot:attacktest:${scope}`;
   const old = (() => {try {return JSON.parse(localStorage.getItem(STORE)||'{}')}catch{return {}}})();
   const numOrFinite=(value,defaultValue)=>Number.isFinite(Number(value))?Number(value):defaultValue;
+  const legacyIntervals={
+    farm:60,build:55,smartQueue:25,finishFree:5,recruit:40,research:130,trade:100,ruralTrade:250,
+    ruralUnlock:60,ruralUpgrade:75,tutorial:20,quests:20,banditRewards:12,culture:430,bootcamp:30,cave:350,alerts:8
+  };
+  const migrateIntervals=raw=>{
+    const intervals=merge({...BASE.intervals},raw);
+    if(numOrFinite(raw?._defaults,0)<BASE.intervals._defaults){
+      for(const [id,previous] of Object.entries(legacyIntervals)){
+        if(Number(raw?.[id])===previous)intervals[id]=BASE.intervals[id];
+      }
+      intervals._defaults=BASE.intervals._defaults;
+    }
+    return intervals;
+  };
   const migrate = (cfg,raw={}) => {
+    cfg.intervals=migrateIntervals(raw?.intervals);
     if(raw?.modules?.ruralUpgrade && raw?.ruralUpgrade?.unlock && raw?.modules?.ruralUnlock===undefined) cfg.modules.ruralUnlock=true;
     if(raw?.modules?.ruralUpgrade && raw?.ruralUpgrade?.upgrade===false) cfg.modules.ruralUpgrade=false;
     if(cfg?.ui?.tab==='MILITAR')cfg.ui.tab='TROPAS';
@@ -190,6 +205,7 @@
   let logs = [];
   let running = false;
   let nextRun = {};
+  let routineCursor = 0;
   let booted = false;
   let seenAttacks = new Set();
   let rendered = false;
@@ -199,7 +215,7 @@
     if(newScope===scope)return;
     scope=newScope;STORE=`grepopilot:config:${scope}`;LOCK=`grepopilot:lock:${scope}`;FIRED=`grepopilot:fired:${scope}`;RUNTIME=`grepopilot:runtime:${scope}`;DODGE_STORE=`grepopilot:dodge:${scope}`;DODGE_LOCK=`grepopilot:dodge-lock:${scope}`;TEST_STORE=`grepopilot:attacktest:${scope}`;
     try{const raw=JSON.parse(localStorage.getItem(STORE)||'{}');config=migrate(merge(clone(BASE),raw),raw);}catch{config=clone(BASE);}
-    nextRun={};seenAttacks=new Set();
+    nextRun={};routineCursor=0;seenAttacks=new Set();
     selectedCity='';
     log(`Conta/mundo detectado: ${scope}`);render();
   }
@@ -978,25 +994,17 @@ function policyForUnit(key,def){
     const next=plan.ready.find(x=>now-num(rt.smartQueueAttempts?.[x.job.id])>=30000);
     if(!next)return false;
     const j=next.job, id=Number(j.townId), key=j.key;
-    try{
-      if(j.kind==='building')await bridge(id,'BuildingOrder','buildUp',{building_id:key});
-      else if(j.kind==='research')await bridge(id,'ResearchOrder','research',{id:key});
-      else {await action(j.kind==='ship'?'building_docks':'building_barracks','build',{unit_id:key,amount:next.amount,town_id:id});markRecruitLane(next.town,W.GameData.units[key]);}
-      if(!config.dryRun){
-        rt.smartQueueAttempts=rt.smartQueueAttempts||{};
-        rt.smartQueueAttempts[j.id]=Date.now();
-        rt.smartQueueAttempts=Object.fromEntries(Object.entries(rt.smartQueueAttempts).filter(([,time])=>Date.now()-num(time)<3600000));
-        writeRuntime(rt);
-      }
-      log(`Fila ${queueMode()==='cheapest'?'menor custo':'inteligente'}: ${next.automatic?'PRÉ-REQUISITO · ':''}${queueName(j)} · ${next.why} · ${queueMoney(next.cost)} (total ${next.score}, prioridade ${Number(next.rank).toFixed(1)})`);
-      return true;
-    }catch(e){
-      rt.smartQueueAttempts=rt.smartQueueAttempts||{};
-      rt.smartQueueAttempts[j.id]=Date.now();
-      if(!config.dryRun)writeRuntime(rt);
-      log(`Fila econômica: ${queueName(j)} · ${e.message}`,'ERROR');
-      return true;
+    if(!config.dryRun){
+      rt.smartQueueAttempts??={};
+      rt.smartQueueAttempts[j.id]=now;
+      rt.smartQueueAttempts=Object.fromEntries(Object.entries(rt.smartQueueAttempts).filter(([,time])=>now-num(time)<3600000));
+      writeRuntime(rt);
     }
+    if(j.kind==='building')await bridge(id,'BuildingOrder','buildUp',{building_id:key});
+    else if(j.kind==='research')await bridge(id,'ResearchOrder','research',{id:key});
+    else {await action(j.kind==='ship'?'building_docks':'building_barracks','build',{unit_id:key,amount:next.amount,town_id:id});markRecruitLane(next.town,W.GameData.units[key]);}
+    log(`Fila ${queueMode()==='cheapest'?'menor custo':'inteligente'}: ${next.automatic?'PRÉ-REQUISITO · ':''}${queueName(j)} · ${next.why} · ${queueMoney(next.cost)} (total ${next.score}, prioridade ${Number(next.rank).toFixed(1)})`);
+    return true;
   }
   function pendingColony(t){
     if(config.cityProfiles?.[t.id]!=='colony'||!W.GameData?.units?.[COLONY_SHIP])return false;
@@ -1377,7 +1385,7 @@ function policyForUnit(key,def){
       const rt=readRuntime(),key=`unlock:${row.relId}`,now=Date.now();
       if(now-num(rt.villageAttempts?.[key])<180000)continue;
       await bridge(row.townId,`FarmTownPlayerRelation/${row.relId}`,'unlock',{farm_town_id:row.farmId});
-      if(!config.dryRun){rt.villageAttempts??={};rt.villageAttempts[key]=now;writeRuntime(rt);}
+      if(!config.dryRun){const updated=readRuntime();updated.villageAttempts??={};updated.villageAttempts[key]=now;writeRuntime(updated);}
       log(`Aldeia ${row.name}: desbloqueio solicitado (${cost} pontos de batalha, cidade ${row.townId})`);return true;
     }
     return false;
@@ -1393,7 +1401,7 @@ function policyForUnit(key,def){
       const rt=readRuntime(),key=`upgrade:${row.relId}:${row.level}`,now=Date.now();
       if(now-num(rt.villageAttempts?.[key])<180000)continue;
       await bridge(row.townId,`FarmTownPlayerRelation/${row.relId}`,'upgrade',{farm_town_id:row.farmId});
-      if(!config.dryRun){rt.villageAttempts??={};rt.villageAttempts[key]=now;writeRuntime(rt);}
+      if(!config.dryRun){const updated=readRuntime();updated.villageAttempts??={};updated.villageAttempts[key]=now;writeRuntime(updated);}
       log(`Aldeia ${row.name}: melhoria ${row.level} → ${row.level+1} solicitada (${cost} pontos de batalha)`);return true;
     }
     return false;
@@ -1747,7 +1755,7 @@ function policyForUnit(key,def){
     const reward=camp.getReward?.()||{};
     const name=config.banditRewards.stashIfPossible&&reward.stashable?'stashReward':'useReward';
     await action('frontend_bridge','execute',{model_url:`PlayerAttackSpot/${W.Game.player_id}`,action_name:name,arguments:{}});
-    if(!config.dryRun){runtime.lastBanditRewardAt=now;writeRuntime(runtime);}
+    if(!config.dryRun){const updated=readRuntime();updated.lastBanditRewardAt=now;writeRuntime(updated);}
     log(`Bandidos: recompensa ${name==='stashReward'?'guardada':'recebida'} automaticamente`);return true;
   }
   async function culture(){
@@ -2553,10 +2561,10 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     manual_colony:'🚢 Colono marcado',
     manual_normal:'⚔ Ataque comum (manual)'
   }[a?.intel?.classification]||'❔ Tipo desconhecido');
-  function dodgeIncoming(){
+  function dodgeIncoming(movements=dodgeMovements(),now=dodgeNow()){
     const owned=new Set(towns().map(t=>Number(t.id)));
     const seen=new Set();
-    const real=dodgeMovements().flatMap(({model,data:a})=>{
+    const real=movements.flatMap(({model,data:a})=>{
       const type=String(a.type??a.command_type??a.movement_type??'').toLowerCase();
       const hasColonyData=colonyTerms.test(String(a.command_type??a.command_subtype??''))||
         a.is_colonization===true||a.is_colonisation===true||a.is_conquest===true||a.is_takeover===true||
@@ -2565,7 +2573,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
         colonyTerms.test(type)||hasColonyData))return [];
       const townId=dodgeDstId(a),source=dodgeSrcId(a),arrivalMs=dodgeArrival(a);
       if(!owned.has(townId)||(Number.isSafeInteger(source)&&owned.has(source))||
-        !Number.isFinite(arrivalMs)||arrivalMs<dodgeNow()-60000||model.isReturning?.())return [];
+        !Number.isFinite(arrivalMs)||arrivalMs<now-60000||model.isReturning?.())return [];
       const id=String(a.command_id??a.id??model.id??'attack-'+townId+'-'+arrivalMs);
       if(seen.has(id))return [];
       seen.add(id);
@@ -2582,16 +2590,16 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     });
     return real.concat(testAttacks()).sort((a,b)=>a.arrivalMs-b.arrivalMs);
   }
-  function dodgeOutgoing(from,to){
-    return dodgeMovements().filter(m=>{
+  function dodgeOutgoing(from,to,movements=dodgeMovements()){
+    return movements.filter(m=>{
       const a=m.data,type=String(a.type??a.command_type??a.movement_type??'').toLowerCase();
       return (type==='support'||type==='supporting'||type==='unit_support')&&
         dodgeSrcId(a)===Number(from)&&dodgeDstId(a)===Number(to)&&
         Number.isSafeInteger(dodgeMoveId(m))&&dodgeMoveId(m)>0;
     });
   }
-  function dodgeReturnArrival(job){
-    const match=dodgeMovements().find(m=>dodgeMoveId(m)===Number(job.commandId)&&
+  function dodgeReturnArrival(job,movements=dodgeMovements()){
+    const match=movements.find(m=>dodgeMoveId(m)===Number(job.commandId)&&
       dodgeSrcId(m.data)===Number(job.townId)&&dodgeDstId(m.data)===Number(job.townId));
     const arrival=dodgeArrival(match?.data);
     return Number.isFinite(arrival)?arrival:0;
@@ -2711,14 +2719,14 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
   const dodgeLead=()=>dodgeSeconds('leadSeconds',20,180)*1000;
   const dodgeAfter=()=>1000;
   const dodgeWaveGap=()=>dodgeSeconds('waveGapSeconds',1,60)*1000;
-  function dodgeDestinations(id,incoming=[]){
+  function dodgeDestinations(id,incoming=[],through=0){
     const origin=townBy(id);if(!origin)return [];
-    const now=dodgeNow(),margin=dodgeLead()+dodgeAfter()+dodgeWaveGap();
+    const now=dodgeNow(),end=Math.max(through,now+dodgeLead()+dodgeAfter()+dodgeWaveGap());
     const mode=config.dodge.destinationMode||'allies_first';
     const known=dodgeTownDirectory();
     const ref=known.find(t=>t.id===Number(id))||dodgeTownRow(origin);
     const risk=t=>incoming.some(a=>Number(a.townId)===t.id&&
-      a.arrivalMs>=now-10000&&a.arrivalMs<=now+margin);
+      a.arrivalMs>=now-10000&&a.arrivalMs<=end);
     const priority=t=>{
       const rel=dodgeTownRelation(t);
       if(mode==='all_island')return 0;
@@ -2730,13 +2738,34 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
       Number(risk(a))-Number(risk(b))||priority(a)-priority(b)||
       distance(a)-distance(b)||a.id-b.id);
   }
-  function dodgeDestination(id,incoming=[]){
-    const now=dodgeNow(),margin=dodgeLead()+dodgeAfter()+dodgeWaveGap();
-    const safe=dodgeDestinations(id,incoming).filter(t=>!incoming.some(a=>
-      Number(a.townId)===t.id&&a.arrivalMs>=now-10000&&a.arrivalMs<=now+margin));
+  function dodgeRouteFits(origin,targetId,units,untilCancel){
+    try{
+      const helper=W.require?.('helpers/runtime'),setup=Number(helper?.getSetupTimeByType?.());
+      if(!Number.isFinite(setup)||setup<=0)return null;
+      // Reserva a variação de chegada do jogo e a folga para cancelar antes do destino.
+      const margin=12000;
+      if(setup*1000-margin>=untilCancel)return true;
+      const geo=colonyMovementGeometry({origin_town_id:origin.id,target_town_id:targetId});
+      if(!geo)return null;
+      const town=origin.getTownModelReference?.()||origin;
+      const moving=helper.getRelevantUnitsForSlowestRuntime({...units});
+      const speeds=helper.getUnitSpeedsWithBonus(moving,town);
+      const durations=helper.getUnitRuntimes(moving,geo.distance,speeds);
+      const seconds=helper.getSlowestRuntimeFromSet(moving,durations,setup);
+      return Number.isFinite(seconds)?seconds*1000-margin>=untilCancel:null;
+    }catch{return null;}
+  }
+  function dodgeDestination(id,incoming=[],through=0,units,untilCancel){
+    const now=dodgeNow(),end=Math.max(through,now+dodgeLead()+dodgeAfter()+dodgeWaveGap());
+    const safe=dodgeDestinations(id,incoming,through).filter(t=>!incoming.some(a=>
+      Number(a.townId)===t.id&&a.arrivalMs>=now-10000&&a.arrivalMs<=end));
     const choice=Number(config.dodge.targets?.[id]);
-    if(choice&&safe.some(t=>t.id===choice))return choice;
-    return safe[0]?.id||0;
+    if(!units)return safe.some(t=>t.id===choice)?choice:safe[0]?.id||0;
+    const origin=townBy(id),fits=safe.map(t=>({id:t.id,fits:dodgeRouteFits(origin,t.id,units,untilCancel)}));
+    const best=fits.find(t=>t.fits===true&&t.id===choice)||fits.find(t=>t.fits===true)||
+      fits.find(t=>t.fits===null&&t.id===choice)||fits.find(t=>t.fits===null);
+    // shortcut: rotas sem estimativa do cliente mantêm a escolha e usam o horário real após o envio.
+    return best?.id||0;
   }
   function dodgeUnits(t){
     const groups={land:{},naval:{}};
@@ -2760,21 +2789,50 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     return true;
   }
   function dodgeWave(first,attacks){
-    const waves=attacks.filter(a=>a.townId===first.townId&&a.arrivalMs>=first.arrivalMs&&
-      a.arrivalMs-first.arrivalMs<=dodgeWaveGap());
-    const colonyImpact=config.dodge.colonizationPolicy==='all'?
-      first.colonyImpactMs||[first,...waves].find(dodgeIsColony)?.arrivalMs||0:0;
-    return {impact:colonyImpact||Math.max(first.arrivalMs,first.lastImpactMs||0,...waves.map(a=>a.arrivalMs)),
-      colonyImpact};
+    const gap=dodgeWaveGap(),members=[];
+    let lastImpact=Math.max(first.arrivalMs,num(first.lastImpactMs));
+    // A lista do motor está ordenada. Preserve a ponta da onda quando os impactos antigos somem.
+    for(const attack of attacks){
+      if(attack.townId!==first.townId||attack.arrivalMs<first.arrivalMs)continue;
+      if(attack.arrivalMs-lastImpact>gap)break;
+      lastImpact=Math.max(lastImpact,attack.arrivalMs);
+      members.push(attack);
+    }
+    const visible=members.find(dodgeIsColony);
+    const remembered=first.colonyId&&!members.some(a=>a.id===first.colonyId)?num(first.colonyImpactMs):0;
+    const colonyImpact=visible?(remembered?Math.min(remembered,visible.arrivalMs):visible.arrivalMs):remembered;
+    const colonyId=visible?.arrivalMs===colonyImpact?visible.id:remembered?first.colonyId:'';
+    let previousImpact=colonyImpact>first.arrivalMs?first.arrivalMs:0;
+    let simultaneous=false;
+    if(colonyId&&colonyId===first.colonyId){
+      previousImpact=Math.max(previousImpact,num(first.previousImpactMs));
+      simultaneous=Boolean(first.colonySimultaneous);
+    }
+    for(const attack of members){
+      if(attack.arrivalMs<colonyImpact)previousImpact=Math.max(previousImpact,attack.arrivalMs);
+      if(attack.arrivalMs===colonyImpact&&!dodgeIsColony(attack))simultaneous=true;
+    }
+    return {firstImpact:first.arrivalMs,lastImpact,colonyImpact,colonyId,previousImpact,simultaneous};
   }
-  function dodgeTiming(startMs,lastImpactMs){
-    const returnAtMs=lastImpactMs+dodgeAfter();
+  function dodgeTiming(startMs,impactMs,offset=dodgeAfter()){
+    const returnAtMs=impactMs+offset;
     return {returnAtMs,cancelAtMs:startMs+(returnAtMs-startMs)/2,deadlineMs:startMs+590000};
+  }
+  function dodgeWavePlan(start,wave){
+    const defend=wave.colonyImpact>0&&config.dodge.colonizationPolicy!=='all';
+    const impact=wave.colonyImpact||wave.lastImpact;
+    const timing=dodgeTiming(start,impact,defend?-dodgeAfter():dodgeAfter());
+    const keep=defend&&(wave.simultaneous||timing.returnAtMs<=Math.max(wave.firstImpact,wave.previousImpact));
+    return {...timing,impact,defend,keep};
+  }
+  function dodgeRememberWave(job,wave){
+    Object.assign(job,{lastImpactMs:wave.lastImpact,colonyImpactMs:wave.colonyImpact,colonyId:wave.colonyId,
+      previousImpactMs:wave.previousImpact,colonySimultaneous:wave.simultaneous});
   }
   const dodgeActive=j=>['dispatching','identifying','sent','canceling'].includes(j?.state);
   const dodgeTracked=d=>Object.values(d.jobs||{}).filter(dodgeActive);
-  function dodgeFindCommand(job){
-    const outgoing=dodgeOutgoing(job.townId,job.targetId),excluded=new Set((job.existingIds||[]).map(String));
+  function dodgeFindCommand(job,movements){
+    const outgoing=dodgeOutgoing(job.townId,job.targetId,movements),excluded=new Set((job.existingIds||[]).map(String));
     if(job.commandId){
       const exact=outgoing.find(m=>dodgeMoveId(m)===Number(job.commandId));
       return exact||null;
@@ -2820,6 +2878,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
   }
   async function dodgeCancel(store,job,now){
     if(!job.commandId||job.state==='canceling'||job.state==='cancelled')return false;
+    const requestScope=scope;
     const started=Number(job.startedAtMs)||Number(job.sentAtMs);
     const deadline=Math.min(started+600000,job.cancelableUntilMs||Infinity);
     if(now>=deadline||job.outboundArrivalMs&&now>=job.outboundArrivalMs){
@@ -2829,6 +2888,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     job.state='canceling';job.cancelRequestedAtMs=now;dodgeSaveRecord(store,job);
     try{
       await action('command_info','cancel_command',{id:Number(job.commandId),town_id:Number(job.townId),nl_init:true},true);
+      if(scope!==requestScope||currentScope()!==requestScope)return false;
       job.estimatedArrivalMs=job.cancelRequestedAtMs+(job.cancelRequestedAtMs-started);
       dodgeRecordReturn(store,job,dodgeNow(),dodgeReturnArrival(job));
       log('Esquiva '+tName(townBy(job.townId))+': cancelamento do apoio #'+job.commandId+
@@ -2836,6 +2896,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
         new Date(job.confirmedReturnAtMs||job.estimatedArrivalMs).toLocaleTimeString('pt-BR',{hour12:false}));
       return true;
     }catch(e){
+      if(scope!==requestScope||currentScope()!==requestScope)return false;
       const knownReturn=dodgeReturnArrival(job);
       if(knownReturn){
         dodgeRecordReturn(store,job,dodgeNow(),knownReturn);
@@ -2854,17 +2915,21 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
     }
   }
   async function dodgeDispatch(store,townId,targetId,units,wave,testId=null){
+    const requestScope=scope;
     const now=dodgeNow(),existing=dodgeOutgoing(townId,targetId).map(dodgeMoveId);
+    const plan=dodgeWavePlan(now,wave);
     const job={
       id:'ED-'+townId+'-'+Date.now().toString(36),townId,targetId,group:'all',
       units,testId,state:'dispatching',sentAtMs:now,
-      firstImpactMs:wave.firstImpactMs,lastImpactMs:wave.lastImpactMs,colonyImpactMs:wave.colonyImpact,
+      firstImpactMs:wave.firstImpact,returnAtMs:plan.returnAtMs,cancelAtMs:plan.cancelAtMs,
       existingIds:existing,commandId:0,retryAfterMs:0,cancelAttempts:0
     };
+    dodgeRememberWave(job,wave);
     dodgeSaveRecord(store,job);
     try{
       const result=await action('town_info','send_units',
         {id:Number(targetId),town_id:Number(townId),type:'support',nl_init:true,...units},Boolean(testId));
+      if(scope!==requestScope||currentScope()!==requestScope)return false;
       const response=result?.json??result;
       const suppliedId=Number(response?.data?.command_id??response?.command_id??response?.data?.id);
       if(Number.isSafeInteger(suppliedId)&&suppliedId>0)job.commandId=suppliedId;
@@ -2880,6 +2945,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
         ' com '+Object.values(units).reduce((sum,x)=>sum+num(x),0)+' unidades; '+(job.commandId?'#'+job.commandId:'identificando comando'));
       return true;
     }catch(e){
+      if(scope!==requestScope||currentScope()!==requestScope)return false;
       // Uma solicitação incerta pode ter sido enviada: não disparar outra automaticamente.
       job.state='identifying';job.error='Envio sem confirmação: '+String(e?.message||e);
       dodgeSaveRecord(store,job);
@@ -2909,14 +2975,15 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
         dodgeNow()-num(j.cancelledAtMs)<120000))return;
     if(!dodgeLeader())return;
     dodgeBusy=true;
+    const pulseScope=scope;
     try{
       const now=dodgeNow(),store=dodgeRead();
       store.jobs??={};store.handled??={};
       dodgeCleanup(store,now);
-      const incoming=dodgeIncoming();
+      const movements=dodgeMovements(),incoming=dodgeIncoming(movements,now);
       for(const job of Object.values(store.jobs)){
         if(job.state!=='cancelled'||job.confirmedReturnAtMs||now-num(job.cancelledAtMs)>120000)continue;
-        const eta=dodgeReturnArrival(job);
+        const eta=dodgeReturnArrival(job,movements);
         if(eta){job.confirmedReturnAtMs=eta;dodgeSaveRecord(store,job);}
       }
       // Mostra suspeitas com antecedência para permitir marcar a composição manualmente.
@@ -2932,12 +2999,12 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
           dodgeWrite(store);
           notify(dodgeClassificationLabel(threat)+' contra '+tName(townBy(threat.townId))+
             '. Chegada '+new Date(threat.arrivalMs).toLocaleTimeString('pt-BR',{hour12:false})+
-            (decision.allow?'. Confira os cenários em ESQUIVA.':'. Defesa preservada.'));
+            (decision.allow?'. Confira os cenários em ESQUIVA.':'. Retorno para defesa priorizado.'));
         }
       }
       // Primeiro processar retornos pendentes, inclusive se o usuário desligou o módulo.
       for(const job of dodgeTracked(store)){
-        const knownReturn=job.commandId&&dodgeReturnArrival(job);
+        const knownReturn=job.commandId&&dodgeReturnArrival(job,movements);
         if(knownReturn){dodgeRecordReturn(store,job,now,knownReturn);continue;}
         if(job.state==='canceling'){
           if(now-num(job.cancelRequestedAtMs,now)>16000){
@@ -2947,7 +3014,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
           continue;
         }
         if(job.state==='dispatching'||job.state==='identifying'){
-          const found=dodgeFindCommand(job);
+          const found=dodgeFindCommand(job,movements);
           if(found){
             dodgeReadCommand(job,found);
             job.state='sent';dodgeSaveRecord(store,job);
@@ -2960,23 +3027,20 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
         }
         if(job.state!=='sent'||num(job.retryAfterMs)>now)continue;
         if(job.forceCancel){await dodgeCancel(store,job,now);return;}
-        const found=dodgeFindCommand(job);
+        const found=dodgeFindCommand(job,movements);
         if(found)dodgeReadCommand(job,found);
-        const first={townId:Number(job.townId),arrivalMs:Number(job.firstImpactMs),
-          lastImpactMs:job.lastImpactMs,colonyImpactMs:job.colonyImpactMs};
+        const first={...job,townId:Number(job.townId),arrivalMs:Number(job.firstImpactMs)};
         const start=num(job.startedAtMs,job.sentAtMs)||num(job.sentAtMs);
-        const {impact,colonyImpact}=dodgeWave(first,incoming);
-        const plan=dodgeTiming(start,impact);
-        const nearbyColony=dodgeColonyThreat(incoming,job.townId,now,plan.returnAtMs);
-        if(nearbyColony){
+        const wave=dodgeWave(first,incoming),plan=dodgeWavePlan(start,wave);
+        const earlyColony=dodgeColonyThreat(incoming,job.townId,now,first.arrivalMs-1);
+        if(plan.keep||earlyColony){
+          const colonyImpact=earlyColony?.arrivalMs||wave.colonyImpact;
           if(!job.colonyConflictWarned){
             job.colonyConflictWarned=true;
+            job.timingNote='Colono sem janela segura. Retorno solicitado assim que identificado.';
             dodgeSaveRecord(store,job);
-            const projected=2*now-(num(job.startedAtMs)||num(job.sentAtMs));
-            notify('Esquiva: '+dodgeClassificationLabel(nearbyColony)+' detectado após envio do apoio #'+
-              (job.commandId||'?')+'. Solicitando retorno imediato; '+
-              (projected<nearbyColony.arrivalMs?'retorno pode chegar antes do impacto.':
-                'não há tempo confirmado para retornar antes do impacto.'));
+            notify('Esquiva: colono detectado após o envio. Solicitando retorno imediato.'+
+              (2*now-start<colonyImpact?'':' O horário pode ultrapassar o impacto.'));
           }
           await dodgeCancel(store,job,now);
           return;
@@ -2984,10 +3048,14 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
         const latest=Math.min(plan.deadlineMs,job.cancelableUntilMs?job.cancelableUntilMs-2000:Infinity,
           job.outboundArrivalMs?job.outboundArrivalMs-2000:Infinity);
         const cancelAtMs=Math.min(plan.cancelAtMs,latest);
-        if(job.cancelAtMs!==cancelAtMs||job.returnAtMs!==plan.returnAtMs||job.colonyImpactMs!==colonyImpact){
-          job.lastImpactMs=impact;
-          job.colonyImpactMs=colonyImpact;
+        const note=plan.cancelAtMs>latest?'O apoio exigirá cancelamento antecipado. A volta pode ocorrer durante os ataques.':
+          plan.defend?'Retorno programado para defender o colono.':'';
+        if(job.cancelAtMs!==cancelAtMs||job.returnAtMs!==plan.returnAtMs||job.lastImpactMs!==wave.lastImpact||
+          job.colonyId!==wave.colonyId||job.previousImpactMs!==wave.previousImpact||job.timingNote!==note){
+          dodgeRememberWave(job,wave);
           job.cancelAtMs=cancelAtMs;job.returnAtMs=plan.returnAtMs;
+          if(note&&note!==job.timingNote&&plan.cancelAtMs>latest)notify('Esquiva: '+tName(townBy(job.townId))+' · '+note);
+          job.timingNote=note;
           dodgeSaveRecord(store,job);
         }
         if(now>=job.cancelAtMs){
@@ -3006,35 +3074,31 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
           (config.enabled&&config.modules.dodge||a.simulated));
         const first=attacks.find(a=>!store.handled[a.id]);
         if(!first)continue;
-        const {impact:lastImpact,colonyImpact}=dodgeWave(first,attacks);
-        const conflict=dodgeColonyThreat(attacks,townId,first.arrivalMs,lastImpact+dodgeAfter());
-        const decision=conflict?{allow:false,reason:'Ataque próximo de colonizador #'+conflict.id+
-          ': esquiva automática suspensa para preservar defesa'}:dodgeAttackDecision(first);
-        if(!decision.allow){
-          const key=first.id+':'+first.intel?.classification+':'+(conflict?.id||'');
+        const wave=dodgeWave(first,attacks),plan=dodgeWavePlan(now,wave);
+        if(plan.keep){
+          const key=first.id+':defender:'+wave.colonyId;
           if(!store.classifiedWarnings?.[key]){
             store.classifiedWarnings??={};store.classifiedWarnings[key]=now;
             dodgeWrite(store);
-            log('Esquiva '+tName(town)+': '+decision.reason+' (#'+first.id+')','WARN');
-            if(['confirmed','manual_colony'].includes(first.intel?.classification))
-              notify('Colonização identificada contra '+tName(town)+' — defesa não será retirada automaticamente');
+            notify('Esquiva '+tName(town)+': tropas mantidas para o colono. Falta intervalo para sair e voltar entre os impactos.');
           }
           continue;
         }
         const before=first.arrivalMs-now;
         if(before>lead||before<minLead)continue;
-        const targetId=dodgeDestination(townId,incoming);
+        if(plan.cancelAtMs>plan.deadlineMs)continue;
+        const units=Object.assign({},...Object.values(dodgeUnits(town)));
+        if(!Object.keys(units).length){
+          store.handled[first.id]=now;dodgeWrite(store);continue;
+        }
+        const targetId=dodgeDestination(townId,incoming,plan.returnAtMs,units,plan.cancelAtMs-now);
         if(!targetId){
           const last=Number(store.lastWarning?.[townId])||0;
           if(now-last>60000){
             store.lastWarning??={};store.lastWarning[townId]=now;dodgeWrite(store);
-            log('Esquiva '+tName(town)+': nenhum destino seguro e identificado na mesma ilha','WARN');
+            log('Esquiva '+tName(town)+': nenhum destino seguro na mesma ilha com janela para cancelar o apoio','WARN');
           }
           continue;
-        }
-        const units=Object.assign({},...Object.values(dodgeUnits(town)));
-        if(!Object.keys(units).length){
-          store.handled[first.id]=now;dodgeWrite(store);continue;
         }
         if(config.dryRun&&!first.simulated){
           if(!dodgePreviewed.has(first.id)){
@@ -3044,10 +3108,10 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
           }
           continue;
         }
-        await dodgeDispatch(store,townId,targetId,units,
-          {firstImpactMs:first.arrivalMs,lastImpactMs:lastImpact,colonyImpact},first.simulated?first.testId:null);
+        await dodgeDispatch(store,townId,targetId,units,wave,first.simulated?first.testId:null);
+        if(scope!==pulseScope||currentScope()!==pulseScope)return;
         for(const attack of attacks){
-          if(attack.arrivalMs>=first.arrivalMs&&attack.arrivalMs<=lastImpact)store.handled[attack.id]=now;
+          if(attack.arrivalMs>=first.arrivalMs&&attack.arrivalMs<=plan.impact)store.handled[attack.id]=now;
         }
         dodgeWrite(store);
         return;
@@ -3091,13 +3155,13 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
       <div>${cleanStr(j.group)} · apoio #${cleanStr(j.commandId||'identificando')} · ${cleanStr(j.state)}</div>
       <div class="smallnote">${j.cancelAtMs?'Cancelar às '+new Date(j.cancelAtMs).toLocaleTimeString('pt-BR',{hour12:false}):'Aguardando movimento'}
       ${j.returnAtMs?' · retorno planejado '+new Date(j.returnAtMs).toLocaleTimeString('pt-BR',{hour12:false}):''}</div>
-      ${j.error?`<div class="smallnote">${cleanStr(j.error)}</div>`:''}${(dodgeActive(j)||j.state==='needs_attention')&&j.commandId?`<button data-action="dodgeForceCancel" data-job="${cleanStr(j.id)}">Cancelar este apoio agora</button>`:''}</div>`
+      ${j.error||j.timingNote?`<div class="smallnote">${cleanStr(j.error||j.timingNote)}</div>`:''}${(dodgeActive(j)||j.state==='needs_attention')&&j.commandId?`<button data-action="dodgeForceCancel" data-job="${cleanStr(j.id)}">Cancelar este apoio agora</button>`:''}</div>`
     ).join('');
     return `${moduleNames()}
       ${section('Esquiva sincronizada por cidade')}
-      <p class="smallnote">O apoio sai antes do ataque. O horário de cancelamento mira a chegada das tropas 1 segundo após o impacto de referência.</p>
+      <p class="smallnote">Cada impacto é comparado com o anterior. O apoio sai antes do primeiro e o cancelamento mira a volta 1 segundo após o último da sequência.</p>
       <label class="formrow"><span>Enviar faltando (20–180 s)</span><input type="number" min="20" max="180" step="1" data-setting="dodge.leadSeconds" value="${dodgeLead()/1000}"></label>
-      <label class="formrow"><span>Agrupar ataques próximos (1–60 s)</span><input type="number" min="1" max="60" step="1" data-setting="dodge.waveGapSeconds" value="${dodgeWaveGap()/1000}"></label>
+      <label class="formrow"><span>Intervalo entre ataques do grupo (1–60 s)</span><input type="number" min="1" max="60" step="1" data-setting="dodge.waveGapSeconds" value="${dodgeWaveGap()/1000}"></label>
       <div class="checks"><label><input type="checkbox" data-setting="dodge.land" ${config.dodge.land?'checked':''}> Tropas terrestres</label><label><input type="checkbox" data-setting="dodge.naval" ${config.dodge.naval?'checked':''}> Navios</label></div>
       ${section('Análise de colonização')}
       <label class="formrow"><span>Quando houver colono confirmado</span>
@@ -3105,7 +3169,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
           ['confirmed','Defender o colono'],
           ['all','Esquivar do colono · retorno +1 s']
         ],config.dodge.colonizationPolicy==='all'?'all':'confirmed')}</select></label>
-      <p class="smallnote">Defender mantém as tropas na cidade ou tenta antecipar o retorno de um apoio já enviado. Esquivar usa o impacto do colono como referência. A batalha durante o cerco depende da resolução do Grepolis.</p>
+      <p class="smallnote">Defender mira a volta 1 segundo antes do colono quando há espaço após o impacto anterior. Se os impactos estiverem juntos, preserva a defesa. Esquivar mira a volta 1 segundo depois do colono.</p>
       <p class="smallnote">A análise considera Navegar, Cartografia, Farol, Atalanta, Sereias, Ares no Olimpo e bônus de movimento conhecidos. O Elmo de Hades atrasa a aparição. Sem dados da partida ou da composição, o painel mostra a incerteza.</p>
       ${section('Destino do apoio')}
       <div class="formrow"><span>Cidade protegida</span>${selectTown('dodgeSource',src?.id)}</div>
@@ -3231,6 +3295,9 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
       <p class="smallnote">Se um módulo não executou uma ação, isso não é necessariamente falha: pode estar aguardando recursos, tempo ou condição. Em modo simulação, ações não são contabilizadas como executadas no jogo. Dados de diagnóstico são armazenados somente neste PC.</p>`;
   };
   const handlers={farm,build,smartQueue,finishFree,recruit,research,trade,ruralTrade,ruralUnlock,ruralUpgrade,culture,bootcamp,tutorial,quests,banditRewards,cave,commands,alerts};
+  const priorityOrder=['commands','alerts'];
+  const routineOrder=['finishFree','smartQueue','tutorial','banditRewards','quests','bootcamp',
+    'ruralUnlock','ruralUpgrade','farm','build','recruit','research','trade','ruralTrade','culture','cave'];
   const lock = () => {
     const now=Date.now();
     try{
@@ -3244,30 +3311,43 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
   const tick=async()=>{
     health.lastHeartbeat=Date.now();
     if(connected())health.lastClientReadyAt=Date.now();
-    rescope();
     if(running){health.lastTickResult='aguardando ciclo anterior';return;}
+    rescope();
     if(!canRun()){
       health.lastTickResult=!connected()?'cliente do jogo indisponível':syncRole()==='standby'?'PC secundário':!config.enabled?'bot pausado':securityBlocked()?'CAPTCHA ativo':'ciclo bloqueado';
       return;
+    }
+    const due=id=>config.modules[id]&&num(nextRun[id])<=Date.now();
+    if(!priorityOrder.some(due)){
+      if(!routineOrder.some(due)){health.lastTickResult='aguardando próxima verificação';return;}
+      if(pacingInfo().remainingMs>0){health.lastTickResult='aguardando limite de solicitações';return;}
     }
     if(!lock()){health.lastTickResult='outra aba executando';return;}
     health.lastTickResult='motor de automação ativo';
     running=true;
     try {
-      const now=Date.now();
-      const order=['commands','alerts','finishFree','smartQueue','tutorial','banditRewards','quests','bootcamp','ruralUnlock','ruralUpgrade','farm','build','recruit','research','trade','ruralTrade','culture','cave'];
+      const order=[...priorityOrder,...routineOrder.slice(routineCursor),...routineOrder.slice(0,routineCursor)];
       for(const id of order){
-        if(!config.modules[id] || num(nextRun[id])>now)continue;
-        if(id!=='commands'&&id!=='alerts'){
+        if(!config.enabled||syncRole()!=='primary'||scope!==currentScope())break;
+        if(!due(id))continue;
+        const index=routineOrder.indexOf(id);
+        if(index>=0){
           const pace=pacingInfo();
           if(pace.remainingMs>0){health.lastTickResult='aguardando limite de solicitações';break;}
         }
-        nextRun[id]=now+Math.max(2,num(config.intervals[id],MODULES[id][2]))*1000;
+        const interval=num(config.intervals?.[id],MODULES[id][2]);
+        nextRun[id]=Date.now()+Math.max(2,interval)*1000;
         try{
           const did=await handlers[id]();
+          if(scope!==currentScope())break;
           diagMark(id,did?'done':'wait',did?(config.dryRun?'Execução simulada':'Ação enviada') : diagReason(id));
-          if(did){if(id!=='commands')nextRun[id]=Date.now()+Math.max(5,num(config.intervals[id],MODULES[id][2]))*1000;break;}
+          if(did){
+            if(index>=0)routineCursor=(index+1)%routineOrder.length;
+            if(id!=='commands')nextRun[id]=Date.now()+Math.max(5,interval)*1000;
+            break;
+          }
         }catch(e){
+          if(scope!==currentScope())break;
           if(e?.code==='GP_PACING'){
             diagMark(id,'wait',e.message);
             nextRun[id]=Date.now()+Math.min(60000,Math.max(1000,num(e.waitMs,5000)));
@@ -3280,6 +3360,7 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
           }
           diagMark(id,'error',e.message);
           log(`${MODULES[id][0]}: ${e.message}`,'ERROR');
+          if(index>=0)routineCursor=(index+1)%routineOrder.length;
           nextRun[id]=Date.now()+60000;break;
         }
       }
@@ -4025,7 +4106,7 @@ let queueKindSelected='building';
       }
       render();return;
     }
-    if(t.dataset.interval){config.intervals[t.dataset.interval]=Math.max(2,num(t.value,60));save();render();return;}
+    if(t.dataset.interval){config.intervals[t.dataset.interval]=Math.max(2,num(t.value,60));nextRun[t.dataset.interval]=0;save();render();return;}
     if(t.id==='citySelect'||t.id==='queueCitySelect'||t.id==='dodgeSource'||t.id==='testCity'){selectedCity=t.value;render();}
     if(t.id==='queueKind'){queueKindSelected=t.value;render();}
   };
@@ -4469,7 +4550,7 @@ let queueKindSelected='building';
         health.lastTickResult='falha no ciclo: '+String(e?.message||e);
         log('Motor: '+health.lastTickResult,'ERROR');
       });}catch(e){health.lastTickResult='erro: '+String(e?.message||e);log('Motor: '+health.lastTickResult,'ERROR');}
-    },1500);
+    },1000);
     setInterval(()=>{dodgePulse().catch(e=>log(`Esquiva: ${e.message}`,'ERROR'))},125);
     setInterval(()=>{try{testTick();if(config.ui.tab==='TESTE'&&shadow){const a=testRead().active;const el=shadow.getElementById('testCountdown');if(a&&el)el.textContent=Math.max(0,(a.impactMs-dodgeNow())/1000).toFixed(1)+'s';}}catch(e){log(`Teste: ${e.message}`,'ERROR')}},250);
     setInterval(()=>{if(dodgeBusy){try{const active=JSON.parse(localStorage.getItem(DODGE_LOCK)||'{}');if(active.owner===instanceId)localStorage.setItem(DODGE_LOCK,JSON.stringify({owner:instanceId,until:Date.now()+2500}));}catch{}}},500);

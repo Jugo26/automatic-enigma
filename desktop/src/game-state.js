@@ -34,9 +34,17 @@ const EXPRESSION = `(() => {
     }
     return null;
   };
-  const icons={units:{},researches:{}};
-  for(const item of catalog.units)icons.units[item.id]=iconFor(item.id,'unit');
-  for(const item of catalog.researches)icons.researches[item.id]=iconFor(item.id,'research');
+  const key=JSON.stringify([catalog.units.map(item=>item.id),catalog.researches.map(item=>item.id)]);
+  const now=Date.now();
+  let sprites=window.__GREPOPILOT_DESKTOP_SPRITES__;
+  if(!sprites||sprites.key!==key||now-sprites.at>=15000){
+    const icons={units:{},researches:{}};
+    for(const item of catalog.units)icons.units[item.id]=iconFor(item.id,'unit');
+    for(const item of catalog.researches)icons.researches[item.id]=iconFor(item.id,'research');
+    sprites={key,at:now,icons};
+    window.__GREPOPILOT_DESKTOP_SPRITES__=sprites;
+  }
+  const {icons}=sprites;
   return {ready:true,url:location.href,status,config:snapshot,catalog,templates,icons,recruitPlan:api.recruitPlan(),
     cave:api.caveInfo?.(),tutorial:api.tutorialInfo?.(),islandQuests:api.islandQuestStatus?.()};
 })()`;

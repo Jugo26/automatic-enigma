@@ -11,12 +11,13 @@ const source = readFileSync(join(__dirname, '../../GrepoPilot.user.js'), 'utf8')
 const epoch = 1_800_000_000_000;
 const scope = 'br123.grepolis.com:1';
 
-function engine({towns = [], townModels = {}, spies = {}, movement = {}, buildData = {}, config = {}, gameData = {}, order, collections = {}} = {}) {
+function engine({towns = [], townModels = {}, spies = {}, movement = {}, buildData = {}, config = {}, gameData = {}, order, collections = {}, movementRuntime} = {}) {
   const calls = [];
   const storage = new Map([['grepopilot:config:' + scope, JSON.stringify(config)]]);
   let now = epoch;
   class Clock extends Date { static now() { return now; } }
   const window = {
+    require: name => name === 'helpers/runtime' ? movementRuntime : undefined,
     Game: {player_id: 1, townId: 10, game_speed: 1},
     GameData: {units: {colonize_ship: {speed: 3, is_naval: true}, siren: {speed: 22, is_naval: true}, sword: {speed: 16}}, ...gameData},
     ITowns: {towns: Object.fromEntries(towns.map(t => [t.id, t]))},
@@ -46,6 +47,7 @@ function engine({towns = [], townModels = {}, spies = {}, movement = {}, buildDa
     fetch: async () => ({ok: false}), console: {info() {}, error() {}}, setTimeout, clearTimeout
   });
   return {api: window.__GREPOPILOT_DESKTOP_API__, ...window.fixture, calls,
+    changePlayer: id => {window.Game.player_id = id;},
     jump: milliseconds => {now = epoch + milliseconds;}};
 }
 
@@ -120,6 +122,10 @@ test('o modelo Colonização prioriza pré-requisitos, pesquisa e navio antes da
   assert.equal(f.calls.at(-1).args.unit_id, 'colonize_ship');
   dockOrders.push({attributes: {unit_type: 'colonize_ship', units_left: 1}});
   f.jump(300000);
+  await f.tick();
+  assert.equal(f.calls.at(-1).args.arguments.id, 'attack_ship');
+  techs.attack_ship = true;
+  f.jump(360000);
   await f.tick();
   assert.equal(f.calls.at(-1).args.arguments.building_id, 'wall');
 });
@@ -299,6 +305,119 @@ test('a política de defesa preserva a guarnição e chama um apoio em viagem qu
   f.jump(2000); await f.dodgePulse();
   assert.equal(f.calls.length, 2);
   assert.equal(f.calls[1].name, 'cancel_command');
+});
+
+function attackSequence(gap, count) {
+  return Object.fromEntries(Array.from({length: count}, (_, index) => {
+    const id = 1000 + index;
+    return [id, {id, attributes: {type: 'attack', home_town_id: 99, target_town_id: 10,
+      arrival_at: (epoch + 60000 + index * gap) / 1000}}];
+  }));
+}
+
+function dodgeSequenceFixture(movement, waveGapSeconds, extra = {}) {
+  const {supportMs = 400000, ...dodge} = extra;
+  return engine({
+    towns: [town(10), town(11)], movement,
+    config: {enabled: true, dryRun: false, modules: {dodge: true}, dodge: {waveGapSeconds, ...dodge}},
+    order({controller, args, ok}) {
+      if (controller === 'town_info') {
+        movement[200] = {id: 200, attributes: {type: 'support', home_town_id: 10,
+          target_town_id: args.id, started_at: (epoch + 1000) / 1000,
+          arrival_at: (epoch + supportMs) / 1000}};
+        ok({command_id: 200});
+      } else ok();
+    }
+  });
+}
+
+test('cem ataques separados por até cinco segundos prolongam um único apoio, inclusive após o primeiro sair da leitura', async () => {
+  for (const gap of [1000, 5000]) {
+    const all = attackSequence(gap, 100);
+    const movement = Object.fromEntries(Object.entries(all).slice(0, 80));
+    const f = dodgeSequenceFixture(movement, gap / 1000);
+    await f.dodgePulse();
+    assert.equal(f.calls.length, 1);
+    const returnAt = 60000 + 99 * gap + 1000;
+    const cancelAt = (1000 + returnAt) / 2;
+    Object.assign(movement, all);
+    movement[1100] = {id: 1100, attributes: {...all[1099].attributes, arrival_at: (epoch + returnAt + gap) / 1000}};
+    if (gap === 5000) {
+      f.jump(125000);
+      await f.dodgePulse();
+      assert.equal(Object.values(f.dodgeRead().jobs)[0].returnAtMs, epoch + returnAt);
+    }
+    f.jump(cancelAt - 1);
+    await f.dodgePulse();
+    assert.equal(f.calls.length, 1);
+    assert.equal(Object.values(f.dodgeRead().jobs)[0].returnAtMs, epoch + returnAt);
+    f.jump(cancelAt);
+    await f.dodgePulse();
+    assert.equal(f.calls.length, 2);
+    assert.equal(f.calls[1].name, 'cancel_command');
+    assert.equal(Object.values(f.dodgeRead().jobs)[0].estimatedArrivalMs, epoch + returnAt);
+  }
+});
+
+test('defender colono permite sair antes da sequência e retornar entre o ataque anterior e o colono', async () => {
+  for (const confirmedBeforeDispatch of [true, false]) {
+    const movement = attackSequence(5000, 4);
+    if (confirmedBeforeDispatch) movement[1003].attributes.type = 'attack_takeover';
+    const f = dodgeSequenceFixture(movement, 5);
+    await f.dodgePulse();
+    assert.equal(f.calls.length, 1);
+    movement[1003].attributes.type = 'attack_takeover';
+    f.jump(37499);
+    await f.dodgePulse();
+    assert.equal(f.calls.length, 1);
+    assert.equal(Object.values(f.dodgeRead().jobs)[0].returnAtMs, epoch + 74000);
+    f.jump(37500);
+    await f.dodgePulse();
+    assert.equal(f.calls[1].name, 'cancel_command');
+  }
+});
+
+test('defender colono mantém as tropas na cidade se o impacto anterior estiver a um segundo', async () => {
+  const movement = attackSequence(1000, 4);
+  movement[1003].attributes.type = 'attack_takeover';
+  const f = dodgeSequenceFixture(movement, 5);
+  await f.dodgePulse();
+  assert.deepEqual(f.calls, []);
+});
+
+test('uma sequência longa escolhe a rota com duração suficiente que o cliente consegue calcular', async () => {
+  const point = (id, x) => ({...town(id), getAbsX: () => x, getAbsY: () => 300});
+  const f = engine({
+    towns: [point(10, 300), point(11, 302), point(12, 320)],
+    movement: attackSequence(5000, 100),
+    config: {enabled: true, dryRun: false, modules: {dodge: true}, dodge: {waveGapSeconds: 5, targets: {10: 11}}},
+    movementRuntime: {
+      getSetupTimeByType: () => 200,
+      getRelevantUnitsForSlowestRuntime: units => units,
+      getUnitSpeedsWithBonus: () => ({sword: 10}),
+      getUnitRuntimes: (_units, distance) => ({sword: distance * 5}),
+      getSlowestRuntimeFromSet: (_units, time, setup) => setup + time.sword
+    }
+  });
+  await f.dodgePulse();
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.calls[0].args.id, 12);
+});
+
+test('uma confirmação de apoio que chega após troca de conta fica isolada no perfil de origem', async () => {
+  let respond;
+  const f = engine({
+    towns: [town(10), town(11)], movement: attackSequence(5000, 2),
+    config: {enabled: true, dryRun: false, modules: {dodge: true}},
+    order({ok}) { respond = ok; }
+  });
+  const inFlight = f.dodgePulse();
+  assert.equal(f.calls.length, 1);
+  f.changePlayer(2);
+  await f.tick();
+  respond({command_id: 200});
+  await inFlight;
+  assert.deepEqual(Object.keys(f.dodgeRead()), []);
 });
 
 test('o Desktop salva a duração-base por trajeto e permite marcar o colono na conta', () => {

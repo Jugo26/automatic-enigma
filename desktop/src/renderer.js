@@ -120,7 +120,7 @@ const OPTION_INFO={
  'alerts.checkAll':['Monitorar todas as cidades (perfil antigo)','O motor atual consulta as cidades disponíveis no jogo.'],
  'dodge.version':['Versão do formato da esquiva','Identifica o formato salvo ao migrar perfis antigos.'],
  'dodge.leadSeconds':['Enviar antes do impacto (s)','Define com quantos segundos de antecedência o bot tenta retirar as tropas.'],
- 'dodge.waveGapSeconds':['Agrupar ondas próximas (s)','Agrupa impactos separados por até este intervalo para calcular um único retorno.'],
+ 'dodge.waveGapSeconds':['Agrupar impactos em sequência (s)','Compara cada ataque com o anterior. Enquanto o intervalo couber neste limite, a sequência continua.'],
  'dodge.land':['Retirar tropas terrestres','Inclui as unidades terrestres no apoio para esquiva.'],
  'dodge.naval':['Retirar unidades navais','Inclui os navios no apoio para esquiva.'],
  'dodge.targets':['Destinos fixos por cidade','Define para onde enviar o apoio de esquiva. Edite também na aba Esquiva.'],
@@ -163,6 +163,7 @@ const el=(id)=>document.getElementById(id);
 const safe=(v)=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const val=(p,otherwise)=>{let v=S?.config;for(const k of p.split('.'))v=v?.[k];return v??otherwise};
 let S=null, active='INÍCIO', town='', selectedUnit='', busy=false, toastTimer=null, search='', researchSelected='';
+let readingState=false,stateReadId=0;
 let sharedConfig={configured:false,serverUrl:''},sharedState=null,sharedError='',sharedLoad=0;
 let sharedFilter={type:'all',direction:'all',player:'all',query:''};
 const bImage=(id,cls='asset')=>`<img class="${cls}" src="${BUILDING_CDN+encodeURIComponent(id)}.png" alt="${safe(BLD.find(x=>x[0]===id)?.[1]||id)}" loading="lazy">`;
@@ -351,7 +352,8 @@ function advancedPage(){
  Object.entries(conf).filter(([key,v])=>!ignored.has(key)&&v!=null).map(([key,v])=>{
   if(typeof v!=='object')return `<div class="card">${advancedField(key,v)}</div>`;
   const [name,description,icon='settings']=optionInfo(key);
-  return `<div class="card"><div class="card-head">${uiIcon(icon)}<div class="grow"><b>${safe(name)}</b><small>${safe(description)}</small></div></div>${Object.entries(v).map(([k,value])=>advancedField(key+'.'+k,value)).join('')}</div>`;
+  const fields=Object.entries(v).filter(([k])=>key!=='intervals'||k!=='_defaults');
+  return `<div class="card"><div class="card-head">${uiIcon(icon)}<div class="grow"><b>${safe(name)}</b><small>${safe(description)}</small></div></div>${fields.map(([k,value])=>advancedField(key+'.'+k,value)).join('')}</div>`;
  }).join('');
 }
 function logPage(){
@@ -401,7 +403,7 @@ function dodgePage(){
  <div class="card"><div class="card-head">${bImage('wall')}<div class="grow"><b>${running?'Esquiva real em funcionamento':'Esquiva não está operacional'}</b>
  <small>${safe(running?'Monitorando ataques e horários de envio':blockers.join(' · ')||'Aguardando estado do motor')}</small></div></div>
  <button class="cta" data-action="start-dodge">Ativar esquiva real</button>
- <p class="note">Apoio antes do impacto. A volta é planejada para 1 segundo após o impacto de referência.</p></div>
+ <p class="note">Apoio antes do primeiro impacto. A volta é planejada para 1 segundo após o fim da sequência. Para colono confirmado, vale a opção abaixo.</p></div>
  ${moduleCard(MODULES.find(x=>x[0]==='dodge'))}
  ${section('Para onde retirar as tropas')}
  <div class="card"><div class="field"><label>Prioridade</label>
@@ -419,15 +421,16 @@ function dodgePage(){
  Os destinos de outras pessoas são identificados pelos dados públicos do mundo.</p></div>
  ${section('Controle de tempo')}
  ${numberField('dodge.leadSeconds','Enviar antes do impacto (segundos)','wall',20,180,d.leadSeconds??60)}
- ${numberField('dodge.waveGapSeconds','Agrupar ondas (segundos)','wall',1,60,d.waveGapSeconds??12)}
+ ${numberField('dodge.waveGapSeconds','Intervalo entre ataques do grupo (segundos)','wall',1,60,d.waveGapSeconds??12)}
  ${section('Ataque de colonização')}
  <div class="card"><label class="field"><b>Quando houver colono confirmado</b>
  <select data-choice="dodge.colonizationPolicy">
  <option value="confirmed" ${colony==='confirmed'?'selected':''}>Defender o colono</option>
  <option value="all" ${colony==='all'?'selected':''}>Esquivar do colono</option>
  </select></label>
- <p class="note">${colony==='all'?'Mira a volta 1 segundo após o impacto do colono. O jogo resolve se há batalha no cerco.':'Mantém as tropas na cidade ou solicita a volta antecipada de um apoio em viagem.'}</p></div>
+ <p class="note">${colony==='all'?'Mira a volta 1 segundo após o impacto do colono. O jogo resolve se há batalha no cerco.':'Planeja voltar 1 segundo antes do colono quando há espaço após o ataque anterior. Se os impactos estiverem juntos, mantém a defesa na cidade.'}</p></div>
  ${section('Ataques recebidos')}
+ ${d.incomingTotal>(d.incoming||[]).length?`<p class="note">${Number(d.incomingTotal)} ataques em acompanhamento. Confira abaixo os próximos ${d.incoming.length}.</p>`:''}
  ${(d.incoming||[]).map(a=>{
   const travel=a.travel;
   const scenarios=(travel?.matches||[]).slice(0,3);
@@ -449,7 +452,7 @@ function dodgePage(){
  ${(d.jobs||[]).map(j=>`<div class="card"><b>${safe(jobStates[j.state]||'Acompanhando apoio')}</b><small>Destino #${j.targetId} · comando #${j.commandId||'identificando'}</small>
  ${j.cancelAtMs?`<p class="note">Cancelamento planejado às ${clock(j.cancelAtMs)} · alvo de retorno às ${clock(j.returnAtMs)}</p>`:''}
  ${j.confirmedReturnAtMs?`<p class="note">Chegada informada pelo jogo às ${clock(j.confirmedReturnAtMs)}</p>`:j.estimatedReturnAtMs?`<p class="note">Chegada estimada às ${clock(j.estimatedReturnAtMs)}</p>`:''}
- <p class="note">${safe(j.error||'Acompanhando comando')}</p></div>`).join('')||'<div class="empty">Nenhum apoio em acompanhamento.</div>'}
+ <p class="note">${safe(j.error||j.timingNote||'Acompanhando comando')}</p></div>`).join('')||'<div class="empty">Nenhum apoio em acompanhamento.</div>'}
  `;
 }
 function testPage(){
@@ -534,23 +537,33 @@ function rendered(){
  const error=sharedError||sharedConfig.lastError;
  el('panel-content').innerHTML=body+(active==='COMPARTILHADA'&&error?`<div class="card"><small>${safe(error)}</small></div>`:'');
 }
+async function readState(){
+ const id=++stateReadId;
+ const state=await window.gpDesktop.getState();
+ if(id!==stateReadId)return null;
+ if(active==='ESQUIVA'&&state?.ready&&town)state.dodgeInfo=await window.gpDesktop.dodgeInfo(town);
+ if(id!==stateReadId)return null;
+ S=state;
+ return state;
+}
 async function load(){
- if(busy)return;
+ if(busy||readingState)return;
+ readingState=true;
  try{
-  const s=await window.gpDesktop.getState();
-  S=s;
-  if(active==='ESQUIVA'&&s?.ready&&town)S.dodgeInfo=await window.gpDesktop.dodgeInfo(town);
+  const s=await readState();
+  if(!s||busy)return;
   if(s?.url)el('address').value=s.url;
   el('engine-status').textContent=s?.ready?'Motor conectado':(s?.reason||'Aguardando o Grepolis');
-  if(!busy&&!document.activeElement?.matches('input,textarea,select,summary'))rendered();
+  const hasVerification=active==='VERIFICAR'&&s.ready&&el('health-results');
+  if(!hasVerification&&!document.activeElement?.matches('input,textarea,select,summary'))rendered();
   else{el('state-text').textContent=statusText()}
- }catch(e){el('engine-status').textContent=e.message}
+ }catch(e){el('engine-status').textContent=e.message}finally{readingState=false}
 }
 async function save(path,v){
  try{busy=true;await window.gpDesktop.patch(path,v);notify('Configuração salva');await loadForced()}
  catch(e){notify('Falha: '+e.message,true)}finally{busy=false}
 }
-async function loadForced(){S=await window.gpDesktop.getState();if(active==='ESQUIVA'&&S?.ready&&town)S.dodgeInfo=await window.gpDesktop.dodgeInfo(town);rendered()}
+async function loadForced(){if(await readState())rendered()}
 async function doTemplate(kind,key){
  try{busy=true;await window.gpDesktop.applyTemplate(kind,key,town);notify('Modelo aplicado à cidade selecionada');await loadForced()}
  catch(e){notify('Erro no modelo: '+e.message,true)}finally{busy=false}
@@ -683,4 +696,4 @@ window.gpDesktop.onUpdate(s=>{const footer=el('update-status');if(footer)footer.
 window.gpDesktop.appInfo().then(x=>{el('app-version').textContent='v'+x.version;
   const footer=el('update-status');if(footer)footer.textContent=x.updateStatus||''}).catch(()=>{});
 loadShared().catch(()=>{});setInterval(()=>loadShared().catch(()=>{}),12000);
-menu();renderHeader();el('panel-content').innerHTML=noSession();load();setInterval(load,6500);
+menu();renderHeader();el('panel-content').innerHTML=noSession();load();setInterval(load,2000);
