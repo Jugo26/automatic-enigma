@@ -3,7 +3,7 @@ const {app,BrowserWindow,WebContentsView,ipcMain,net,dialog,safeStorage}=require
 const fs=require('node:fs');
 const path=require('node:path');
 const {patchEngineSource}=require('./engine-hooks');
-const {EXPRESSION}=require('./game-state');
+const {stateExpression}=require('./game-state');
 const {COLLECT_EXPRESSION}=require('./shared-collector');
 const {createSharedCenter}=require('./shared-center');
 const MOTOR_URL='https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.user.js';
@@ -49,10 +49,10 @@ async function tryInject(){
   if(!gameView||injecting||!isGameURL(gameView.webContents.getURL()))return;
   injecting=true;
   try{
-    const pageReady=await gameView.webContents.executeJavaScript('!!(window.Game?.player_id&&window.GameData?.units)',true);
-    if(!pageReady){emit('engine-status','Aguardando a autenticação no mundo...');return}
-    const installed=await gameView.webContents.executeJavaScript('!!window.__GREPOPILOT_DESKTOP_API__',true);
-    if(installed){emit('engine-status','Motor conectado à interface nativa');return}
+    const integration=await gameView.webContents.executeJavaScript(
+      "window.__GREPOPILOT_DESKTOP_API__?'installed':window.Game?.player_id&&window.GameData?.units?'ready':'waiting'",true);
+    if(integration==='installed')return;
+    if(integration!=='ready'){emit('engine-status','Aguardando a autenticação no mundo...');return}
     const code=await fetchMotor();
     await gameView.webContents.executeJavaScript(code,true);
     const ok=await gameView.webContents.executeJavaScript('!!window.__GREPOPILOT_DESKTOP_API__',true);
@@ -141,15 +141,19 @@ app.whenReady().then(()=>{
     else if(action==='reload')wc.reload(); // Somente recarga manual pelo usuário.
     return wc.getURL();
   });
-  ipcMain.handle('get-state',async()=>{
+  ipcMain.handle('get-state',async(_e,page,town)=>{
     if(!gameView)return {ready:false,reason:'Navegador não iniciado'};
-    await tryInject();
-    try{return await gameExecute(EXPRESSION)}catch(e){return {ready:false,url:gameView.webContents.getURL(),reason:String(e.message||e)}}
+    try{
+      const code=stateExpression(page,town);
+      const state=await gameExecute(code);
+      if(!state.needsEngine)return state;
+      await tryInject();
+      return await gameExecute(code);
+    }catch(e){return {ready:false,url:gameView.webContents.getURL(),reason:String(e.message||e)}}
   });
   ipcMain.handle('patch',(_e,path,value)=>perform('patch',[path,value]));
   ipcMain.handle('start-recruit',()=>perform('startRecruit',[]));
   ipcMain.handle('start-dodge',()=>perform('startDodge',[]));
-  ipcMain.handle('dodge-info',(_e,townId)=>perform('dodgeInfo',[townId]));
   ipcMain.handle('dodge-target',(_e,townId,dest)=>perform('setDodgeTarget',[townId,dest]));
   ipcMain.handle('dodge-mark',(_e,id,mark)=>perform('markDodgeAttack',[id,mark]));
   ipcMain.handle('dodge-colony-baseline',(_e,id,minutes)=>perform('setColonyBaseline',[id,minutes]));

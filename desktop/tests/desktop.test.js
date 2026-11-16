@@ -4,7 +4,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const {runInNewContext}=require('node:vm');
 const {ANCHOR,patchEngineSource}=require('../src/engine-hooks');
-const {EXPRESSION}=require('../src/game-state');
+const {stateExpression}=require('../src/game-state');
 const src=fs.readFileSync(require('node:path').join(__dirname,'..','src','renderer.js'),'utf8');
 test('preserva motor e injeta API sem carregar a interface antiga',()=>{
  const original=`// GrepoPilot\n(() => {\n let config={};\n ${ANCHOR}\n host.style.cssText='position:fixed;z-index:2147483000;top:90px;right:20px';\n try{mount();contextualStart();}catch(e){}\n})();`;
@@ -19,11 +19,53 @@ test('preserva motor e injeta API sem carregar a interface antiga',()=>{
 test('não altera motor incompatível',()=>{
  assert.throws(()=>patchEngineSource('GrepoPilot sem âncora'),/ponto de integração/);
 });
-test('captura sprites reais por classe e mantém posição de spritesheet',()=>{
- assert.match(EXPRESSION,/unit_icon40x40/);
- assert.match(EXPRESSION,/research40x40/);
- assert.match(EXPRESSION,/backgroundPosition/);
- assert.doesNotThrow(()=>new Function('return '+EXPRESSION));
+test('lê apenas os detalhes da aba aberta e reaproveita os sprites por catálogo',()=>{
+ const calls=[],styleCalls=[];
+ const detail=name=>(...args)=>{calls.push([name,...args]);return name;};
+ const catalog={cities:[{id:'10'},{id:'20'}],units:[{id:'slinger'}],researches:[{id:'navigational_chart'}]};
+ const window={Game:{player_id:1},GameData:{units:{}},__GREPOPILOT_DESKTOP_API__:{
+   catalog:()=>catalog,snapshot:()=>({}),status:()=>({}),templates:detail('templates'),recruitPlan:detail('recruit'),
+   caveInfo:detail('cave'),tutorialInfo:detail('tutorial'),islandQuestStatus:detail('island'),dodgeInfo:detail('dodge')
+ }};
+ const ctx={window,location:{href:'https://br123.grepolis.com/game/'},
+   document:{createElement:()=>({style:{},remove(){}}),body:{appendChild(){}}},
+   getComputedStyle(node,pseudo){
+     if(!pseudo)styleCalls.push(node.className);
+     return {backgroundImage:'url("https://img.example/sprites.png")',backgroundPosition:'-40px 0px'};
+   }
+ };
+ const read=(page,town)=>runInNewContext(stateExpression(page,town),ctx);
+ assert.equal(read('INÍCIO').ready,true);
+ assert.equal(read('COMPARTILHADA').catalog.units[0].id,'slinger');
+ assert.deepEqual(calls,[]);
+ assert.deepEqual(styleCalls,[]);
+ assert.equal(read('QUARTEL','20').icons.units.slinger.backgroundPosition,'-40px 0px');
+ assert.equal(read('ACADEMIA').icons.researches.navigational_chart.backgroundPosition,'-40px 0px');
+ assert.equal(read('PORTO','999').recruitPlan,'recruit');
+ assert.equal(read('MODELOS').templates,'templates');
+ assert.equal(read('ECONOMIA').cave,'cave');
+ const missions=read('MISSÕES');
+ assert.equal(missions.tutorial,'tutorial');
+ assert.equal(missions.islandQuests,'island');
+ assert.equal(read('ESQUIVA','20').dodgeInfo,'dodge');
+ assert.deepEqual(calls,[['recruit','20'],['recruit','10'],['templates'],['cave'],['tutorial'],['island'],['dodge','20']]);
+ assert.deepEqual(styleCalls,['unit_icon40x40 slinger','research_icon research40x40 navigational_chart']);
+ delete window.__GREPOPILOT_DESKTOP_API__;
+ assert.equal(read('INÍCIO').needsEngine,true);
+ delete window.GameData;
+ assert.equal(read('INÍCIO').needsEngine,false);
+});
+test('mantém o DOM do painel nas leituras idênticas e atualiza mudanças reais',()=>{
+ const writes={},nodes={};
+ const ctx={document:{getElementById:id=>nodes[id]??={set innerHTML(html){writes[id]=(writes[id]||0)+1;}}}};
+ runInNewContext(src.slice(0,src.indexOf('// Eventos delegados'))+`
+   S={ready:true,config:{enabled:false},catalog:{cities:[{id:'10',name:'Cidade'}]}};
+   rendered(false);
+   rendered(false);
+   S.config.enabled=true;
+   rendered(false);
+   rendered(false);`,ctx);
+ assert.deepEqual(writes,{nav:1,'panel-heading':1,city:1,'panel-content':2});
 });
 test('telas incluem imagens de edifícios, unidades, pesquisas e ações',()=>{
  for(const name of ['Quartel','Porto','Academia','Senado','Modelos','Aldeias','Esquiva','Diagnóstico'])assert.ok(src.includes(name),name);
@@ -59,7 +101,6 @@ test('a esquiva na HUD configura aliados, destino e mostra bloqueios',()=>{
   assert.match(src,/data-dodge-target/);
   assert.match(src,/start-dodge/);
   assert.match(src,/configurações pausadas|Esquiva não está operacional/);
-  assert.match(EXPRESSION,/recruitPlan:api\.recruitPlan\(\)/);
 });
 
 test('as opções exibem português e preservam chaves e valores gravados pelo motor',()=>{

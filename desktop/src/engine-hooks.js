@@ -67,9 +67,10 @@ const HOOK = String.raw`
       config.onboarding.completed=true;nextRun.recruit=0;save();render();
       log('Recrutamento real iniciado pelo Desktop');return true;
     },
-    recruitPlan: () => {
+    recruitPlan: (townId) => {
       const result={};
       for(const [id,goals] of Object.entries(config.recruit.targets||{})){
+        if(townId!==undefined&&id!==townId)continue;
         const town=townBy(id);result[id]={};
         for(const [unit,goal] of Object.entries(goals||{})){
           if(Number(goal)<=0)continue;

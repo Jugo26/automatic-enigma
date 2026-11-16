@@ -160,6 +160,12 @@ const UNIT_WIKI={sword:'https://wiki.en.grepolis.com/images/9/9c/Sword_40x40.png
 // Só usar imagens de arquivo verificadas; sem imagem específica não se finge uma.
 delete UNIT_WIKI.chariot;
 const el=(id)=>document.getElementById(id);
+const lastMarkup=new Map();
+function setMarkup(id,html,force=false){
+ if(!force&&lastMarkup.get(id)===html)return;
+ el(id).innerHTML=html;
+ lastMarkup.set(id,html);
+}
 const safe=(v)=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const val=(p,otherwise)=>{let v=S?.config;for(const k of p.split('.'))v=v?.[k];return v??otherwise};
 let S=null, active='INÍCIO', town='', selectedUnit='', busy=false, toastTimer=null, search='', researchSelected='';
@@ -208,10 +214,10 @@ function notify(message,error=false){
 }
 function menu(){
  let current='';
- el('nav').innerHTML=NAV.map(([key,label,icon,group])=>{
+ setMarkup('nav',NAV.map(([key,label,icon,group])=>{
    const separator=group!==current?`<div class="group">${safe(group)}</div>`:'';current=group;
    return separator+`<button class="navbtn ${active===key?'selected':''}" data-page="${key}">${uiIcon(icon,'nav-img')}<span>${safe(label)}</span></button>`;
- }).join('');
+ }).join(''));
 }
 function moduleCard([key,title,icon,,description]){
  const on=!!val('modules.'+key,false);
@@ -223,11 +229,11 @@ function statusText(){const x=S?.status;return x?.connected?(x.enabled?(x.dryRun
 function cityOptions(){
  const cities=S?.catalog?.cities||[];
  if(!town||!cities.some(c=>c.id===town))town=String(cities[0]?.id||'');
- el('city').innerHTML=cities.map(c=>`<option value="${safe(c.id)}" ${c.id===town?'selected':''}>${safe(c.name)}</option>`).join('')||'<option value="">Nenhuma cidade encontrada</option>';
+ setMarkup('city',cities.map(c=>`<option value="${safe(c.id)}" ${c.id===town?'selected':''}>${safe(c.name)}</option>`).join('')||'<option value="">Nenhuma cidade encontrada</option>');
 }
 function renderHeader(){
  const item=NAV.find(x=>x[0]===active)||NAV[0];
- el('panel-heading').innerHTML=`<h2>${uiIcon(item[2],'header-img')} ${safe(item[1])}</h2>`;
+ setMarkup('panel-heading',`<h2>${uiIcon(item[2],'header-img')} ${safe(item[1])}</h2>`);
  el('state-text').textContent=statusText();
 }
 function noSession(){return `<div class="empty">Entre em um mundo do Grepolis no navegador central. As tropas, pesquisas, cidades e suas imagens aparecem aqui após o carregamento.</div><p class="note">Os ícones de edifícios são recursos oficiais do jogo. Os de tropas e pesquisas são lidos do CSS do mundo aberto.</p>`}
@@ -505,9 +511,9 @@ async function loadShared(){
   sharedState=state;
   sharedError='';
  }catch(e){if(load!==sharedLoad)return;sharedError=String(e.message||e)}
- if(active==='COMPARTILHADA'&&!document.activeElement?.matches('input,textarea,select'))rendered();
+ if(active==='COMPARTILHADA'&&!document.activeElement?.matches('input,textarea,select'))rendered(false);
 }
-function rendered(){
+function rendered(force=true){
  menu();renderHeader();cityOptions();
  let body='';
  if(active==='COMPARTILHADA')body=sharedPage();
@@ -535,13 +541,11 @@ function rendered(){
   if(active==='FILA')body+=`<p class="note">Ajuste as metas e a prioridade da fila em Opções completas.</p>`;
  }
  const error=sharedError||sharedConfig.lastError;
- el('panel-content').innerHTML=body+(active==='COMPARTILHADA'&&error?`<div class="card"><small>${safe(error)}</small></div>`:'');
+ setMarkup('panel-content',body+(active==='COMPARTILHADA'&&error?`<div class="card"><small>${safe(error)}</small></div>`:''),force);
 }
 async function readState(){
  const id=++stateReadId;
- const state=await window.gpDesktop.getState();
- if(id!==stateReadId)return null;
- if(active==='ESQUIVA'&&state?.ready&&town)state.dodgeInfo=await window.gpDesktop.dodgeInfo(town);
+ const state=await window.gpDesktop.getState(active,town);
  if(id!==stateReadId)return null;
  S=state;
  return state;
@@ -552,10 +556,11 @@ async function load(){
  try{
   const s=await readState();
   if(!s||busy)return;
-  if(s?.url)el('address').value=s.url;
+  const address=el('address');
+  if(s?.url&&document.activeElement!==address&&address.value!==s.url)address.value=s.url;
   el('engine-status').textContent=s?.ready?'Motor conectado':(s?.reason||'Aguardando o Grepolis');
   const hasVerification=active==='VERIFICAR'&&s.ready&&el('health-results');
-  if(!hasVerification&&!document.activeElement?.matches('input,textarea,select,summary'))rendered();
+  if(!hasVerification&&!document.activeElement?.matches('input,textarea,select,summary'))rendered(false);
   else{el('state-text').textContent=statusText()}
  }catch(e){el('engine-status').textContent=e.message}finally{readingState=false}
 }
@@ -691,9 +696,9 @@ el('address-form').addEventListener('submit',async(e)=>{
 });
 window.gpDesktop.onLocation(u=>{if(!document.activeElement||document.activeElement.id!=='address')el('address').value=u});
 window.gpDesktop.onEngine(s=>el('engine-status').textContent=s);
-window.gpDesktop.onShared(s=>{sharedConfig=s;if(active==='COMPARTILHADA'&&!document.activeElement?.matches('input,textarea,select'))rendered()});
+window.gpDesktop.onShared(s=>{sharedConfig=s;if(active==='COMPARTILHADA'&&!document.activeElement?.matches('input,textarea,select'))rendered(false)});
 window.gpDesktop.onUpdate(s=>{const footer=el('update-status');if(footer)footer.textContent=s});
 window.gpDesktop.appInfo().then(x=>{el('app-version').textContent='v'+x.version;
   const footer=el('update-status');if(footer)footer.textContent=x.updateStatus||''}).catch(()=>{});
 loadShared().catch(()=>{});setInterval(()=>loadShared().catch(()=>{}),12000);
-menu();renderHeader();el('panel-content').innerHTML=noSession();load();setInterval(load,2000);
+rendered();load();setInterval(load,2000);
