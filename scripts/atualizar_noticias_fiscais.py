@@ -407,15 +407,14 @@ def update():
     # Garante visibilidade para as duas novas editorias quando existirem matérias verificáveis.
     selected = []
     for category in ("DCEs", "Montadoras"):
-        selected.extend(item for item in all_recent if item["category"] == category)  # priorização temática
-        selected = selected[:12]
+        selected.extend([item for item in all_recent if item["category"] == category][:6])
     for item in all_recent:
         if item not in selected:
             selected.append(item)
         if len(selected) >= 32:
             break
     chosen = sorted(selected[:32], key=lambda x: (x["published"], x["title"]), reverse=True)
-    # Imagens somente de fontes oficiais e apenas para os primeiros destaques.
+    # Imagens da fonte original, com domínio verificado, nos primeiros destaques.
     for item in chosen[:7]:
         if not item.get("image"):
             item["image"], _ = related_image(item["url"])
@@ -423,7 +422,7 @@ def update():
         raise RuntimeError("Fontes consultadas, mas nenhuma notícia fiscal recente encontrada. Preservado JSON anterior.")
     payload = {
         "schema_version": 1, "researched_at": now.isoformat(),
-        "source_status": "atualizacao_automatica_de_feeds_oficiais",
+        "source_status": "atualizacao_automatica_de_fontes_confiaveis",
         "sources_checked": successes, "entries_scanned": total_entries,
         "articles": chosen,
     }
