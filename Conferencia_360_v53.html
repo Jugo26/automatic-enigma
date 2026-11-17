@@ -2588,7 +2588,7 @@ function validUrl(raw,image=false){
   const u=new URL(raw);
   const domain=u.hostname.toLowerCase();
   return u.protocol==='https:' &&
-    (domain==='www.gov.br'||domain==='gov.br'||domain==='www.nfe.fazenda.gov.br'||domain==='nfe.fazenda.gov.br') &&
+    (domain==='www.gov.br'||domain==='gov.br'||domain==='www.nfe.fazenda.gov.br'||domain==='nfe.fazenda.gov.br'||domain==='agenciabrasil.ebc.com.br') &&
     (!image||raw.length<900);
  }catch(_e){return false;}
 }
