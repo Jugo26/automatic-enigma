@@ -29,6 +29,7 @@ const HOOK = String.raw`
       if(names[0]==='build')nextRun.build=0;
       if(names[0]==='research')nextRun.research=0;
       if(names[0]==='cave')nextRun.cave=0;
+       if(names[0]==='culture')nextRun.culture=0;
       if(names[0]==='intervals'){
         if(names[1])nextRun[names[1]]=0;
         else{
@@ -36,7 +37,14 @@ const HOOK = String.raw`
           nextRun={};
         }
       }
-      if(names[0]==='modules')nextRun[names[1]]=0;
+      if(names[0]==='modules'){
+         nextRun[names[1]]=0;
+         if(names[1]==='culture'&&value===true&&
+            !['festival','triumph','theater'].some(k=>config.culture?.[k])){
+           config.culture ||= {};config.culture.festival=true;config.culture.triumph=true;
+           log('Cultura ativada: Festa e Triunfo marcados por padrão; Teatro é opcional');
+         }
+       }
       save();render();
       return true;
     },

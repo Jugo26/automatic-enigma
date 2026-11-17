@@ -535,7 +535,16 @@ function rendered(force=true){
  else {
   const relevant=MODULES.filter(x=>x[3]===active);
   body=(relevant.length?relevant:MODULES).map(moduleCard).join('');
-  if(active==='CIDADES')body=infoCard('Cidades encontradas',String(S.catalog.cities.length)+' cidades','cities')+body;
+  if(active==='CIDADES'){
+     body=infoCard('Cidades encontradas',String(S.catalog.cities.length)+' cidades','cities')+body+
+       section('Cultura automática')+
+       '<p class="note">Ative Festivais e cultura acima e escolha as celebrações. Festa e triunfo são marcados na primeira ativação; teatro é opcional. Para executar, ligue a automação geral e desligue o modo simulação.</p>'+
+       '<div class="card">'+
+         advancedField('culture.festival',val('culture.festival',false))+
+         advancedField('culture.triumph',val('culture.triumph',false))+
+         advancedField('culture.theater',val('culture.theater',false))+
+       '</div>';
+   }
   if(active==='ALDEIAS')body+=numberField('ruralUpgrade.targetLevel','Nível desejado','pin',1,6);
   if(active==='ECONOMIA')body+=numberField('trade.minReserve','Reserva mínima do comércio','storage',0,500000)+cavePage();
   if(active==='FILA')body+=`<p class="note">Ajuste as metas e a prioridade da fila em Opções completas.</p>`;

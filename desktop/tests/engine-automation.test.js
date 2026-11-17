@@ -595,3 +595,40 @@ test('tutorial pesquisa a tecnologia identificada com a opção independente e a
   assert.match(f.api.tutorialInfo().rows[0].reason, /pesquisa em andamento/i);
   assert.equal(f.api.snapshot().modules.research, false);
 });
+
+test('cultura no Desktop marca festa e triunfo e inicia uma festa elegível',async()=>{
+  const f=engine({towns:[construction({academy:30,theater:1})],config:{enabled:true,dryRun:false}});
+  f.api.patch('modules.culture',true);
+  const options=f.api.snapshot().culture;
+  assert.equal(options.festival,true);
+  assert.equal(options.triumph,true);
+  assert.equal(options.theater,false);
+  await f.tick();
+  assert.equal(f.calls.length,1);
+  assert.equal(f.calls[0].controller,'building_place');
+  assert.equal(f.calls[0].name,'start_celebration');
+  assert.equal(f.calls[0].args.celebration_type,'party');
+  assert.equal(f.calls[0].args.town_id,10);
+});
+test('cultura explica Academia insuficiente',async()=>{
+  const f=engine({towns:[construction({academy:20})],
+    config:{enabled:true,dryRun:false,modules:{culture:true},culture:{festival:true}}});
+  await f.tick();
+  assert.equal(f.calls.length,0);
+  assert.match(f.diagReason('culture'),/Academia abaixo do nível 30/);
+});
+test('cultura não repete festa em andamento',async()=>{
+  const f=engine({towns:[construction({academy:30})],
+    collections:{Celebration:[{attributes:{town_id:10,celebration_type:'party'}}]},
+    config:{enabled:true,dryRun:false,modules:{culture:true},culture:{festival:true}}});
+  await f.tick();
+  assert.equal(f.calls.length,0);
+  assert.match(f.diagReason('culture'),/em andamento/);
+});
+test('teatro é opcional e inicia quando os requisitos existem',async()=>{
+  const f=engine({towns:[construction({academy:30,theater:1})],
+    config:{enabled:true,dryRun:false,modules:{culture:true},
+      culture:{festival:false,triumph:false,theater:true}}});
+  await f.tick();
+  assert.equal(f.calls[0].args.celebration_type,'theater');
+});

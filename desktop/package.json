@@ -1,6 +1,6 @@
 {
   "name": "grepopilot-desktop",
-  "version": "0.2.10",
+  "version": "0.2.11",
   "description": "GrepoPilot Desktop: central compartilhada de movimentos, versão dinâmica e atualizações do Desktop",
   "main": "src/main.js",
   "license": "UNLICENSED",

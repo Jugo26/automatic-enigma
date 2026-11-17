@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GrepoPilot - Painel de Automacao
 // @namespace    https://grepolis.com/
-// @version      1.0.7
+// @version      1.0.8
 // @updateURL    https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.meta.js
 // @downloadURL  https://raw.githubusercontent.com/Jugo26/automatic-enigma/grepopilot-updates/GrepoPilot.user.js
 // @homepageURL  https://github.com/Jugo26/automatic-enigma/tree/grepopilot-updates
@@ -19,7 +19,7 @@
   window.__GREPOPILOT_ACTIVE__ = true;
   const W = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
   const SCRIPT = 'GrepoPilot';
-  const VERSION = '1.0.7';
+  const VERSION = '1.0.8';
   const BUILDINGS = ['main','storage','farm','lumber','stoner','ironer','academy','barracks','docks','market','temple','hide','wall'];
   const COLONY_SHIP = 'colonize_ship';
   const MODULES = {
@@ -175,6 +175,9 @@
     cfg.intervals=migrateIntervals(raw?.intervals);
     if(raw?.modules?.ruralUpgrade && raw?.ruralUpgrade?.unlock && raw?.modules?.ruralUnlock===undefined) cfg.modules.ruralUnlock=true;
     if(raw?.modules?.ruralUpgrade && raw?.ruralUpgrade?.upgrade===false) cfg.modules.ruralUpgrade=false;
+    if(raw?.modules?.culture && !['festival','triumph','theater'].some(k=>cfg.culture?.[k])){
+      cfg.culture ||= {};cfg.culture.festival=true;cfg.culture.triumph=true;
+    }
     if(cfg?.ui?.tab==='MILITAR')cfg.ui.tab='TROPAS';
     if(cfg?.ui?.tab==='CONFIG')cfg.ui.tab='AJUSTES';
     if(cfg?.ui?.tab==='PRESENÇA')cfg.ui.tab='INÍCIO';
@@ -1758,26 +1761,55 @@ function policyForUnit(key,def){
     if(!config.dryRun){const updated=readRuntime();updated.lastBanditRewardAt=now;writeRuntime(updated);}
     log(`Bandidos: recompensa ${name==='stashReward'?'guardada':'recebida'} automaticamente`);return true;
   }
+  const cultureKinds=()=>[['festival','party'],['triumph','triumph'],['theater','theater']]
+    .filter(([k])=>Boolean(config.culture?.[k]));
+  const cultureCelebrations=()=>{
+    const raw=W.MM?.getModels?.()?.Celebration||{};
+    const collection=W.MM?.getOnlyCollectionByName?.('Celebration')?.models||[];
+    return [...Object.values(raw),...Object.values(collection)]
+      .filter(m=>m?.attributes||typeof m?.get==='function');
+  };
+  const cultureStatus=(town,type,celebrations)=>{
+    const active=celebrations.some(m=>{
+      const a=m.attributes||{};
+      const townId=Number(a.town_id??m.get?.('town_id'));
+      const kind=String(a.celebration_type||a.type||m.get?.('celebration_type')||m.get?.('type')||'');
+      return townId===Number(town.id)&&(kind===type||(type==='party'&&kind==='festival'));
+    });
+    if(active)return 'celebração desse tipo em andamento';
+    const b=town.buildings?.()?.attributes||{};
+    if(type==='party'||type==='theater'){
+      if(num(b.academy)<30)return 'Academia abaixo do nível 30';
+      if(type==='theater'&&num(b.theater)<1)return 'Teatro não construído';
+      const cost=type==='party'?{wood:15000,stone:18000,iron:15000}:
+        {wood:10000,stone:12000,iron:10000};
+      if(!availableRes(town,cost))return 'recursos insuficientes (madeira, pedra ou prata)';
+    }
+    if(type==='triumph'){
+      const kp=W.MM?.getModelByNameAndPlayerId?.('PlayerKillpoints')?.attributes||{};
+      if(num(kp.att)+num(kp.def)-num(kp.used)<300)return 'menos de 300 pontos de batalha livres';
+    }
+    return '';
+  };
+  let cultureWaitState={at:0,detail:''};
   async function culture(){
-    const types=[['festival','party'],['triumph','triumph'],['theater','theater']].filter(([k])=>config.culture[k]);
+    const types=cultureKinds();
     if(!types.length)return false;
-    const celebrations=Object.values(W.MM.getModels?.()?.Celebration||{});
-    for(const [setting,type] of types)for(const t of towns()){
-      const active=celebrations.some(m=>Number(m.attributes?.town_id)===Number(t.id) && ['festival','party','triumph','theater'].includes(String(m.attributes?.celebration_type||m.attributes?.type)) && (m.attributes?.celebration_type===type || m.attributes?.type===type));
-      if(active)continue;
-      const buildings=t.buildings?.()?.attributes||{};const r=resource(t);
-      if(type==='party' && (num(buildings.academy)<30 || !availableRes(t,{wood:15000,stone:18000,iron:15000}))) continue;
-      if(type==='theater' && !buildings.theater) continue;
-      if(type==='triumph'){
-        const kp=W.MM?.getModelByNameAndPlayerId?.('PlayerKillpoints')?.attributes||{};
-        if(num(kp.att)+num(kp.def)-num(kp.used)<300)continue;
-      }
-      await action('building_place','start_celebration',{celebration_type:type,town_id:Number(t.id)});
-      log(`${tName(t)}: iniciar ${setting}`);return true;
+    const celebrations=cultureCelebrations(),waits=[];
+    for(const [setting,type] of types)for(const town of towns()){
+      const reason=cultureStatus(town,type,celebrations);
+      if(reason){waits.push(`${tName(town)} / ${setting}: ${reason}`);continue;}
+      await action('building_place','start_celebration',{celebration_type:type,town_id:Number(town.id)});
+      log(`${tName(town)}: iniciar ${setting}`);return true;
+    }
+    const detail=waits.slice(0,3).join(' · ')||'nenhuma cidade detectada';
+    const now=Date.now();
+    if(detail!==cultureWaitState.detail||now-cultureWaitState.at>=120000){
+      cultureWaitState={at:now,detail};
+      log('Cultura: aguardando — '+detail);
     }
     return false;
   }
-
   function banditHeroes(){
     // Somente heróis explicitamente atribuídos a uma cidade. Não desloca heróis.
     let all=[];
@@ -3219,6 +3251,17 @@ function testRead(){try{return JSON.parse(localStorage.getItem(TEST_STORE)||'{}'
         const pending=plan.rows.filter(x=>x.state==='wait').length;
         return pending?pending+' tarefa(s) aguardando recursos, nível, população ou espaço':'Metas concluídas ou bloqueadas';
       }
+      if(id==='culture'){
+        const types=cultureKinds();
+        if(!types.length)return 'Nenhum tipo marcado; selecione Festa, Triunfo ou Teatro em CIDADES';
+        const celebrations=cultureCelebrations(),waiting=[];
+        for(const [,type] of types)for(const town of towns()){
+          const reason=cultureStatus(town,type,celebrations);
+          if(!reason)return 'Celebração '+type+' pronta em '+tName(town);
+          waiting.push(tName(town)+': '+reason);
+        }
+        return waiting.slice(0,2).join(' · ')||'Nenhuma cidade disponível';
+      }
       if(id==='cave')return cavePlans().map(p=>p.name+': '+p.reason).join(' · ')||'Nenhuma cidade disponível';
       if(id==='recruit')return Object.keys(config.recruit.targets||{}).length?'Aguardando lote mínimo, recursos e espaço no quartel/porto':'Sem metas de tropas';
       if(id==='build')return Object.keys(config.build.targets||{}).length?'Aguardando recursos, população ou espaço de construção':'Sem metas de construção';
@@ -4066,8 +4109,15 @@ let queueKindSelected='building';
   };
   const changed=e=>{
     const t=e.target;
-    if(t.dataset.module){config.modules[t.dataset.module]=t.checked;nextRun[t.dataset.module]=0;save();render();return;}
-    if(t.dataset.culture){config.culture[t.dataset.culture]=t.checked;save();render();return;}
+    if(t.dataset.module){
+      config.modules[t.dataset.module]=t.checked;
+      if(t.dataset.module==='culture'&&t.checked&&
+         !['festival','triumph','theater'].some(k=>config.culture?.[k])){
+        config.culture.festival=true;config.culture.triumph=true;
+      }
+      nextRun[t.dataset.module]=0;save();render();return;
+    }
+    if(t.dataset.culture){config.culture[t.dataset.culture]=t.checked;nextRun.culture=0;save();render();return;}
     if(t.dataset.global){
       if(t.dataset.global==='enabled'&&t.checked&&syncRole()==='standby'){
         log('PC secundário: escolha Principal em AJUSTES antes de iniciar','WARN');render();return;
