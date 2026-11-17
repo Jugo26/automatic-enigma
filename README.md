@@ -8,7 +8,7 @@ Treinamento didático de conferência de documentos de transporte de veículos (
 - Painel compacto no menu, com carrossel automático (pausa ao interagir), filtros por Emissão, Impostos e Transporte, e links para fontes oficiais.
 - Notícia: data de publicação, fonte, resumo objetivo e ponto de atenção para empresas; imagens oficiais da publicação quando obtidas, ou ilustração original por categoria.
 - Base inicial conferida com documentos da Receita Federal e do Portal NFS-e; arquivo: `data/noticias_fiscais.json`.
-- A rotina `scripts/atualizar_noticias_fiscais.py` consulta múltiplos feeds oficiais, filtra por assunto, valida origem e data, deduplica, preserva resumos já revisados e busca imagens somente em domínios governamentais.
+- A rotina `scripts/atualizar_noticias_fiscais.py` consulta múltiplos feeds oficiais da Receita Federal, NFS-e e Fazenda e a editoria Economia da Agência Brasil (EBC); filtra por assunto, valida origem e data, deduplica, preserva resumos já revisados e busca imagens somente em domínios governamentais.
 - Ação agendada: `.github/workflows/radar-fiscal-diario.yml` às 07h15 no horário de Brasília, diariamente, ou por execução manual. A execução efetiva depende do GitHub Actions e do acesso às fontes. Se nenhuma fonte responder, o arquivo anterior é preservado.
 - As novas entradas automáticas mostram trechos da fonte e orientações operacionais genéricas, não pareceres jurídicos. A aba identifica a data da última pesquisa e avisa quando os dados ficam antigos.
 - O jogo carrega a edição atualizada online e mantém uma cópia inicial verificada quando o acesso à rede falha.
