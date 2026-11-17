@@ -30,15 +30,30 @@ FEEDS = (
     ("Ministério da Fazenda", "https://www.gov.br/fazenda/pt-br/assuntos/noticias/RSS"),
     ("Receita Federal - 2026", "https://www.gov.br/receitafederal/pt-br/assuntos/noticias/2026/RSS"),
     ("Agência Brasil - Economia", "https://agenciabrasil.ebc.com.br/rss/economia/feed.xml"),
+    ("Ministério do Desenvolvimento, Indústria e Comércio", "https://www.gov.br/mdic/pt-br/assuntos/noticias/RSS"),
+    ("Ministério dos Transportes", "https://www.gov.br/transportes/pt-br/assuntos/noticias/RSS"),
+    ("Anfavea - Imprensa", "https://anfavea.com.br/site/imprensa-noticia/feed/"),
 )
-TRUSTED = {"www.gov.br", "gov.br", "www.nfe.fazenda.gov.br", "nfe.fazenda.gov.br", "agenciabrasil.ebc.com.br"}
+TRUSTED = {"www.gov.br", "gov.br", "www.nfe.fazenda.gov.br", "nfe.fazenda.gov.br",
+           "agenciabrasil.ebc.com.br", "dfe-portal.svrs.rs.gov.br",
+           "anfavea.com.br", "www.anfavea.com.br"}
+SITE_PAGES = (
+    ("Portal DC-e - Avisos", "https://dfe-portal.svrs.rs.gov.br/Dce/Avisos", "dce"),
+    ("Portal DC-e - Notícias", "https://dfe-portal.svrs.rs.gov.br/Dce/Noticias", "dce"),
+    ("Anfavea - Notícias", "https://anfavea.com.br/site/imprensa-noticia/", "automotive"),
+)
 RELEVANT = re.compile(
-    r"\b(nf-?e|nfc-?e|nfs-?e|ct-?e|mdf-?e|dc-?e|dace|"
+    r"\b(nf-?e|nfc-?e|nfs-?e|ct-?e|mdf-?e|dc-?e|dce|dace|"
+    r"declara[cç][aã]o de conte[uú]do eletr[oô]nica|"
     r"sped|pgdas|simples nacional|ibs|cbs|icms|issqn|"
     r"reforma tribut[aá]ria|nota fiscal|documentos? fiscais?|"
     r"tribut[aá]ri[oa]|obriga[cç][aã]o acess[oó]ria|"
     r"emiss[aã]o de notas?|nota t[eé]cnica|declar[aã]c[aã]o de regimes|"
-    r"al[ií]quota|nfcom|c-?npj alfanum[eé]rico)\b",
+    r"al[ií]quota|nfcom|c-?npj alfanum[eé]rico|"
+    r"montadoras?|ind[uú]stria (?:automotiva|automobil[ií]stica)|anfavea|"
+    r"produ[cç][aã]o de ve[ií]culos|emplacamentos?|f[aá]bricas? de ve[ií]culos|"
+    r"ford|toyota|honda|polaris|volkswagen|gm|chevrolet|"
+    r"ve[ií]culos eletrificados|fabrica[cç][aã]o de autom[oó]veis)\b",
     re.I,
 )
 EXCLUDE = re.compile(
@@ -46,6 +61,12 @@ EXCLUDE = re.compile(
     r"concurso p[uú]blico|oper[aã]c[aã]o fronteira)\b", re.I
 )
 CATEGORIES = (
+    ("DCEs", re.compile(r"\b(dc-?e|dce|dace|declara[cç][aã]o de conte[uú]do eletr[oô]nica)\b", re.I),
+     "Ponto de atenção: confira se a DC-e é permitida para a operação, as validações do emissor e a exigência de DACE. A DC-e não substitui NF-e quando esta for obrigatória."),
+    ("Montadoras", re.compile(r"\b(montadoras?|anfavea|ind[uú]stria (?:automotiva|automobil[ií]stica)|"
+     r"produ[cç][aã]o de ve[ií]culos|emplacamentos?|f[aá]bricas? de ve[ií]culos|"
+     r"ford|toyota|honda|polaris|volkswagen|gm|chevrolet|ve[ií]culos eletrificados)\b", re.I),
+     "Ponto de atenção: acompanhe repercussões em produção, coletas, distribuição e faturamento de veículos. Dados de mercado não representam, por si só, mudança na legislação fiscal."),
     ("Transporte", re.compile(r"\b(ct-?e|mdf-?e|dc-?e|dace|transporte de carga)\b", re.I),
      "Ponto de atenção: transportadoras devem conferir eventuais ajustes de leiaute, emissão ou validação do documento citado."),
     ("Emissão", re.compile(r"\b(nf-?e|nfc-?e|nfs-?e|nota fiscal|emiss[aã]o|documentos? fiscais?)\b", re.I),
@@ -180,6 +201,101 @@ def is_relevant(title, excerpt):
     text = title + " " + excerpt
     return bool(RELEVANT.search(text)) and not EXCLUDE.search(title)
 
+
+class PageCollector(HTMLParser):
+    """Captura títulos, links e texto de páginas editoriais abertas, sem inferir conteúdo ausente."""
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.links = []
+        self.headings = []
+        self._tag = None
+        self._link = ""
+        self._parts = []
+        self._skip = 0
+    def handle_starttag(self, tag, attrs):
+        props = dict(attrs)
+        if tag in ("script", "style", "noscript"):
+            self._skip += 1
+        if not self._skip and tag in ("h1", "h2", "h3", "a"):
+            self._tag = tag
+            self._parts = []
+            self._link = props.get("href", "") if tag == "a" else ""
+    def handle_data(self, value):
+        if not self._skip and self._tag:
+            self._parts.append(value)
+    def handle_endtag(self, tag):
+        if tag in ("script", "style", "noscript") and self._skip:
+            self._skip -= 1
+        if self._tag == tag:
+            value = re.sub(r"\s+", " ", " ".join(self._parts)).strip()
+            if tag == "a" and self._link and value:
+                self.links.append((self._link, value))
+            if tag in ("h1", "h2", "h3") and value:
+                self.headings.append((tag, value))
+            self._tag = None
+            self._parts = []
+
+def valid_article_date(value):
+    try:
+        return dt.datetime.strptime(value, "%d/%m/%Y").date()
+    except ValueError:
+        return None
+
+def parse_dce_bulletins(body: bytes, page_url: str):
+    """O portal SVRS divulga avisos HTML com data explícita (não um feed RSS)."""
+    raw = plaintext(body.decode("utf-8", "replace"))
+    marks = list(re.finditer(r"(?<!\d)(\d{2}/\d{2}/20\d{2})(?!\d)", raw))
+    found = []
+    for index, match in enumerate(marks):
+        date = valid_article_date(match.group(1))
+        if not date:
+            continue
+        text = raw[match.end():marks[index + 1].start() if index + 1 < len(marks) else len(raw)]
+        text = re.sub(r"\s+", " ", text).strip()
+        if not re.search(r"\b(dc-?e|dace|declara[cç][aã]o de conte[uú]do eletr[oô]nica)\b", text, re.I):
+            continue
+        # Trecho exato da publicação, sem chamar toda notícia fiscal de atualização da DC-e.
+        title = short(text.split(". ", 1)[0], 160)
+        if not title or len(title) < 15:
+            continue
+        found.append((title, page_url, short(text, 330), date.isoformat()))
+    return found[:8]
+
+def parse_anfavea_articles(archive: bytes, base_url: str):
+    """Seleciona releases com links próprios e extrai a data da página original."""
+    parser = PageCollector()
+    parser.feed(archive.decode("utf-8", "replace"))
+    addresses = []
+    for href, _label in parser.links:
+        url = canonical(urllib.parse.urljoin(base_url, href))
+        if url and re.search(r"/site/imprensa-noticia/[^/]+/?$", url) and url not in addresses:
+            addresses.append(url)
+    result = []
+    for url in addresses[:8]:
+        try:
+            page = fetch(url, max_bytes=950_000).decode("utf-8", "replace")
+            meta = PageCollector()
+            meta.feed(page)
+            title = next((value for tag, value in meta.headings if tag == "h1"), "")
+            raw = plaintext(page)
+            match = re.search(r"(?<!\d)(\d{2}/\d{2}/20\d{2})(?!\d)", raw)
+            date = valid_article_date(match.group(1)) if match else None
+            if not title or date is None:
+                continue
+            body = raw[match.end():] if match else ""
+            result.append((title, url, short(body, 260), date.isoformat()))
+        except Exception as exc:
+            print(f"[AVISO] release Anfavea {url}: {exc}", file=sys.stderr)
+    return result
+
+def relevant_article(title: str, excerpt: str, url: str):
+    if not is_relevant(title, excerpt):
+        return False
+    # Páginas de avisos da SVRS só entram se tratarem especificamente de DC-e/DACE.
+    if "/Dce/" in url and not re.search(r"\b(dc-?e|dace|declara[cç][aã]o de conte[uú]do eletr[oô]nica)\b", title + " " + excerpt, re.I):
+        return False
+    return True
+
 def update():
     existing = json.loads(OUT.read_text("utf-8")) if OUT.exists() else {"articles": []}
     prior = {canonical(x.get("url", "")): x for x in existing.get("articles", []) if canonical(x.get("url", ""))}
@@ -205,7 +321,7 @@ def update():
             intro = short(excerpt_html, 260)
             if not url or not date or not (cutoff <= date <= now) or not title:
                 continue
-            if not is_relevant(title, intro):
+            if not relevant_article(title, intro, url):
                 continue
             previous = prior.get(url, {})
             if url in fresh:
@@ -225,22 +341,81 @@ def update():
                 verified = False  # extrato automático da fonte, não revisado editorialmente
             fresh[url] = {
                 "id": previous.get("id") or __import__("hashlib").sha256(url.encode()).hexdigest()[:16],
-                "title": title[:180], "source": "Receita Federal" if "receitafederal" in url else
-                          ("Portal Nacional da NFS-e" if "/nfse/" in url else ("Agência Brasil (EBC)" if "agenciabrasil.ebc.com.br" in url else "Ministério da Fazenda")),
+                "title": title[:180],
+                "source": ("Receita Federal" if "receitafederal" in url else
+                           "Portal Nacional da NFS-e" if "/nfse/" in url else
+                           "Agência Brasil (EBC)" if "agenciabrasil.ebc.com.br" in url else
+                           "Anfavea" if "anfavea.com.br" in url else
+                           "Ministério dos Transportes" if "/transportes/" in url else
+                           "MDIC" if "/mdic/" in url else "Ministério da Fazenda"),
                 "published": date.isoformat(), "category": cat,
                 "summary": summary[:340], "impact": impact[:310],
                 "url": url, "image": image, "verified": verified,
+            }
+
+    # Busca direcionada: DC-e/DACE no portal autorizador e montadoras na Anfavea.
+    for label, page_url, page_type in SITE_PAGES:
+        try:
+            body = fetch(page_url)
+            if page_type == "dce":
+                entries = parse_dce_bulletins(body, page_url)
+            else:
+                entries = parse_anfavea_articles(body, page_url)
+            if not entries:
+                raise ValueError("Página sem notícia datada e pertinente")
+            successes.append({"source": label, "entries": len(entries)})
+            total_entries += len(entries)
+        except Exception as exc:
+            print(f"[AVISO] {label}: {exc}", file=sys.stderr)
+            continue
+        for title, url, excerpt, raw_date in entries:
+            url = canonical(url)
+            date = parse_date(raw_date)
+            if not url or not date or not (cutoff <= date <= now):
+                continue
+            title = plaintext(title)
+            intro = short(excerpt, 260)
+            if not relevant_article(title, intro, url):
+                continue
+            if url in fresh:
+                continue
+            previous = prior.get(url, {})
+            category, attention = categorise(title, intro)
+            if page_type == "dce":
+                category, attention = CATEGORIES[0][0], CATEGORIES[0][2]
+            if page_type == "automotive":
+                category, attention = CATEGORIES[1][0], CATEGORIES[1][2]
+            revised = previous.get("verified") and previous.get("summary") and previous.get("impact")
+            fresh[url] = {
+                "id": previous.get("id") or __import__("hashlib").sha256((url + date.isoformat()).encode()).hexdigest()[:16],
+                "title": title[:180],
+                "source": "Portal DC-e (SVRS)" if page_type == "dce" else "Anfavea",
+                "published": date.isoformat(), "category": previous.get("category", category) if revised else category,
+                "summary": previous["summary"] if revised else (intro or title)[:340],
+                "impact": previous["impact"] if revised else attention[:310],
+                "url": url, "image": previous.get("image", ""), "verified": bool(revised),
             }
     if not successes:
         raise RuntimeError("Nenhuma fonte pôde ser consultada. Mantida a última edição válida.")
     # Junta lançamentos novos e os curados; não deixa notícias antigas sumirem sem motivo.
     merged = dict(prior)
     merged.update(fresh)
-    chosen = sorted(
+    all_recent = sorted(
         (item for item in merged.values() if parse_date(item.get("published")) and
          cutoff <= parse_date(item.get("published")) <= now and canonical(item.get("url"))),
         key=lambda x: (x["published"], x["title"]), reverse=True,
-    )[:24]
+    )
+    # Garante visibilidade para as duas novas editorias quando existirem matérias verificáveis.
+    selected = []
+    for category in ("DCEs", "Montadoras"):
+        selected.extend(item for item in all_recent if item["category"] == category)  # priorização temática
+        selected = selected[:12]
+    for item in all_recent:
+        if item not in selected:
+            selected.append(item)
+        if len(selected) >= 32:
+            break
+    chosen = sorted(selected[:32], key=lambda x: (x["published"], x["title"]), reverse=True)
     # Imagens somente de fontes oficiais e apenas para os primeiros destaques.
     for item in chosen[:7]:
         if not item.get("image"):
@@ -269,6 +444,14 @@ def self_test():
     assert is_relevant("Nota Técnica NFS-e", "Nova regra") is True
     assert is_relevant("Operação Fronteira: apreensão de cigarros", "Polícia") is False
     assert categorise("CT-e novo leiaute", "")[0] == "Transporte"
+    assert categorise("Regra C02-30 da DC-e", "DACE") [0] == "DCEs"
+    assert categorise("Produção de veículos cresce, Anfavea anuncia", "")[0] == "Montadoras"
+    assert is_relevant("Montadoras ampliam produção", "") is True
+    assert is_relevant("DC-e recebe nota técnica", "") is True
+    assert canonical("https://dfe-portal.svrs.rs.gov.br/Dce/Avisos/3009") != ""
+    assert canonical("https://anfavea.com.br/site/imprensa-noticia/teste/") != ""
+    sample = b"<section>06/10/2026 <h2>AVISO: ValidaÃ§Ã£o da DC-e</h2><p>A regra C02-30 verifica o CNPJ informado.</p></section>"
+    assert len(parse_dce_bulletins(sample, "https://dfe-portal.svrs.rs.gov.br/Dce/Avisos")) == 1
     print("self-test: OK")
 
 if __name__ == "__main__":
