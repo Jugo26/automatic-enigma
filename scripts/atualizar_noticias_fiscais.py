@@ -29,8 +29,9 @@ FEEDS = (
     ("NFS-e Nacional", "https://www.gov.br/nfse/pt-br/noticias/RSS"),
     ("Ministério da Fazenda", "https://www.gov.br/fazenda/pt-br/assuntos/noticias/RSS"),
     ("Receita Federal - 2026", "https://www.gov.br/receitafederal/pt-br/assuntos/noticias/2026/RSS"),
+    ("Agência Brasil - Economia", "https://agenciabrasil.ebc.com.br/rss/economia/feed.xml"),
 )
-TRUSTED = {"www.gov.br", "gov.br", "www.nfe.fazenda.gov.br", "nfe.fazenda.gov.br"}
+TRUSTED = {"www.gov.br", "gov.br", "www.nfe.fazenda.gov.br", "nfe.fazenda.gov.br", "agenciabrasil.ebc.com.br"}
 RELEVANT = re.compile(
     r"\b(nf-?e|nfc-?e|nfs-?e|ct-?e|mdf-?e|dc-?e|dace|"
     r"sped|pgdas|simples nacional|ibs|cbs|icms|issqn|"
@@ -225,7 +226,7 @@ def update():
             fresh[url] = {
                 "id": previous.get("id") or __import__("hashlib").sha256(url.encode()).hexdigest()[:16],
                 "title": title[:180], "source": "Receita Federal" if "receitafederal" in url else
-                          ("Portal Nacional da NFS-e" if "/nfse/" in url else "Ministério da Fazenda"),
+                          ("Portal Nacional da NFS-e" if "/nfse/" in url else ("Agência Brasil (EBC)" if "agenciabrasil.ebc.com.br" in url else "Ministério da Fazenda")),
                 "published": date.isoformat(), "category": cat,
                 "summary": summary[:340], "impact": impact[:310],
                 "url": url, "image": image, "verified": verified,
