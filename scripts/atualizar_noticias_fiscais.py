@@ -263,11 +263,10 @@ def parse_dce_bulletins(body: bytes, page_url: str):
 
 def parse_anfavea_articles(archive: bytes, base_url: str):
     """Seleciona releases com links próprios e extrai a data da página original."""
-    parser = PageCollector()
-    parser.feed(archive.decode("utf-8", "replace"))
+    # Links de releases podem envolver tags H2/H3; extrair hrefs independentemente da estrutura.
     addresses = []
-    for href, _label in parser.links:
-        url = canonical(urllib.parse.urljoin(base_url, href))
+    for href in re.findall(r"""href\s*=\s*["']([^"']+)["']""", archive.decode("utf-8", "replace"), re.I):
+        url = canonical(urllib.parse.urljoin(base_url, html.unescape(href)))
         if url and re.search(r"/site/imprensa-noticia/[^/]+/?$", url) and url not in addresses:
             addresses.append(url)
     result = []
