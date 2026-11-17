@@ -2,7 +2,16 @@
 
 Treinamento didático de conferência de documentos de transporte de veículos (NF-e/DANFE, DCE/DACE e CT-e/DACTE).
 
-**Versão publicada:** 52 — Polaris: código do destinatário numérico de quatro dígitos por rodada, exibido no canto superior direito do destinatário no DACTE e no DANFE; PG correto igual ao código e destinatário como tomador. Ford e 10 rodadas preservados.
+**Versão publicada:** 53 — Radar Fiscal Brasil com notícias fiscais confiáveis, resumos e impactos para empresas, mini carrossel responsivo, imagens ilustrativas, arquivo JSON e pesquisa diária automática via GitHub Actions. Preserva todas as regras do jogo.
+
+## Radar Fiscal Brasil — notícias empresariais
+- Painel compacto no menu, com carrossel automático (pausa ao interagir), filtros por Emissão, Impostos e Transporte, e links para fontes oficiais.
+- Notícia: data de publicação, fonte, resumo objetivo e ponto de atenção para empresas; imagens oficiais da publicação quando obtidas, ou ilustração original por categoria.
+- Base inicial conferida com documentos da Receita Federal e do Portal NFS-e; arquivo: `data/noticias_fiscais.json`.
+- A rotina `scripts/atualizar_noticias_fiscais.py` consulta múltiplos feeds oficiais, filtra por assunto, valida origem e data, deduplica, preserva resumos já revisados e busca imagens somente em domínios governamentais.
+- Ação agendada: `.github/workflows/radar-fiscal-diario.yml` às 07h15 no horário de Brasília, diariamente, ou por execução manual. A execução efetiva depende do GitHub Actions e do acesso às fontes. Se nenhuma fonte responder, o arquivo anterior é preservado.
+- As novas entradas automáticas mostram trechos da fonte e orientações operacionais genéricas, não pareceres jurídicos. A aba identifica a data da última pesquisa e avisa quando os dados ficam antigos.
+- O jogo carrega a edição atualizada online e mantém uma cópia inicial verificada quando o acesso à rede falha.
 
 ## Modelos NF-e Ford e Polaris (didáticos)
 - Ford (página 1 do PDF recebido): DANFE horizontal, remessa de veículo, duas origens sorteáveis: São Bernardo do Campo/SP (PG **70001**) e Camaçari/BA (PG **70004**).
