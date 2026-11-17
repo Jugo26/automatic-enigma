@@ -1,7 +1,7 @@
 {
-  "version": 52,
+  "version": 53,
   "source": "Index.html",
-  "updated_at": "2026-11-06",
+  "updated_at": "2026-11-17",
   "repository": "Jugo26/automatic-enigma",
-  "notes": "Polaris: código do destinatário com 4 dígitos gerado por rodada, exibido no DANFE e no topo direito do quadro Destinatário do DACTE; PG correto igual ao código e tomador igual ao destinatário. Funcionalidades anteriores preservadas."
+  "notes": "Inclui Radar Fiscal Brasil responsivo com carrossel de notícias, resumos claros, impacto para emissão/tributos e links oficiais. Fonte JSON atualizada por pesquisa diária programada no GitHub Actions, mantendo último conteúdo em falhas. Jogo, efeitos e 10 rodadas preservados."
 }
