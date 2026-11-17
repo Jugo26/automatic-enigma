@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "researched_at": "2026-11-17",
+  "source_status": "pesquisa_inicial_verificada",
+  "sources_checked": [
+    "Receita Federal",
+    "Portal Nacional da NFS-e",
+    "Portal NF-e"
+  ],
+  "articles": [
+    {
+      "id": "rf-pgdas-2026-11-13",
+      "title": "PGDAS-D muda regras de apuração do Simples em novembro",
+      "source": "Receita Federal",
+      "published": "2026-11-13",
+      "category": "Impostos",
+      "summary": "Receita atualizou o PGDAS-D: em novembro e dezembro de 2026 será necessário informar a folha dos últimos 12 meses; a partir de 2027, as apurações passam ao regime de competência.",
+      "impact": "Empresas do Simples devem revisar o preenchimento do PGDAS-D. Os dados declarados também influenciarão as alíquotas efetivas de IBS e CBS informadas nos documentos fiscais.",
+      "url": "https://www.gov.br/receitafederal/pt-br/assuntos/noticias/2026/novembro/pgdas-d-e-atualizado-para-atender-a-reforma-tributaria-a-partir-de-novembro-de-2026",
+      "image": "",
+      "verified": true
+    },
+    {
+      "id": "nfse-ato-7-2026",
+      "title": "Novo ato altera prazos da NFS-e para IBS e CBS",
+      "source": "Portal Nacional da NFS-e",
+      "published": "2026-11-13",
+      "category": "Emissão",
+      "summary": "O Ato Conjunto RFB/CGIBS nº 7/2026 atualizou o cronograma de emissão de NFS-e para operações específicas, escalonando prazos antes previstos para dezembro.",
+      "impact": "Prestadores e equipes de tecnologia precisam conferir o enquadramento da operação e ajustar o cronograma de implantação dos leiautes da NFS-e.",
+      "url": "https://www.gov.br/nfse/pt-br/noticias/cgnfs-e-informa-ato-conjunto-rfb-cgibs-no-7-2026-atualiza-o-cronograma-de-obrigatoriedade-de-emissao-da-nfs-e-para-ibs-e-cbs",
+      "image": "",
+      "verified": true
+    },
+    {
+      "id": "nfse-simples-2026-10-29",
+      "title": "NFS-e nacional: competência define emissão e notas retroativas",
+      "source": "Portal Nacional da NFS-e",
+      "published": "2026-10-29",
+      "category": "Emissão",
+      "summary": "Para serviços com competência a partir de 1º de novembro de 2026, ME e EPP do Simples devem usar o Emissor Nacional. O tratamento das notas de competências anteriores é diferente.",
+      "impact": "Prestadores e emissores integrados devem validar a data de competência e o ambiente de emissão para evitar rejeições ou notas lançadas no sistema incorreto.",
+      "url": "https://www.gov.br/nfse/pt-br/noticias/nfs-e-informa-diretrizes-sobre-a-obrigatoriedade-da-emissao-da-nfs-e-nacional-para-optantes-do-simples-nacional/",
+      "image": "",
+      "verified": true
+    },
+    {
+      "id": "receita-simples-nfse-2026-08-14",
+      "title": "Simples Nacional: NFS-e obrigatória em novembro; IBS/CBS em etapa posterior",
+      "source": "Receita Federal",
+      "published": "2026-08-14",
+      "category": "Impostos",
+      "summary": "ME e EPP do Simples que prestam serviços sujeitos à NFS-e devem emitir pelo padrão nacional desde 1º de novembro de 2026; disposições aplicáveis de IBS/CBS produzem efeitos a partir de janeiro de 2027.",
+      "impact": "Empresas devem separar a obrigação de adotar o emissor nacional das regras tributárias que começam em 2027, conforme a atividade e a regulamentação.",
+      "url": "https://www.gov.br/receitafederal/pt-br/assuntos/noticias/2026/agosto/simples-nacional-nfs-e-nacional-sera-obrigatoria-para-me-e-epp-a-partir-de-1o-de-novembro-de-2026",
+      "image": "",
+      "verified": true
+    },
+    {
+      "id": "rf-2026-ctenfe-cronograma",
+      "title": "Cronograma oficial reúne prazos de NF-e, CT-e e outros documentos",
+      "source": "Receita Federal",
+      "published": "2026-09-18",
+      "category": "Transporte",
+      "summary": "A Receita disponibilizou a consulta por documento e operação para planejar a implementação dos leiautes e obrigações da Reforma Tributária do Consumo.",
+      "impact": "Empresas que emitem NF-e, CT-e, MDF-e e outros documentos devem confirmar o prazo atual de cada modalidade e acompanhar atos posteriores que alterem o cronograma.",
+      "url": "https://www.gov.br/receitafederal/pt-br/acesso-a-informacao/acoes-e-programas/reforma-tributaria-do-consumo/orientacoes-da-reforma-tributaria/cronograma",
+      "image": "",
+      "verified": true
+    }
+  ]
+}
