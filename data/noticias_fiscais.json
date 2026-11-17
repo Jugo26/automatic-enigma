@@ -5,7 +5,9 @@
   "sources_checked": [
     "Receita Federal",
     "Portal Nacional da NFS-e",
-    "Portal NF-e"
+    "Portal NF-e",
+    "Portal DC-e (SVRS)",
+    "Anfavea"
   ],
   "articles": [
     {
@@ -33,6 +35,18 @@
       "verified": true
     },
     {
+      "id": "anfavea-producao-outubro-2026",
+      "title": "Montadoras: produção cresce em outubro, mas exportações recuam",
+      "source": "Anfavea",
+      "published": "2026-11-11",
+      "category": "Montadoras",
+      "summary": "Segundo a Anfavea, a produção brasileira somou 254,5 mil veículos em outubro, alta de 2,7% ante outubro de 2025. As exportações recuaram 28,3% na comparação anual.",
+      "impact": "Acompanhar a evolução da produção ajuda fábricas, transportadoras e concessionárias a planejar coletas, distribuição e faturamento. Os dados não indicam alteração automática nas regras fiscais.",
+      "url": "https://anfavea.com.br/site/imprensa-noticia/vendas-e-producao-crescem-em-outubro-mas-exportacoes-recuam-283/",
+      "image": "",
+      "verified": true
+    },
+    {
       "id": "nfse-simples-2026-10-29",
       "title": "NFS-e nacional: competência define emissão e notas retroativas",
       "source": "Portal Nacional da NFS-e",
@@ -45,14 +59,14 @@
       "verified": true
     },
     {
-      "id": "receita-simples-nfse-2026-08-14",
-      "title": "Simples Nacional: NFS-e obrigatória em novembro; IBS/CBS em etapa posterior",
-      "source": "Receita Federal",
-      "published": "2026-08-14",
-      "category": "Impostos",
-      "summary": "ME e EPP do Simples que prestam serviços sujeitos à NFS-e devem emitir pelo padrão nacional desde 1º de novembro de 2026; disposições aplicáveis de IBS/CBS produzem efeitos a partir de janeiro de 2027.",
-      "impact": "Empresas devem separar a obrigação de adotar o emissor nacional das regras tributárias que começam em 2027, conforme a atividade e a regulamentação.",
-      "url": "https://www.gov.br/receitafederal/pt-br/assuntos/noticias/2026/agosto/simples-nacional-nfs-e-nacional-sera-obrigatoria-para-me-e-epp-a-partir-de-1o-de-novembro-de-2026",
+      "id": "svrs-dce-regra-c02-30-2026",
+      "title": "DC-e: validação de CNPJ contribuinte do ICMS em produção desde 2 de novembro",
+      "source": "Portal DC-e (SVRS / ENCAT)",
+      "published": "2026-10-06",
+      "category": "DCEs",
+      "summary": "O portal da DC-e informou que a regra C02-30 entrou em produção em 02/11/2026. Se o usuário emitente for contribuinte do ICMS, o sistema rejeita a DC-e com o código 812.",
+      "impact": "Transportadoras, empresas e sistemas integrados devem conferir o cadastro do emitente. Quando a operação exige NF-e, a DC-e não pode ser usada para substituí-la.",
+      "url": "https://dfe-portal.svrs.rs.gov.br/Dce/Avisos/3009",
       "image": "",
       "verified": true
     },
@@ -65,6 +79,18 @@
       "summary": "A Receita disponibilizou a consulta por documento e operação para planejar a implementação dos leiautes e obrigações da Reforma Tributária do Consumo.",
       "impact": "Empresas que emitem NF-e, CT-e, MDF-e e outros documentos devem confirmar o prazo atual de cada modalidade e acompanhar atos posteriores que alterem o cronograma.",
       "url": "https://www.gov.br/receitafederal/pt-br/acesso-a-informacao/acoes-e-programas/reforma-tributaria-do-consumo/orientacoes-da-reforma-tributaria/cronograma",
+      "image": "",
+      "verified": true
+    },
+    {
+      "id": "receita-simples-nfse-2026-08-14",
+      "title": "Simples Nacional: NFS-e obrigatória em novembro; IBS/CBS em etapa posterior",
+      "source": "Receita Federal",
+      "published": "2026-08-14",
+      "category": "Impostos",
+      "summary": "ME e EPP do Simples que prestam serviços sujeitos à NFS-e devem emitir pelo padrão nacional desde 1º de novembro de 2026; disposições aplicáveis de IBS/CBS produzem efeitos a partir de janeiro de 2027.",
+      "impact": "Empresas devem separar a obrigação de adotar o emissor nacional das regras tributárias que começam em 2027, conforme a atividade e a regulamentação.",
+      "url": "https://www.gov.br/receitafederal/pt-br/assuntos/noticias/2026/agosto/simples-nacional-nfs-e-nacional-sera-obrigatoria-para-me-e-epp-a-partir-de-1o-de-novembro-de-2026",
       "image": "",
       "verified": true
     }
