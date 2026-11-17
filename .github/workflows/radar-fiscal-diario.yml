@@ -1,0 +1,43 @@
+name: Radar fiscal diário
+
+on:
+  schedule:
+    # 07h15 em Brasília (UTC-3), todos os dias. O GitHub pode atrasar a execução.
+    - cron: "15 10 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: radar-fiscal-diario
+  cancel-in-progress: false
+
+jobs:
+  pesquisar-noticias:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Obter repositório
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validar curadoria
+        run: python scripts/atualizar_noticias_fiscais.py --self-test
+      - name: Consultar fontes oficiais
+        run: python scripts/atualizar_noticias_fiscais.py
+      - name: Publicar dados pesquisados
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/noticias_fiscais.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: pesquisa diária de notícias fiscais oficiais"
+            git push origin HEAD:main
+          else
+            echo "Sem alterações nas notícias fiscais."
+          fi
