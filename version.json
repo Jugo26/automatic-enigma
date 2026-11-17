@@ -1,7 +1,7 @@
 {
-  "version": 53,
+  "version": 54,
   "source": "Index.html",
   "updated_at": "2026-11-17",
   "repository": "Jugo26/automatic-enigma",
-  "notes": "Inclui Radar Fiscal Brasil responsivo com carrossel de notícias, resumos claros, impacto para emissão/tributos e links oficiais. Fonte JSON atualizada por pesquisa diária programada no GitHub Actions, mantendo último conteúdo em falhas. Jogo, efeitos e 10 rodadas preservados."
+  "notes": "Radar Fiscal: categorias DC-e/DACE e Montadoras, com duas notícias verificadas e busca diária dedicada no SVRS e Anfavea, além de fontes governamentais e Agência Brasil. Interface responsiva, ilustrações próprias, fontes conferíveis e jogo preservado."
 }
