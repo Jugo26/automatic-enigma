@@ -1,7 +1,7 @@
 {
-  "version": 54,
+  "version": 55,
   "source": "Index.html",
-  "updated_at": "2026-11-17",
+  "updated_at": "2026-11-18",
   "repository": "Jugo26/automatic-enigma",
-  "notes": "Radar Fiscal: categorias DC-e/DACE e Montadoras, com duas notícias verificadas e busca diária dedicada no SVRS e Anfavea, além de fontes governamentais e Agência Brasil. Interface responsiva, ilustrações próprias, fontes conferíveis e jogo preservado."
+  "notes": "Radar Fiscal atualizado para publicar somente conteúdos novos e verificáveis. Consulta diária sem novidades não regrava JSON nem gera commit ou aumento de versão; identificação de notícias por URL e deduplicação de avisos DC-e. Monitoramento ChatGPT também agendado."
 }
