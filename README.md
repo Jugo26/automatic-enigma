@@ -2,15 +2,18 @@
 
 Treinamento didático de conferência de documentos de transporte de veículos (NF-e/DANFE, DCE/DACE e CT-e/DACTE).
 
-**Versão publicada:** 54 — Radar Fiscal ampliado com notícias verificadas sobre DC-e/DACE e montadoras, filtros próprios, imagens ilustrativas e pesquisa diária nas fontes fiscais, SVRS e Anfavea; regras e efeitos do jogo preservados.
+**Versão publicada:** 55 — pesquisa diária fiscal com publicação condicional: notícias novas e verificáveis entram no Radar; se forem as mesmas, não há alteração de JSON, commit, versão ou interface. Tarefa automatizada do ChatGPT acompanha novidades e avisa somente quando publicar.
 
 ## Radar Fiscal Brasil — notícias empresariais
 - Painel compacto no menu, com carrossel automático (pausa ao interagir), filtros por Emissão, Impostos, Transporte, **DC-e/DACE** e **Montadoras**, e links para fontes oficiais.
 - Notícia: data de publicação, fonte, resumo objetivo e ponto de atenção para empresas; imagens oficiais da publicação quando obtidas, ou ilustração original por categoria.
 - Base inicial conferida com documentos da Receita Federal e do Portal NFS-e; arquivo: `data/noticias_fiscais.json`.
 - A rotina `scripts/atualizar_noticias_fiscais.py` consulta múltiplos feeds oficiais da Receita Federal, NFS-e e Fazenda e a editoria Economia da Agência Brasil (EBC), notícias do MDIC/Transportes, comunicados do Portal DC-e (SVRS) e releases da Anfavea; filtra por assunto, valida origem e data, deduplica, preserva resumos já revisados e busca imagens somente em domínios governamentais.
-- Ação agendada: `.github/workflows/radar-fiscal-diario.yml` às 07h15 no horário de Brasília, diariamente, ou por execução manual. A execução efetiva depende do GitHub Actions e do acesso às fontes. Se nenhuma fonte responder, o arquivo anterior é preservado.
-- As novas entradas automáticas mostram trechos da fonte e orientações operacionais genéricas, não pareceres jurídicos. A aba identifica a data da última pesquisa e avisa quando os dados ficam antigos.
+- Ação agendada: `.github/workflows/radar-fiscal-diario.yml` às 07h15 no horário de Brasília, diariamente, ou por execução manual.
+- **Publicação condicional:** o coletor compara notícias por URL canônica, data/título de avisos e referências específicas; preserva matérias existentes e apenas adiciona inéditas. Se não houver novidade, retorna sem regravar `data/noticias_fiscais.json` e sem criar commit, mesmo quando a data da checagem mudou.
+- **Tarefa do ChatGPT:** monitoramento diário adicional das fontes e do repositório, com atualização só quando houver novidade confirmada e aviso ao usuário apenas após publicação; evita republicar notícias já adicionadas pelo GitHub Actions.
+- Quando uma fonte estiver indisponível, as notícias anteriores são preservadas. A execução efetiva depende do GitHub Actions e do acesso às fontes.
+- As novas entradas automáticas mostram trechos da fonte e orientações operacionais genéricas, não pareceres jurídicos. A aba mostra a data da última **publicação de notícias**, não a data de cada consulta sem novidades.
 - O jogo carrega a edição atualizada online e mantém uma cópia inicial verificada quando o acesso à rede falha.
 
 - Na editoria **DC-e/DACE**, acompanham-se comunicados oficiais do documento, sua emissão, validações, notas técnicas e mudanças operacionais. A DC-e não substitui NF-e nas operações em que a NF-e é obrigatória.
