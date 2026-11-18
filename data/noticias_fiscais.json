@@ -1,15 +1,28 @@
 {
   "schema_version": 1,
-  "researched_at": "2026-11-17",
-  "source_status": "pesquisa_inicial_verificada",
+  "researched_at": "2026-11-18",
+  "source_status": "pesquisa_curada_com_fontes_verificadas",
   "sources_checked": [
     "Receita Federal",
     "Portal Nacional da NFS-e",
     "Portal NF-e",
     "Portal DC-e (SVRS)",
-    "Anfavea"
+    "Anfavea",
+    "Portal DF-e (SVRS)"
   ],
   "articles": [
+    {
+      "id": "nfse-homologacao-bh-2026-11-17",
+      "title": "NFS-e Nacional testa novos códigos e funcionalidades da Reforma Tributária",
+      "source": "Portal Nacional da NFS-e",
+      "published": "2026-11-17",
+      "category": "Emissão",
+      "summary": "O Comitê Gestor da NFS-e realiza entre 16 e 19 de novembro, no Serpro em Belo Horizonte, homologações de funcionalidades para novos fatos geradores, códigos 99.02 a 99.05, DANFSE, identificador com série da DPS e NFS-e Via.",
+      "impact": "Equipes fiscais e desenvolvedores devem acompanhar a homologação e futuras publicações de leiautes; o comunicado trata de testes e não estabelece, por si só, nova obrigação de emissão.",
+      "url": "https://www.gov.br/nfse/pt-br/noticias/comite-gestor-da-nfs-e-realiza-nova-etapa-de-homologacao-de-funcionalidades-para-a-reforma-tributaria-em-belo-horizonte-mg",
+      "image": "",
+      "verified": true
+    },
     {
       "id": "rf-pgdas-2026-11-13",
       "title": "PGDAS-D muda regras de apuração do Simples em novembro",
@@ -31,6 +44,18 @@
       "summary": "O Ato Conjunto RFB/CGIBS nº 7/2026 atualizou o cronograma de emissão de NFS-e para operações específicas, escalonando prazos antes previstos para dezembro.",
       "impact": "Prestadores e equipes de tecnologia precisam conferir o enquadramento da operação e ajustar o cronograma de implantação dos leiautes da NFS-e.",
       "url": "https://www.gov.br/nfse/pt-br/noticias/cgnfs-e-informa-ato-conjunto-rfb-cgibs-no-7-2026-atualiza-o-cronograma-de-obrigatoriedade-de-emissao-da-nfs-e-para-ibs-e-cbs",
+      "image": "",
+      "verified": true
+    },
+    {
+      "id": "svrs-adiamento-nts-2026-11-12",
+      "title": "NF-e e CT-e: implantação de notas técnicas adiada para 14 de dezembro",
+      "source": "Portal DF-e (SVRS / Comitê Gestor do IBS e RFB)",
+      "published": "2026-11-12",
+      "category": "Transporte",
+      "summary": "Aviso de 12/11/2026 posterga de 16/11 para 14/12/2026 a implantação em produção de NTs como NF-e 2026.005, 2026.006, 2026.008 e CT-e 2026.004 v1.01. O aviso ressalva que algumas NTs corretivas da NF-e não foram adiadas.",
+      "impact": "Equipes de emissão e tecnologia devem ajustar o cronograma de implantação e testes de NF-e e CT-e, conferindo a versão exata da NT; não considerar todas as notas técnicas adiadas.",
+      "url": "https://dfe-portal.svrs.rs.gov.br/Dce/Avisos",
       "image": "",
       "verified": true
     },
