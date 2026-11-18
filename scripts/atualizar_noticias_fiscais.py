@@ -295,9 +295,46 @@ def relevant_article(title: str, excerpt: str, url: str):
         return False
     return True
 
+
+def story_key(article):
+    """Identidade estável: permalink, ou data+título para painel DC-e com URL reutilizada."""
+    url = canonical(article.get("url", ""))
+    if not url:
+        return ""
+    if re.search(r"/Dce/(?:Avisos|Noticias)$", url, re.I):
+        title = re.sub(r"\W+", " ", plaintext(article.get("title", "")).casefold()).strip()
+        return f"{url}|{article.get('published', '')}|{title}"
+    return url
+
+def same_story(a, b):
+    """Evita que um aviso apareça duas vezes via link direto e listagem."""
+    if story_key(a) and story_key(a) == story_key(b):
+        return True
+    if a.get("category") != b.get("category") or a.get("published") != b.get("published"):
+        return False
+    if a.get("category") == "DCEs":
+        pattern = r"\b(?:[A-Z]\d{2}[-.]\d{2}|NT\s*\d{1,3}/20\d{2})\b"
+        refs = lambda item: set(re.findall(pattern, item.get("title", "") + " " +
+                                           item.get("summary", ""), re.I))
+        if refs(a) & refs(b):
+            return True
+    return False
+
+def choose_new_articles(prior, fresh):
+    """Preserva matérias existentes; devolve somente conteúdos verdadeiramente inéditos."""
+    old = list(prior.values())
+    additions = {}
+    for key, item in fresh.items():
+        if not key or key in prior or any(same_story(item, previous) for previous in old):
+            continue
+        if any(same_story(item, previous) for previous in additions.values()):
+            continue
+        additions[key] = item
+    return additions
+
 def update():
     existing = json.loads(OUT.read_text("utf-8")) if OUT.exists() else {"articles": []}
-    prior = {canonical(x.get("url", "")): x for x in existing.get("articles", []) if canonical(x.get("url", ""))}
+    prior = {story_key(item): item for item in existing.get("articles", []) if story_key(item)}
     now = dt.date.today()
     cutoff = now - dt.timedelta(days=105)
     total_entries = 0
@@ -322,8 +359,9 @@ def update():
                 continue
             if not relevant_article(title, intro, url):
                 continue
-            previous = prior.get(url, {})
-            if url in fresh:
+            key = story_key({"url": url, "title": title, "published": date.isoformat()})
+            previous = prior.get(key, {})
+            if key in fresh:
                 continue
             category, attention = categorise(title, intro)
             # Conserva a explicação revisada manualmente para a notícia já conferida.
@@ -338,7 +376,7 @@ def update():
                 cat = category
                 image = ""
                 verified = False  # extrato automático da fonte, não revisado editorialmente
-            fresh[url] = {
+            fresh[key] = {
                 "id": previous.get("id") or __import__("hashlib").sha256(url.encode()).hexdigest()[:16],
                 "title": title[:180],
                 "source": ("Receita Federal" if "receitafederal" in url else
@@ -376,16 +414,17 @@ def update():
             intro = short(excerpt, 260)
             if not relevant_article(title, intro, url):
                 continue
-            if url in fresh:
+            key = story_key({"url": url, "title": title, "published": date.isoformat()})
+            if key in fresh:
                 continue
-            previous = prior.get(url, {})
+            previous = prior.get(key, {})
             category, attention = categorise(title, intro)
             if page_type == "dce":
                 category, attention = CATEGORIES[0][0], CATEGORIES[0][2]
             if page_type == "automotive":
                 category, attention = CATEGORIES[1][0], CATEGORIES[1][2]
             revised = previous.get("verified") and previous.get("summary") and previous.get("impact")
-            fresh[url] = {
+            fresh[key] = {
                 "id": previous.get("id") or __import__("hashlib").sha256((url + date.isoformat()).encode()).hexdigest()[:16],
                 "title": title[:180],
                 "source": "Portal DC-e (SVRS)" if page_type == "dce" else "Anfavea",
@@ -396,9 +435,14 @@ def update():
             }
     if not successes:
         raise RuntimeError("Nenhuma fonte pôde ser consultada. Mantida a última edição válida.")
-    # Junta lançamentos novos e os curados; não deixa notícias antigas sumirem sem motivo.
+    # Pesquisa diária sem commit quando a fonte só repete as mesmas notícias.
+    additions = choose_new_articles(prior, fresh)
+    if not additions:
+        print(f"Sem notícias novas: {len(successes)} fontes consultadas, "
+              f"{total_entries} entradas analisadas. Arquivo e GitHub permanecem intactos.")
+        return False
     merged = dict(prior)
-    merged.update(fresh)
+    merged.update(additions)
     all_recent = sorted(
         (item for item in merged.values() if parse_date(item.get("published")) and
          cutoff <= parse_date(item.get("published")) <= now and canonical(item.get("url"))),
@@ -427,7 +471,9 @@ def update():
         "articles": chosen,
     }
     OUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", "utf-8")
-    print(f"{len(successes)} fontes disponíveis; {total_entries} entradas lidas; {len(chosen)} notícias relevantes publicadas")
+    print(f"{len(additions)} notícia(s) nova(s) adicionada(s); "
+          f"{len(successes)} fontes consultadas; {total_entries} entradas lidas.")
+    return True
 
 def self_test():
     atom = b'<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>NF-e altera regra</title><link rel="alternate" href="https://www.gov.br/nfse/pt-br/teste"/><summary>Resumo da NF-e</summary><published>2026-11-16T10:00:00-03:00</published></entry></feed>'
@@ -450,6 +496,21 @@ def self_test():
     assert canonical("https://anfavea.com.br/site/imprensa-noticia/teste/") != ""
     sample = b"<section>06/10/2026 <h2>AVISO: ValidaÃ§Ã£o da DC-e</h2><p>A regra C02-30 verifica o CNPJ informado.</p></section>"
     assert len(parse_dce_bulletins(sample, "https://dfe-portal.svrs.rs.gov.br/Dce/Avisos")) == 1
+    old = {"url": "https://www.gov.br/nfse/pt-br/noticias/nota-123",
+           "title": "Nova NT da NFS-e", "published": "2026-11-16", "category": "Emissão"}
+    prior = {story_key(old): old}
+    assert not choose_new_articles(prior, {story_key(old): dict(old)})
+    new = {"url": "https://www.gov.br/nfse/pt-br/noticias/nota-124",
+           "title": "Regras de CT-e", "published": "2026-11-17", "category": "Transporte"}
+    assert list(choose_new_articles(prior, {story_key(new): new})) == [story_key(new)]
+    dce_old = {"url": "https://dfe-portal.svrs.rs.gov.br/Dce/Avisos/3009",
+               "title": "Nova regra C02-30 de DC-e", "summary": "Regra C02-30",
+               "published": "2026-11-02", "category": "DCEs"}
+    dce_list = dict(dce_old, url="https://dfe-portal.svrs.rs.gov.br/Dce/Avisos")
+    assert not choose_new_articles({story_key(dce_old): dce_old}, {story_key(dce_list): dce_list})
+    other = dict(dce_list, title="Novo aviso regra C04-05", summary="Regra C04-05",
+                 published="2026-11-06")
+    assert len(choose_new_articles({story_key(dce_old): dce_old}, {story_key(other): other})) == 1
     print("self-test: OK")
 
 if __name__ == "__main__":
