@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "researched_at": "2026-11-18",
+  "researched_at": "2026-11-19",
   "source_status": "pesquisa_curada_com_fontes_verificadas",
   "sources_checked": [
     "Receita Federal",
@@ -8,9 +8,47 @@
     "Portal NF-e",
     "Portal DC-e (SVRS)",
     "Anfavea",
-    "Portal DF-e (SVRS)"
+    "Portal DF-e (SVRS)",
+    "Ministério da Fazenda",
+    "Agência Brasil (EBC)"
   ],
   "articles": [
+    {
+      "id": "rf-api-rad-2026-11-17",
+      "title": "Receita disponibiliza API de recolhimento da CBS como adquirente (RAD)",
+      "source": "Ministério da Fazenda / Receita Federal",
+      "published": "2026-11-17",
+      "category": "Impostos",
+      "summary": "Receita liberou API para consulta de recolhimentos de CBS feitos pelo adquirente e geração de DARF na modalidade RAD, com integração a sistemas corporativos.",
+      "impact": "Equipes fiscais e de TI podem avaliar integração para automatizar recolhimentos e conciliação de créditos de CBS; a disponibilização da API não obriga seu uso em todas as operações.",
+      "url": "https://www.gov.br/fazenda/pt-br/assuntos/noticias/2026/novembro/receita-federal-disponibiliza-api-para-emissao-do-recolhimento-como-adquirente-rad",
+      "image": "",
+      "verified": true
+    },
+    {
+      "id": "rf-opcoes-ibs-cbs-2026-11-18",
+      "title": "Receita divulga resultado de opções pelo Simples Nacional e regime regular de IBS/CBS",
+      "source": "Ministério da Fazenda / Receita Federal",
+      "published": "2026-11-18",
+      "category": "Impostos",
+      "summary": "Após processamento, foram registradas 657.355 solicitações pelo Simples Nacional, sendo 376.551 deferidas e 280.804 indeferidas, e 1.090.080 opções pelo regime regular do IBS/CBS.",
+      "impact": "Empresas e contadores devem consultar a situação individual da opção e os procedimentos oficiais; números agregados não indicam o enquadramento de uma empresa específica.",
+      "url": "https://www.gov.br/fazenda/pt-br/assuntos/noticias/2026/novembro/receita-federal-divulga-quantidade-de-solicitacoes-de-opcoes-pelo-simples-nacional-e-pelo-regime-regular-do-ibs-e-da-cbs",
+      "image": "",
+      "verified": true
+    },
+    {
+      "id": "senado-cbs-metodologia-2026-11-18",
+      "title": "Senado pede ao TCU explicações sobre cálculo da alíquota de referência da CBS",
+      "source": "Agência Brasil (EBC)",
+      "published": "2026-11-18",
+      "category": "Impostos",
+      "summary": "A Comissão de Assuntos Econômicos do Senado solicitou ao TCU estudos e metodologia do cálculo da alíquota de referência de 11,3% da CBS para 2027. O percentual ainda depende de definição legislativa.",
+      "impact": "Planejamentos tributários e formação de preços para 2027 devem tratar 11,3% como referência em discussão, não como alíquota definitiva aplicável a todas as operações.",
+      "url": "https://agenciabrasil.ebc.com.br/economia/noticia/2026-11/senado-pede-explicacoes-tcu-sobre-aliquota-de-113-da-cbs",
+      "image": "",
+      "verified": true
+    },
     {
       "id": "nfse-homologacao-bh-2026-11-17",
       "title": "NFS-e Nacional testa novos códigos e funcionalidades da Reforma Tributária",
