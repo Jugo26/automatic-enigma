@@ -14,14 +14,26 @@
   ],
   "articles": [
     {
-      "id": "rf-api-rad-2026-11-17",
-      "title": "Receita disponibiliza API de recolhimento da CBS como adquirente (RAD)",
-      "source": "Ministério da Fazenda / Receita Federal",
-      "published": "2026-11-17",
+      "id": "rf-cbs-ibs-orientacao-2026-11-19",
+      "title": "Receita e CFC orientam contadores sobre destaque de CBS/IBS em documentos fiscais",
+      "source": "Receita Federal",
+      "published": "2026-11-19",
       "category": "Impostos",
-      "summary": "Receita liberou API para consulta de recolhimentos de CBS feitos pelo adquirente e geração de DARF na modalidade RAD, com integração a sistemas corporativos.",
-      "impact": "Equipes fiscais e de TI podem avaliar integração para automatizar recolhimentos e conciliação de créditos de CBS; a disponibilização da API não obriga seu uso em todas as operações.",
-      "url": "https://www.gov.br/fazenda/pt-br/assuntos/noticias/2026/novembro/receita-federal-disponibiliza-api-para-emissao-do-recolhimento-como-adquirente-rad",
+      "summary": "A Receita identificou mais de 25 mil profissionais contábeis responsáveis por cerca de 72 mil empresas com indícios de ausência ou destaque parcial de CBS/IBS em DF-e, para ações preventivas de orientação.",
+      "impact": "Revisar parametrização dos emissores e campos CBS/IBS com a contabilidade. A seleção é orientativa e não comprova descumprimento de obrigação.",
+      "url": "https://www.gov.br/receitafederal/pt-br/assuntos/noticias/2026/novembro/receita-federal-cgibs-e-cfc-vao-orientar-mais-de-25-mil-profissionais-da-contabilidade-sobre-destaque-de-cbs-ibs-em-documentos-fiscais",
+      "image": "",
+      "verified": true
+    },
+    {
+      "id": "rf-cgibs-conformidade-2026-11-19",
+      "title": "Receita e Comitê Gestor do IBS alinham implantação e suporte da Reforma Tributária",
+      "source": "Ministério da Fazenda",
+      "published": "2026-11-19",
+      "category": "Impostos",
+      "summary": "Em reunião realizada em 18 de novembro, Receita Federal e Comitê Gestor do IBS reforçaram a coordenação dos sistemas e processos da reforma, além de orientações e canais de suporte aos contribuintes.",
+      "impact": "Acompanhar os manuais, perguntas e respostas e canais oficiais durante a transição; a reunião não criou, por si só, nova obrigação fiscal.",
+      "url": "https://www.gov.br/fazenda/pt-br/assuntos/noticias/2026/novembro/receita-federal-e-comite-gestor-do-ibs-alinham-implementacao-da-reforma-tributaria-e-reforcam-compromisso-com-a-conformidade",
       "image": "",
       "verified": true
     },
@@ -46,6 +58,18 @@
       "summary": "A Comissão de Assuntos Econômicos do Senado solicitou ao TCU estudos e metodologia do cálculo da alíquota de referência de 11,3% da CBS para 2027. O percentual ainda depende de definição legislativa.",
       "impact": "Planejamentos tributários e formação de preços para 2027 devem tratar 11,3% como referência em discussão, não como alíquota definitiva aplicável a todas as operações.",
       "url": "https://agenciabrasil.ebc.com.br/economia/noticia/2026-11/senado-pede-explicacoes-tcu-sobre-aliquota-de-113-da-cbs",
+      "image": "",
+      "verified": true
+    },
+    {
+      "id": "rf-api-rad-2026-11-17",
+      "title": "Receita disponibiliza API de recolhimento da CBS como adquirente (RAD)",
+      "source": "Ministério da Fazenda / Receita Federal",
+      "published": "2026-11-17",
+      "category": "Impostos",
+      "summary": "Receita liberou API para consulta de recolhimentos de CBS feitos pelo adquirente e geração de DARF na modalidade RAD, com integração a sistemas corporativos.",
+      "impact": "Equipes fiscais e de TI podem avaliar integração para automatizar recolhimentos e conciliação de créditos de CBS; a disponibilização da API não obriga seu uso em todas as operações.",
+      "url": "https://www.gov.br/fazenda/pt-br/assuntos/noticias/2026/novembro/receita-federal-disponibiliza-api-para-emissao-do-recolhimento-como-adquirente-rad",
       "image": "",
       "verified": true
     },
@@ -110,6 +134,18 @@
       "verified": true
     },
     {
+      "id": "rf-imposto-seletivo-veiculos-2026-11-05",
+      "title": "Imposto Seletivo de 2027: MP define transição e critérios para veículos",
+      "source": "Ministério da Fazenda",
+      "published": "2026-11-05",
+      "category": "Montadoras",
+      "summary": "A MP 1.399/2026 estabelece regras transitórias do Imposto Seletivo para 2027, incluindo veículos, com critérios de sustentabilidade e eficiência energética e hipóteses de alíquota zero.",
+      "impact": "Montadoras e áreas fiscais devem avaliar classificação e alíquotas aplicáveis a cada modelo nas regras transitórias, sem presumir tributação uniforme para todos os veículos.",
+      "url": "https://www.gov.br/fazenda/pt-br/assuntos/noticias/2026/novembro/governo-federal-define-aliquotas-do-imposto-seletivo-para-2027-por-meio-de-medida-provisoria",
+      "image": "",
+      "verified": true
+    },
+    {
       "id": "nfse-simples-2026-10-29",
       "title": "NFS-e nacional: competência define emissão e notas retroativas",
       "source": "Portal Nacional da NFS-e",
@@ -118,42 +154,6 @@
       "summary": "Para serviços com competência a partir de 1º de novembro de 2026, ME e EPP do Simples devem usar o Emissor Nacional. O tratamento das notas de competências anteriores é diferente.",
       "impact": "Prestadores e emissores integrados devem validar a data de competência e o ambiente de emissão para evitar rejeições ou notas lançadas no sistema incorreto.",
       "url": "https://www.gov.br/nfse/pt-br/noticias/nfs-e-informa-diretrizes-sobre-a-obrigatoriedade-da-emissao-da-nfs-e-nacional-para-optantes-do-simples-nacional/",
-      "image": "",
-      "verified": true
-    },
-    {
-      "id": "svrs-dce-regra-c02-30-2026",
-      "title": "DC-e: validação de CNPJ contribuinte do ICMS em produção desde 2 de novembro",
-      "source": "Portal DC-e (SVRS / ENCAT)",
-      "published": "2026-10-06",
-      "category": "DCEs",
-      "summary": "O portal da DC-e informou que a regra C02-30 entrou em produção em 02/11/2026. Se o usuário emitente for contribuinte do ICMS, o sistema rejeita a DC-e com o código 812.",
-      "impact": "Transportadoras, empresas e sistemas integrados devem conferir o cadastro do emitente. Quando a operação exige NF-e, a DC-e não pode ser usada para substituí-la.",
-      "url": "https://dfe-portal.svrs.rs.gov.br/Dce/Avisos/3009",
-      "image": "",
-      "verified": true
-    },
-    {
-      "id": "rf-2026-ctenfe-cronograma",
-      "title": "Cronograma oficial reúne prazos de NF-e, CT-e e outros documentos",
-      "source": "Receita Federal",
-      "published": "2026-09-18",
-      "category": "Transporte",
-      "summary": "A Receita disponibilizou a consulta por documento e operação para planejar a implementação dos leiautes e obrigações da Reforma Tributária do Consumo.",
-      "impact": "Empresas que emitem NF-e, CT-e, MDF-e e outros documentos devem confirmar o prazo atual de cada modalidade e acompanhar atos posteriores que alterem o cronograma.",
-      "url": "https://www.gov.br/receitafederal/pt-br/acesso-a-informacao/acoes-e-programas/reforma-tributaria-do-consumo/orientacoes-da-reforma-tributaria/cronograma",
-      "image": "",
-      "verified": true
-    },
-    {
-      "id": "receita-simples-nfse-2026-08-14",
-      "title": "Simples Nacional: NFS-e obrigatória em novembro; IBS/CBS em etapa posterior",
-      "source": "Receita Federal",
-      "published": "2026-08-14",
-      "category": "Impostos",
-      "summary": "ME e EPP do Simples que prestam serviços sujeitos à NFS-e devem emitir pelo padrão nacional desde 1º de novembro de 2026; disposições aplicáveis de IBS/CBS produzem efeitos a partir de janeiro de 2027.",
-      "impact": "Empresas devem separar a obrigação de adotar o emissor nacional das regras tributárias que começam em 2027, conforme a atividade e a regulamentação.",
-      "url": "https://www.gov.br/receitafederal/pt-br/assuntos/noticias/2026/agosto/simples-nacional-nfs-e-nacional-sera-obrigatoria-para-me-e-epp-a-partir-de-1o-de-novembro-de-2026",
       "image": "",
       "verified": true
     }
