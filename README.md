@@ -2,7 +2,7 @@
 
 Treinamento didático de conferência de documentos de transporte de veículos (NF-e/DANFE, DCE/DACE e CT-e/DACTE).
 
-**Versão publicada:** 55 — pesquisa diária fiscal com publicação condicional: notícias novas e verificáveis entram no Radar; se forem as mesmas, não há alteração de JSON, commit, versão ou interface. Tarefa automatizada do ChatGPT acompanha novidades e avisa somente quando publicar.
+**Versão publicada:** 56 — removido o quadro auxiliar de ordem de transporte dos DANFEs, sem alterar dados, PGs ou correção do treinamento. Radar Fiscal e demais recursos preservados.
 
 ## Radar Fiscal Brasil — notícias empresariais
 - Painel compacto no menu, com carrossel automático (pausa ao interagir), filtros por Emissão, Impostos, Transporte, **DC-e/DACE** e **Montadoras**, e links para fontes oficiais.
@@ -19,6 +19,9 @@ Treinamento didático de conferência de documentos de transporte de veículos (
 - Na editoria **DC-e/DACE**, acompanham-se comunicados oficiais do documento, sua emissão, validações, notas técnicas e mudanças operacionais. A DC-e não substitui NF-e nas operações em que a NF-e é obrigatória.
 - Na editoria **Montadoras**, acompanham-se Ford, Toyota, Honda, Polaris, Volkswagen, GM e a indústria automotiva brasileira, com foco em produção, distribuição, logística, faturamento e importação/exportação.
 - Notícias do setor automotivo não são apresentadas como novas obrigações fiscais. As atualizações automáticas não inventam impactos ou datas quando a fonte não oferece evidência.
+
+## Conferência sem quadro auxiliar
+- Removido o quadro externo de ordem de transporte dos modelos DANFE, inclusive faturamento direto. Permanecem os campos dos documentos, códigos de destinatário e regras de PG; a geração e correção das rodadas não foram alteradas.
 
 ## Modelos NF-e Ford e Polaris (didáticos)
 - Ford (página 1 do PDF recebido): DANFE horizontal, remessa de veículo, duas origens sorteáveis: São Bernardo do Campo/SP (PG **70001**) e Camaçari/BA (PG **70004**).
