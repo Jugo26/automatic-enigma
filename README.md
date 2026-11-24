@@ -2,7 +2,7 @@
 
 Treinamento didático de conferência de documentos de transporte de veículos (NF-e/DANFE, DCE/DACE e CT-e/DACTE).
 
-**Versão publicada:** 61 — galeria dinâmica no menu com dez fotografias automotivas reais, duas por marca (Toyota, Honda, Ford, Volkswagen e Chevrolet). Mantém o tema carbono e laranja e preserva o Radar Fiscal, as regras e os resultados do treinamento.
+**Versão publicada:** 62 — galeria dinâmica com dez fotografias reais de veículos 2025–2026, duas por marca (Toyota, Honda, Ford, Volkswagen e Chevrolet). Mantém o tema carbono e laranja, o Radar Fiscal e as regras do treinamento.
 
 ## Radar Fiscal Brasil — notícias empresariais
 - Painel compacto no menu, com carrossel automático (pausa ao interagir), filtros por Emissão, Impostos, Transporte, **DC-e/DACE** e **Montadoras**, e links para fontes oficiais.
@@ -33,10 +33,10 @@ Treinamento didático de conferência de documentos de transporte de veículos (
 - Polaris (página 2 do PDF recebido): DANFE vertical de Indaiatuba/SP, modelo UTV off-road. O **destinatário da nota é também o tomador do serviço e pagador do frete**. Cada destinatário Polaris possui **código didático de 4 dígitos**, mostrado no DANFE e na parte superior direita do quadro Destinatário do DACTE; o **PG correto é o mesmo código**. O jogo pode gerar PG incorreto como divergência intencional para treinamento.
 - Ambos disponíveis na configuração específica e no sorteio misto. Dados de documentos, notas, pessoas e chaves gerados como **simulação**, sem reproduzir os identificadores fiscais reais do PDF.
 
-## Galeria automotiva do menu (V61)
-- Alterna fotografias de Toyota Corolla/Hilux, Honda Civic/HR-V, Ford Mustang/Ranger, Volkswagen Golf/Tiguan e Chevrolet Onix/Tracker a cada 8 segundos, com transição suave.
+## Galeria automotiva do menu (V62)
+- Alterna fotografias de veículos 2025–2026 a cada 8 segundos, com transição suave. O ano-modelo aparece na legenda; as versões retratadas podem ser de mercados internacionais.
 - Intercala as marcas, apresenta modelo e autoria/licença da fotografia, permite pausar e retomar, e interrompe a rotação fora do menu, na aba oculta ou com preferência por movimento reduzido.
-- Carrega a próxima fotografia antes de alternar; se houver falha, mantém a última imagem válida e tenta a próxima. A fotografia original do V60 é a reserva inicial.
+- Carrega a próxima fotografia antes de alternar; se houver falha, mantém a última imagem válida e tenta a próxima. A fotografia do Toyota Corolla HEV 2025 é a imagem inicial.
 - As fotos são servidas por Wikimedia Commons, com visualização de 960 px. As atribuições e os links para a página original e a licença individual estão no próprio carrossel e na lista abaixo. A disponibilidade de rede pode afetar a galeria, sem afetar o treinamento.
 
 ## Fundo animado do menu
@@ -69,15 +69,15 @@ Veja `INSTALACAO_GITHUB.md` para instruções de publicação e atualização.
 - Montadoras: [Marek Ślusarczyk / Wikimedia Commons (CC BY 3.0)](https://commons.wikimedia.org/wiki/File:001_Car_factory_assembly_line_-_Opel_factory_in_Gliwice,_Poland.jpg).
 Fotografias Pexels: https://www.pexels.com/license/. Linha de montagem de Marek Ślusarczyk: CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/), com recorte de apresentação. As fotos são carregadas por HTTPS de seus provedores; caso falhem, a interface não exige a imagem para funcionar.
 
-## Créditos fotográficos da galeria (V61)
-- Toyota Corolla: [SsmIntrigue / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:2021_Toyota_Corolla_LE%2C_Front_Right%2C_10-19-2020.jpg) — [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
-- Honda Civic: [Kevauto / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:2022_Honda_Civic_EX%2C_front_10.29.21.jpg) — [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
-- Ford Mustang: [XoMEoX / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Ford_Mustang_Front.jpg) — [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
-- Volkswagen Golf: [Vauxford / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:2020_Volkswagen_Golf_Style_ETSi_S-A_1.5_Front.jpg) — [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
-- Chevrolet Onix: [Heduardo55 / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Chevrolet_Onix_II_front_Brazil.jpg) — [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
-- Toyota Hilux: [EurovisionNim / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Toyota_Hilux_Rogue_2nd_facelift_2020_front.jpg) — [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
-- Honda HR-V: [MercurySable99 / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:2023_Honda_HR-V_LX_AWD%2C_front_right.jpg) — [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
-- Ford Ranger: [Andrej Danković / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Ford_Ranger_2.jpg) — [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/).
-- Volkswagen Tiguan: [Vauxford / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:2020_Volkswagen_Tiguan_Life_facelift_Front.jpg) — [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
-- Chevrolet Tracker: [Maxi-Napo-99 / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:2022_Chevrolet_Tracker_1.2_Turbo_LTZ%2C_front_(Argentina).jpg) — [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+## Créditos fotográficos da galeria (V62)
+- Toyota Corolla HEV 2025: [Just a Man / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Toyota_Corolla_HEV_SE-G_2025.jpg) — [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+- Honda Civic Hybrid 2025: [Kevauto / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:2025_Honda_Civic_Hybrid_Sport_Touring_(facelift)%2C_front_4.18.25.jpg) — [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+- Ford Mustang Dark Horse 2025: [Calreyn88 / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:2025_Ford_Mustang_Dark_Horse_1.jpg) — [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+- Volkswagen Golf GTI 2025: [Elise240SX / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:2025_Volkswagen_Golf_GTI_Autobahn_in_Oryx_White_Pearl%2C_front_right%2C_2025-05-18.jpg) — [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+- Chevrolet Onix Plus 2025: [Just a Man / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:2025_Chevrolet_Onix_Plus_1.0T_LT_(2).jpg) — [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+- Toyota Hilux BEV 2026: [TTTNIS / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:2026_Toyota_Hilux_BEV.jpg) — [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
+- Honda HR-V Hybrid 2025: [Alexander Migl / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:2025_Honda_HR-V_Hybrid_DSC_7908.jpg) — [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+- Ford Ranger Limited 2025: [RL GNZLZ / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Ford_Ranger_Limited_2025.jpg) — [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+- Volkswagen Tiguan 2026: [Raszbeary / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:2026_Volkswagen_Tiguan_(Front)_at_the_2025_NYC_Auto_Show.png) — [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+- Chevrolet Tracker 2026: [Just a Man / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Chevrolet_Tracker_1.2T_2026_de_PAMI.jpg) — [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 Apresentação com ajuste de contraste e saturação via CSS; arquivos originais não são alterados.
