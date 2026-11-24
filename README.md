@@ -2,7 +2,7 @@
 
 Treinamento didático de conferência de documentos de transporte de veículos (NF-e/DANFE, DCE/DACE e CT-e/DACTE).
 
-**Versão publicada:** 62 — galeria dinâmica com dez fotografias reais de veículos 2025–2026, duas por marca (Toyota, Honda, Ford, Volkswagen e Chevrolet). Mantém o tema carbono e laranja, o Radar Fiscal e as regras do treinamento.
+**Versão publicada:** 63 — galeria dinâmica com 16 fotografias reais de veículos contemporâneos (2025–2026), dois por marca: Toyota, Honda, Ford, Volkswagen, Chevrolet, BYD, Omoda e Changan (CAOA Changan no Brasil). Mantém o tema carbono e laranja, o Radar Fiscal e as regras do treinamento.
 
 ## Radar Fiscal Brasil — notícias empresariais
 - Painel compacto no menu, com carrossel automático (pausa ao interagir), filtros por Emissão, Impostos, Transporte, **DC-e/DACE** e **Montadoras**, e links para fontes oficiais.
@@ -33,8 +33,8 @@ Treinamento didático de conferência de documentos de transporte de veículos (
 - Polaris (página 2 do PDF recebido): DANFE vertical de Indaiatuba/SP, modelo UTV off-road. O **destinatário da nota é também o tomador do serviço e pagador do frete**. Cada destinatário Polaris possui **código didático de 4 dígitos**, mostrado no DANFE e na parte superior direita do quadro Destinatário do DACTE; o **PG correto é o mesmo código**. O jogo pode gerar PG incorreto como divergência intencional para treinamento.
 - Ambos disponíveis na configuração específica e no sorteio misto. Dados de documentos, notas, pessoas e chaves gerados como **simulação**, sem reproduzir os identificadores fiscais reais do PDF.
 
-## Galeria automotiva do menu (V62)
-- Alterna fotografias de veículos 2025–2026 a cada 8 segundos, com transição suave. O ano-modelo aparece na legenda; as versões retratadas podem ser de mercados internacionais.
+## Galeria automotiva do menu (V63)
+- Alterna 16 fotografias de veículos contemporâneos a cada 8 segundos, com transição suave. As legendas identificam o ano-modelo quando documentado ou indicam explicitamente o ano da fotografia ou do salão. As versões retratadas podem ser de mercados internacionais, inclusive os modelos da Changan comercializados pela CAOA no Brasil.
 - Intercala as marcas, apresenta modelo e autoria/licença da fotografia, permite pausar e retomar, e interrompe a rotação fora do menu, na aba oculta ou com preferência por movimento reduzido.
 - Carrega a próxima fotografia antes de alternar; se houver falha, mantém a última imagem válida e tenta a próxima. A fotografia do Toyota Corolla HEV 2025 é a imagem inicial.
 - As fotos são servidas por Wikimedia Commons, com visualização de 960 px. As atribuições e os links para a página original e a licença individual estão no próprio carrossel e na lista abaixo. A disponibilidade de rede pode afetar a galeria, sem afetar o treinamento.
@@ -69,7 +69,7 @@ Veja `INSTALACAO_GITHUB.md` para instruções de publicação e atualização.
 - Montadoras: [Marek Ślusarczyk / Wikimedia Commons (CC BY 3.0)](https://commons.wikimedia.org/wiki/File:001_Car_factory_assembly_line_-_Opel_factory_in_Gliwice,_Poland.jpg).
 Fotografias Pexels: https://www.pexels.com/license/. Linha de montagem de Marek Ślusarczyk: CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/), com recorte de apresentação. As fotos são carregadas por HTTPS de seus provedores; caso falhem, a interface não exige a imagem para funcionar.
 
-## Créditos fotográficos da galeria (V62)
+## Créditos fotográficos da galeria (V63)
 - Toyota Corolla HEV 2025: [Just a Man / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Toyota_Corolla_HEV_SE-G_2025.jpg) — [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 - Honda Civic Hybrid 2025: [Kevauto / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:2025_Honda_Civic_Hybrid_Sport_Touring_(facelift)%2C_front_4.18.25.jpg) — [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
 - Ford Mustang Dark Horse 2025: [Calreyn88 / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:2025_Ford_Mustang_Dark_Horse_1.jpg) — [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
@@ -80,4 +80,11 @@ Fotografias Pexels: https://www.pexels.com/license/. Linha de montagem de Marek 
 - Ford Ranger Limited 2025: [RL GNZLZ / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Ford_Ranger_Limited_2025.jpg) — [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
 - Volkswagen Tiguan 2026: [Raszbeary / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:2026_Volkswagen_Tiguan_(Front)_at_the_2025_NYC_Auto_Show.png) — [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 - Chevrolet Tracker 2026: [Just a Man / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Chevrolet_Tracker_1.2T_2026_de_PAMI.jpg) — [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+- BYD Seal 2025: [Cutlass / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:2025_BYD_Seal_in_Shark_Grey%2C_front_left%2C_06-08-2025.jpg) — [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
+- Omoda E5 2025: [LuvsMG481 / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:2025_Chery_Omoda_E5_front.jpg) — [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+- Changan UNI-T (foto 2026): [Retired electrician / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Moscow%2C_Changan_Uni-T_Citydrive%2C_Aug_2026_01.jpg) — [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
+- BYD Dolphin (foto 2025): [Captainmorlypogi1959 / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:BYD_Dolphin_EV_2025.jpg) — [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+- Omoda C7 2026: [RL GNZLZ / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Omoda_C7_1.6_TGDi_Prestige_AWD_2026.jpg) — [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+- Changan CS75 Plus (salão 2026): [Peżot / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Changan_CS75_Plus_front_Pozna%C5%84_Motor_Show_2026.jpg) — [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+
 Apresentação com ajuste de contraste e saturação via CSS; arquivos originais não são alterados.
