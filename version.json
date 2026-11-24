@@ -1,7 +1,7 @@
 {
-  "version": 56,
+  "version": 57,
   "source": "Index.html",
   "updated_at": "2026-11-24",
   "repository": "Jugo26/automatic-enigma",
-  "notes": "Remove o quadro externo de ordem de transporte simulada das notas fiscais, inclusive faturamento direto. Preserva campos documentais, PGs, tomador Polaris, correção das rodadas, DACE e Radar Fiscal."
+  "notes": "Corrige divergências cadastrais artificiais entre partes com mesmo CPF/CNPJ completo. Partes vinculadas incorretas usam cadastro alternativo coerente, sem conflito com outras partes da rodada. Mantém PG, regra Polaris, até três divergências e recursos anteriores."
 }
