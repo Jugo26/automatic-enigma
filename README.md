@@ -2,7 +2,7 @@
 
 Treinamento didático de conferência de documentos de transporte de veículos (NF-e/DANFE, DCE/DACE e CT-e/DACTE).
 
-**Versão publicada:** 57 — cadastros vinculados pelo mesmo CPF/CNPJ mantêm nome, endereço, município, UF e demais dados coerentes. Divergências de partes vinculadas simulam outra identidade completa; demais regras preservadas.
+**Versão publicada:** 58 — menu simplificado: removidos os cartões Modo, Divergências e Rodadas. Regras de treinamento, documentos e demais recursos preservados.
 
 ## Radar Fiscal Brasil — notícias empresariais
 - Painel compacto no menu, com carrossel automático (pausa ao interagir), filtros por Emissão, Impostos, Transporte, **DC-e/DACE** e **Montadoras**, e links para fontes oficiais.
