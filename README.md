@@ -2,11 +2,11 @@
 
 Treinamento didático de conferência de documentos de transporte de veículos (NF-e/DANFE, DCE/DACE e CT-e/DACTE).
 
-**Versão publicada:** 59 — redesign Carbono & Laranja com um único treinamento, atalhos reais, resultados e Radar Fiscal. Preserva os documentos e regras e recolore o fundo procedural reativo.
+**Versão publicada:** 60 — substitui ilustração vetorial do menu por fotografia automotiva real e desenhos alternativos do Radar Fiscal por fotografias temáticas identificadas. Preserva imagens originais das matérias, cores, animações, resultados e regras do treinamento.
 
 ## Radar Fiscal Brasil — notícias empresariais
 - Painel compacto no menu, com carrossel automático (pausa ao interagir), filtros por Emissão, Impostos, Transporte, **DC-e/DACE** e **Montadoras**, e links para fontes oficiais.
-- Notícia: data de publicação, fonte, resumo objetivo e ponto de atenção para empresas; imagens oficiais da publicação quando obtidas, ou ilustração original por categoria.
+- Notícia: data de publicação, fonte, resumo objetivo e ponto de atenção para empresas; imagens originais da publicação quando obtidas, ou fotografias reais de referência por categoria, identificadas como ilustrativas.
 - Base inicial conferida com documentos da Receita Federal e do Portal NFS-e; arquivo: `data/noticias_fiscais.json`.
 - A rotina `scripts/atualizar_noticias_fiscais.py` consulta múltiplos feeds oficiais da Receita Federal, NFS-e e Fazenda e a editoria Economia da Agência Brasil (EBC), notícias do MDIC/Transportes, comunicados do Portal DC-e (SVRS) e releases da Anfavea; filtra por assunto, valida origem e data, deduplica, preserva resumos já revisados e busca imagens somente em domínios governamentais.
 - Ação agendada: `.github/workflows/radar-fiscal-diario.yml` às 07h15 no horário de Brasília, diariamente, ou por execução manual.
@@ -54,3 +54,11 @@ Treinamento didático de conferência de documentos de transporte de veículos (
 **Importante:** este repositório é público. Os casos e documentos do jogo são fictícios para treinamento; não utilizar dados fiscais reais de clientes.
 
 Veja `INSTALACAO_GITHUB.md` para instruções de publicação e atualização.
+## Créditos fotográficos (V60)
+- hero: [Jae Park / Pexels](https://www.pexels.com/photo/a-black-car-in-an-indoor-garage-6969040/).
+- Emissão: [Mikhail Nilov / Pexels](https://www.pexels.com/photo/office-tools-and-equipment-on-a-desk-8296953/).
+- Impostos: [Mikhail Nilov / Pexels](https://www.pexels.com/photo/a-person-working-on-the-documents-using-a-calculator-8297220/).
+- Transporte: [Juan R. Real / Pexels](https://www.pexels.com/photo/warehouse-with-delivery-truck-exiting-the-loading-dock-29786116/).
+- DCEs: [Wojciech Kotlicki / Pexels](https://www.pexels.com/photo/boxes-in-delivery-truck-in-warehouse-21838827/).
+- Montadoras: [Marek Ślusarczyk / Wikimedia Commons (CC BY 3.0)](https://commons.wikimedia.org/wiki/File:001_Car_factory_assembly_line_-_Opel_factory_in_Gliwice,_Poland.jpg).
+Fotografias Pexels: https://www.pexels.com/license/. Linha de montagem de Marek Ślusarczyk: CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/), com recorte de apresentação. As fotos são carregadas por HTTPS de seus provedores; caso falhem, a interface não exige a imagem para funcionar.
