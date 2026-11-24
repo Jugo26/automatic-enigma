@@ -1,7 +1,7 @@
 {
-  "version": 55,
+  "version": 56,
   "source": "Index.html",
-  "updated_at": "2026-11-18",
+  "updated_at": "2026-11-24",
   "repository": "Jugo26/automatic-enigma",
-  "notes": "Radar Fiscal atualizado para publicar somente conteúdos novos e verificáveis. Consulta diária sem novidades não regrava JSON nem gera commit ou aumento de versão; identificação de notícias por URL e deduplicação de avisos DC-e. Monitoramento ChatGPT também agendado."
+  "notes": "Remove o quadro externo de ordem de transporte simulada das notas fiscais, inclusive faturamento direto. Preserva campos documentais, PGs, tomador Polaris, correção das rodadas, DACE e Radar Fiscal."
 }
