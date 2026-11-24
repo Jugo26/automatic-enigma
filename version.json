@@ -1,7 +1,7 @@
 {
-  "version": 59,
+  "version": 60,
   "source": "Index.html",
   "updated_at": "2026-11-24",
   "repository": "Jugo26/automatic-enigma",
-  "notes": "Novo menu Carbono & Laranja inspirado na referência escolhida: hero com documentos e veículo em SVG, navegação horizontal, atalhos, desempenho real e Radar Fiscal. Um único treinamento. Mantidos documentos, regras e animação reativa."
+  "notes": "Fotografias reais de veículos, documentos, logística e montadoras substituem ilustrações genéricas do menu e Radar Fiscal. Créditos e licenças identificados; imagens originais das notícias têm prioridade. Sem alterações no treinamento."
 }
