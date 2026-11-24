@@ -2,7 +2,7 @@
 
 Treinamento didático de conferência de documentos de transporte de veículos (NF-e/DANFE, DCE/DACE e CT-e/DACTE).
 
-**Versão publicada:** 63 — galeria dinâmica com 16 fotografias reais de veículos contemporâneos (2025–2026), dois por marca: Toyota, Honda, Ford, Volkswagen, Chevrolet, BYD, Omoda e Changan (CAOA Changan no Brasil). Mantém o tema carbono e laranja, o Radar Fiscal e as regras do treinamento.
+**Versão publicada:** 64 — estação de conferência redesenhada em carbono e laranja, com mais espaço para os documentos e progresso dos campos na barra da rodada. Preserva as 16 fotos do menu, Radar Fiscal e regras do treinamento.
 
 ## Radar Fiscal Brasil — notícias empresariais
 - Painel compacto no menu, com carrossel automático (pausa ao interagir), filtros por Emissão, Impostos, Transporte, **DC-e/DACE** e **Montadoras**, e links para fontes oficiais.
@@ -32,6 +32,13 @@ Treinamento didático de conferência de documentos de transporte de veículos (
 - Endereço de referência Ford Camaçari: **Av. Henry Ford, 2000 - COPEC, Camaçari/BA, CEP 42810-000**. Cadastro histórico industrial: https://sei.ba.gov.br/cadex/empresa-detalhes.php?id=22679. O uso no treino não implica fábrica atualmente em operação.
 - Polaris (página 2 do PDF recebido): DANFE vertical de Indaiatuba/SP, modelo UTV off-road. O **destinatário da nota é também o tomador do serviço e pagador do frete**. Cada destinatário Polaris possui **código didático de 4 dígitos**, mostrado no DANFE e na parte superior direita do quadro Destinatário do DACTE; o **PG correto é o mesmo código**. O jogo pode gerar PG incorreto como divergência intencional para treinamento.
 - Ambos disponíveis na configuração específica e no sorteio misto. Dados de documentos, notas, pessoas e chaves gerados como **simulação**, sem reproduzir os identificadores fiscais reais do PDF.
+
+## Estação de conferência (V64)
+- Cabeçalho, informações da operação, etapas e ferramentas mais compactos; acesso à tela cheia junto às etapas.
+- Dois painéis com área de leitura ampliada, controles de zoom/foco/ajuste e documentos fiscais sem alterações.
+- Barra inferior com contagem de campos classificados e progresso em tempo real, usando a contagem já existente na avaliação.
+- Identidade carbono e laranja também na comparação ampliada e na avaliação; mantém verde/vermelho para marcações e respostas.
+- Layout responsivo, preservando rolagem independente, modo iniciante e preferências de movimento reduzido. Nenhuma mudança nas regras de classificação ou pontuação.
 
 ## Galeria automotiva do menu (V63)
 - Alterna 16 fotografias de veículos contemporâneos a cada 8 segundos, com transição suave. As legendas identificam o ano-modelo quando documentado ou indicam explicitamente o ano da fotografia ou do salão. As versões retratadas podem ser de mercados internacionais, inclusive os modelos da Changan comercializados pela CAOA no Brasil.
