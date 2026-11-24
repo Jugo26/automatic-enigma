@@ -2,7 +2,7 @@
 
 Treinamento didático de conferência de documentos de transporte de veículos (NF-e/DANFE, DCE/DACE e CT-e/DACTE).
 
-**Versão publicada:** 56 — removido o quadro auxiliar de ordem de transporte dos DANFEs, sem alterar dados, PGs ou correção do treinamento. Radar Fiscal e demais recursos preservados.
+**Versão publicada:** 57 — cadastros vinculados pelo mesmo CPF/CNPJ mantêm nome, endereço, município, UF e demais dados coerentes. Divergências de partes vinculadas simulam outra identidade completa; demais regras preservadas.
 
 ## Radar Fiscal Brasil — notícias empresariais
 - Painel compacto no menu, com carrossel automático (pausa ao interagir), filtros por Emissão, Impostos, Transporte, **DC-e/DACE** e **Montadoras**, e links para fontes oficiais.
@@ -19,6 +19,9 @@ Treinamento didático de conferência de documentos de transporte de veículos (
 - Na editoria **DC-e/DACE**, acompanham-se comunicados oficiais do documento, sua emissão, validações, notas técnicas e mudanças operacionais. A DC-e não substitui NF-e nas operações em que a NF-e é obrigatória.
 - Na editoria **Montadoras**, acompanham-se Ford, Toyota, Honda, Polaris, Volkswagen, GM e a indústria automotiva brasileira, com foco em produção, distribuição, logística, faturamento e importação/exportação.
 - Notícias do setor automotivo não são apresentadas como novas obrigações fiscais. As atualizações automáticas não inventam impactos ou datas quando a fonte não oferece evidência.
+
+## Coerência de cadastros no CT-e
+- Quando duas partes representam o mesmo CPF/CNPJ completo, não são geradas divergências isoladas de nome, município ou endereço entre elas. Uma parte incorreta vinculada é simulada por outro cadastro completo, sem reutilizar CPF/CNPJ de outra parte da rodada. Mantidos os PGs, a referência do destinatário Polaris, as divergências de partes independentes e o limite de três erros.
 
 ## Conferência sem quadro auxiliar
 - Removido o quadro externo de ordem de transporte dos modelos DANFE, inclusive faturamento direto. Permanecem os campos dos documentos, códigos de destinatário e regras de PG; a geração e correção das rodadas não foram alteradas.
