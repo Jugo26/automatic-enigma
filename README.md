@@ -2,7 +2,7 @@
 
 Treinamento didático de conferência de documentos de transporte de veículos (NF-e/DANFE, DCE/DACE e CT-e/DACTE).
 
-**Versão publicada:** 60 — substitui ilustração vetorial do menu por fotografia automotiva real e desenhos alternativos do Radar Fiscal por fotografias temáticas identificadas. Preserva imagens originais das matérias, cores, animações, resultados e regras do treinamento.
+**Versão publicada:** 61 — galeria dinâmica no menu com dez fotografias automotivas reais, duas por marca (Toyota, Honda, Ford, Volkswagen e Chevrolet). Mantém o tema carbono e laranja e preserva o Radar Fiscal, as regras e os resultados do treinamento.
 
 ## Radar Fiscal Brasil — notícias empresariais
 - Painel compacto no menu, com carrossel automático (pausa ao interagir), filtros por Emissão, Impostos, Transporte, **DC-e/DACE** e **Montadoras**, e links para fontes oficiais.
@@ -33,6 +33,12 @@ Treinamento didático de conferência de documentos de transporte de veículos (
 - Polaris (página 2 do PDF recebido): DANFE vertical de Indaiatuba/SP, modelo UTV off-road. O **destinatário da nota é também o tomador do serviço e pagador do frete**. Cada destinatário Polaris possui **código didático de 4 dígitos**, mostrado no DANFE e na parte superior direita do quadro Destinatário do DACTE; o **PG correto é o mesmo código**. O jogo pode gerar PG incorreto como divergência intencional para treinamento.
 - Ambos disponíveis na configuração específica e no sorteio misto. Dados de documentos, notas, pessoas e chaves gerados como **simulação**, sem reproduzir os identificadores fiscais reais do PDF.
 
+## Galeria automotiva do menu (V61)
+- Alterna fotografias de Toyota Corolla/Hilux, Honda Civic/HR-V, Ford Mustang/Ranger, Volkswagen Golf/Tiguan e Chevrolet Onix/Tracker a cada 8 segundos, com transição suave.
+- Intercala as marcas, apresenta modelo e autoria/licença da fotografia, permite pausar e retomar, e interrompe a rotação fora do menu, na aba oculta ou com preferência por movimento reduzido.
+- Carrega a próxima fotografia antes de alternar; se houver falha, mantém a última imagem válida e tenta a próxima. A fotografia original do V60 é a reserva inicial.
+- As fotos são servidas por Wikimedia Commons, com visualização de 960 px. As atribuições e os links para a página original e a licença individual estão no próprio carrossel e na lista abaixo. A disponibilidade de rede pode afetar a galeria, sem afetar o treinamento.
+
 ## Fundo animado do menu
 - Ondas digitais em movimento constante, formadas por linhas, malhas e pontos de luz desenhados em tempo real no canvas, sem wallpaper estático.
 - Partículas geradas dinamicamente; reagem e se afastam do mouse, retornando suavemente ao fluxo original.
@@ -62,3 +68,16 @@ Veja `INSTALACAO_GITHUB.md` para instruções de publicação e atualização.
 - DCEs: [Wojciech Kotlicki / Pexels](https://www.pexels.com/photo/boxes-in-delivery-truck-in-warehouse-21838827/).
 - Montadoras: [Marek Ślusarczyk / Wikimedia Commons (CC BY 3.0)](https://commons.wikimedia.org/wiki/File:001_Car_factory_assembly_line_-_Opel_factory_in_Gliwice,_Poland.jpg).
 Fotografias Pexels: https://www.pexels.com/license/. Linha de montagem de Marek Ślusarczyk: CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/), com recorte de apresentação. As fotos são carregadas por HTTPS de seus provedores; caso falhem, a interface não exige a imagem para funcionar.
+
+## Créditos fotográficos da galeria (V61)
+- Toyota Corolla: [SsmIntrigue / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:2021_Toyota_Corolla_LE%2C_Front_Right%2C_10-19-2020.jpg) — [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+- Honda Civic: [Kevauto / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:2022_Honda_Civic_EX%2C_front_10.29.21.jpg) — [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+- Ford Mustang: [XoMEoX / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Ford_Mustang_Front.jpg) — [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+- Volkswagen Golf: [Vauxford / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:2020_Volkswagen_Golf_Style_ETSi_S-A_1.5_Front.jpg) — [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+- Chevrolet Onix: [Heduardo55 / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Chevrolet_Onix_II_front_Brazil.jpg) — [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
+- Toyota Hilux: [EurovisionNim / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Toyota_Hilux_Rogue_2nd_facelift_2020_front.jpg) — [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+- Honda HR-V: [MercurySable99 / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:2023_Honda_HR-V_LX_AWD%2C_front_right.jpg) — [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+- Ford Ranger: [Andrej Danković / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Ford_Ranger_2.jpg) — [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/).
+- Volkswagen Tiguan: [Vauxford / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:2020_Volkswagen_Tiguan_Life_facelift_Front.jpg) — [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+- Chevrolet Tracker: [Maxi-Napo-99 / Wikimedia Commons](https://commons.wikimedia.org/wiki/File:2022_Chevrolet_Tracker_1.2_Turbo_LTZ%2C_front_(Argentina).jpg) — [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+Apresentação com ajuste de contraste e saturação via CSS; arquivos originais não são alterados.
