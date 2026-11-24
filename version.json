@@ -1,7 +1,7 @@
 {
-  "version": 57,
+  "version": 58,
   "source": "Index.html",
   "updated_at": "2026-11-24",
   "repository": "Jugo26/automatic-enigma",
-  "notes": "Corrige divergências cadastrais artificiais entre partes com mesmo CPF/CNPJ completo. Partes vinculadas incorretas usam cadastro alternativo coerente, sem conflito com outras partes da rodada. Mantém PG, regra Polaris, até três divergências e recursos anteriores."
+  "notes": "Remove somente os três cartões informativos do menu: Modo, Divergências e Rodadas. Mantém o cartão Documentos, modo avançado, até três divergências, dez rodadas fixas e toda a lógica existente."
 }
