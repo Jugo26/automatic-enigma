@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "researched_at": "2026-11-19",
+  "researched_at": "2026-11-26",
   "source_status": "pesquisa_curada_com_fontes_verificadas",
   "sources_checked": [
     "Receita Federal",
@@ -10,9 +10,39 @@
     "Anfavea",
     "Portal DF-e (SVRS)",
     "Ministério da Fazenda",
-    "Agência Brasil (EBC)"
+    "Agência Brasil (EBC)",
+    "Folha de S.Paulo",
+    "Câmara dos Deputados",
+    "Ministério do Planejamento",
+    "Reuters / UOL",
+    "AutoData",
+    "Automotive Business"
   ],
   "articles": [
+    {
+      "id": "stf-pedido-adiamento-reforma-2026-11-26",
+      "title": "Entidades do transporte, comércio e agro pedem adiamento da reforma ao STF",
+      "source": "Folha de S.Paulo",
+      "published": "2026-11-26",
+      "category": "Impostos",
+      "summary": "CNT, CNC e CNA solicitaram ao STF o adiamento da cobrança efetiva dos novos tributos prevista para 2027, alegando insuficiência de tempo para adaptação dos sistemas.",
+      "impact": "Acompanhar o andamento judicial e manter o planejamento de implantação. O pedido não equivale a uma decisão judicial nem altera por si só o cronograma oficial.",
+      "url": "https://www1.folha.uol.com.br/mercado/2026/11/confederacoes-empresariais-pedem-ao-stf-o-adiamento-da-reforma-tributaria.shtml",
+      "image": "",
+      "verified": true
+    },
+    {
+      "id": "lc239-compensacao-2026-11-24",
+      "title": "LC 239/2026 autoriza limites condicionais à compensação de tributos federais",
+      "source": "Câmara dos Deputados / Ministério do Planejamento",
+      "published": "2026-11-24",
+      "category": "Impostos",
+      "summary": "A lei publicada em 24 de novembro autoriza restrições à compensação cruzada de tributos federais sob condições fiscais específicas, com percentuais a definir pelo Executivo. A compensação de créditos de PIS/Cofins com débitos de CBS está excluída dessa restrição.",
+      "impact": "Áreas fiscais e financeiras devem acompanhar eventual regulamentação e avaliar cenários de caixa; a autorização legal não implica bloqueio automático de créditos.",
+      "url": "https://www2.camara.leg.br/legin/fed/leicom/2026/leicomplementar-239-24-novembro-2026-800224-publicacaooriginal-182117-pl.html",
+      "image": "",
+      "verified": true
+    },
     {
       "id": "rf-cbs-ibs-orientacao-2026-11-19",
       "title": "Receita e CFC orientam contadores sobre destaque de CBS/IBS em documentos fiscais",
@@ -58,6 +88,18 @@
       "summary": "A Comissão de Assuntos Econômicos do Senado solicitou ao TCU estudos e metodologia do cálculo da alíquota de referência de 11,3% da CBS para 2027. O percentual ainda depende de definição legislativa.",
       "impact": "Planejamentos tributários e formação de preços para 2027 devem tratar 11,3% como referência em discussão, não como alíquota definitiva aplicável a todas as operações.",
       "url": "https://agenciabrasil.ebc.com.br/economia/noticia/2026-11/senado-pede-explicacoes-tcu-sobre-aliquota-de-113-da-cbs",
+      "image": "",
+      "verified": true
+    },
+    {
+      "id": "jetour-producao-brasil-2026-11-18",
+      "title": "Jetour anuncia aporte adicional de R$ 400 milhões para produção nacional",
+      "source": "Reuters / UOL",
+      "published": "2026-11-18",
+      "category": "Montadoras",
+      "summary": "A montadora anunciou investimento adicional de R$ 400 milhões para produzir veículos no Brasil em 2027. A localização da unidade ainda não foi confirmada pela empresa.",
+      "impact": "Acompanhar a definição da fábrica e do calendário de produção para avaliar possíveis novas rotas de distribuição de veículos; não há volumes de frete confirmados.",
+      "url": "https://economia.uol.com.br/noticias/reuters/2026/11/18/chinesa-jetour-anuncia-mais-r400-milhoes-para-produzir-no-brasil-em-2027.htm",
       "image": "",
       "verified": true
     },
@@ -118,42 +160,6 @@
       "summary": "Aviso de 12/11/2026 posterga de 16/11 para 14/12/2026 a implantação em produção de NTs como NF-e 2026.005, 2026.006, 2026.008 e CT-e 2026.004 v1.01. O aviso ressalva que algumas NTs corretivas da NF-e não foram adiadas.",
       "impact": "Equipes de emissão e tecnologia devem ajustar o cronograma de implantação e testes de NF-e e CT-e, conferindo a versão exata da NT; não considerar todas as notas técnicas adiadas.",
       "url": "https://dfe-portal.svrs.rs.gov.br/Dce/Avisos",
-      "image": "",
-      "verified": true
-    },
-    {
-      "id": "anfavea-producao-outubro-2026",
-      "title": "Montadoras: produção cresce em outubro, mas exportações recuam",
-      "source": "Anfavea",
-      "published": "2026-11-11",
-      "category": "Montadoras",
-      "summary": "Segundo a Anfavea, a produção brasileira somou 254,5 mil veículos em outubro, alta de 2,7% ante outubro de 2025. As exportações recuaram 28,3% na comparação anual.",
-      "impact": "Acompanhar a evolução da produção ajuda fábricas, transportadoras e concessionárias a planejar coletas, distribuição e faturamento. Os dados não indicam alteração automática nas regras fiscais.",
-      "url": "https://anfavea.com.br/site/imprensa-noticia/vendas-e-producao-crescem-em-outubro-mas-exportacoes-recuam-283/",
-      "image": "",
-      "verified": true
-    },
-    {
-      "id": "rf-imposto-seletivo-veiculos-2026-11-05",
-      "title": "Imposto Seletivo de 2027: MP define transição e critérios para veículos",
-      "source": "Ministério da Fazenda",
-      "published": "2026-11-05",
-      "category": "Montadoras",
-      "summary": "A MP 1.399/2026 estabelece regras transitórias do Imposto Seletivo para 2027, incluindo veículos, com critérios de sustentabilidade e eficiência energética e hipóteses de alíquota zero.",
-      "impact": "Montadoras e áreas fiscais devem avaliar classificação e alíquotas aplicáveis a cada modelo nas regras transitórias, sem presumir tributação uniforme para todos os veículos.",
-      "url": "https://www.gov.br/fazenda/pt-br/assuntos/noticias/2026/novembro/governo-federal-define-aliquotas-do-imposto-seletivo-para-2027-por-meio-de-medida-provisoria",
-      "image": "",
-      "verified": true
-    },
-    {
-      "id": "nfse-simples-2026-10-29",
-      "title": "NFS-e nacional: competência define emissão e notas retroativas",
-      "source": "Portal Nacional da NFS-e",
-      "published": "2026-10-29",
-      "category": "Emissão",
-      "summary": "Para serviços com competência a partir de 1º de novembro de 2026, ME e EPP do Simples devem usar o Emissor Nacional. O tratamento das notas de competências anteriores é diferente.",
-      "impact": "Prestadores e emissores integrados devem validar a data de competência e o ambiente de emissão para evitar rejeições ou notas lançadas no sistema incorreto.",
-      "url": "https://www.gov.br/nfse/pt-br/noticias/nfs-e-informa-diretrizes-sobre-a-obrigatoriedade-da-emissao-da-nfs-e-nacional-para-optantes-do-simples-nacional/",
       "image": "",
       "verified": true
     }
