@@ -1,7 +1,7 @@
 {
-  "version": 67,
+  "version": 68,
   "source": "Index.html",
   "updated_at": "2026-11-27",
   "repository": "Jugo26/automatic-enigma",
-  "notes": "Modo temporário de teste do envio de resultados: libera respostas CT-e correto/incorreto sem classificação prévia; mantém 10 rodadas, pontuação e integração."
+  "notes": "Restaura a classificação obrigatória de todos os campos do CT-e após confirmação do teste de integração; envio automático e 10 rodadas preservados."
 }
