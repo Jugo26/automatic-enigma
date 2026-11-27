@@ -59,9 +59,9 @@ Treinamento didático de conferência de documentos de transporte de veículos (
 
 ## Atualização automática
 - `Index.html` é a **fonte oficial** do jogo; novas versões substituem este arquivo.
-- O Google Apps Script faz a verificação do HTML no GitHub **a cada abertura** do aplicativo web, e utiliza uma cópia local caso não consiga consultar o GitHub.
+- O executador consulta o HTML do GitHub a cada abertura; o Apps Script funciona somente como receptor dos resultados.
 - `INICIAR_CONFERENCIA_AUTO.html` permite ao usuário carregar a versão online mais recente a partir de um arquivo local (precisa de internet).
-- O envio de e-mail das 10 rodadas funciona **somente pelo Google Apps Script publicado** e previamente autorizado; não funciona com o HTML local aberto diretamente.
+- Ao concluir as 10 rodadas, o próprio treinamento envia o relatório ao Apps Script em segundo plano, sem redirecionamento. Requer implantação acessível e conexão de rede.
 - Nenhuma senha nem chave de API deve ser commitada.
 
 **Importante:** este repositório é público. Os casos e documentos do jogo são fictícios para treinamento; não utilizar dados fiscais reais de clientes.

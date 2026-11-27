@@ -1,7 +1,7 @@
 {
-  "version": 65,
+  "version": 66,
   "source": "Index.html",
   "updated_at": "2026-11-27",
   "repository": "Jugo26/automatic-enigma",
-  "notes": "Resultados das 10 rodadas registrados no Google Sheets e enviados por e-mail pelo Apps Script; identificação, tempo e proteção contra duplicação."
+  "notes": "Envio direto pelo executador original, sem redirecionamento. Apps Script somente recebe POST, registra resultados e envia e-mail; confirmação explícita e repetição sem duplicidade."
 }

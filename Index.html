@@ -1115,7 +1115,7 @@ body { background:#071b2d; }
               <input id="player-name" maxlength="90" autocomplete="name" placeholder="Digite seu nome para o relatório" required>
               <label for="player-registration">Matrícula (opcional)</label>
               <input id="player-registration" maxlength="80" autocomplete="off" placeholder="Digite sua matrícula">
-              <small>Nome utilizado no relatório de treinamento. Envio por e-mail disponível no ambiente publicado.</small>
+              <small>Nome utilizado no relatório de treinamento. Envio automático ao concluir as 10 rodadas.</small>
             </div>
             
             <div class="min-primary-row">
@@ -1323,6 +1323,7 @@ const SETTINGS_KEY='conf360_cfg_v4',BEST_KEY='conf360_best_v1',HISTORY_KEY='conf
 // O envio usa as funções seguras do Google Apps Script, quando o jogo
 // é acessado pelo link do aplicativo publicado; não há Node.js nem senha no HTML.
 // O destinatário fica configurado exclusivamente no servidor.
+const REPORT_ENDPOINT="https://script.google.com/macros/s/AKfycbxkJaLBd3EN1H8uVd5vhWSgUgKoS-e-R46SUlRGQ3511RLv4AfSfDH5f6wwCblcwJBH/exec";
 const PLAYER_NAME_KEY='conf360_player_name_v1';
 let reportSending=false,reportSent=false;
 const FIELDS=[['remetente','Remetente'],['destinatario','Destinatário'],['expedidor','Expedidor'],['recebedor','Recebedor'],['tomador','Tomador de serviço'],['pagador','PG · Pagador'],['chassi','Chassi'],['cor','Cor'],['modelo','Modelo'],['valor','Valor unitário'],['movimentacao','Movimentação (LC/ID)']];
@@ -2161,18 +2162,26 @@ function sessionReportRows(){
 function sessionReportCSV(){return '\uFEFF'+sessionReportRows().map(row=>row.map(csvCell).join(';')).join('\r\n')}
 function exportSession(){if(session)downloadCSV('Conferencia360_relatorio.csv',sessionReportRows())}
 function setReportStatus(status,message,retry=false){const p=$('#report-email-status');p.dataset.status=status;p.textContent=message;$('#btn-retry-report-email').hidden=!retry}
+async function enviarResultadoDireto(payload){
+ const controller=new AbortController();
+ const timeout=setTimeout(()=>controller.abort(),45000);
+ try{
+  const response=await fetch(REPORT_ENDPOINT,{method:'POST',mode:'cors',credentials:'omit',redirect:'follow',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:JSON.stringify({tipo:'conf360-relatorio-v1',relatorio:payload}),signal:controller.signal});
+  if(!response.ok)throw new Error('Servidor respondeu HTTP '+response.status+'.');
+  let result;try{result=await response.json()}catch{throw new Error('O servidor não retornou uma confirmação válida. Verifique a implantação do Apps Script.');}
+  if(!result||result.ok!==true||result.id!==payload.reportId)throw new Error(result?.erro||'O servidor não confirmou o registro.');
+  if(result.email!=='ENVIADO')throw new Error('Resultado salvo na planilha; e-mail '+(result.email==='PENDENTE'?'pendente por limite de envio.':'não confirmado. Confira a planilha.'));
+  return result;
+ }catch(e){if(e?.name==='AbortError')throw new Error('Tempo de confirmação excedido. Tente novamente; a mesma tentativa não será duplicada.');throw e}
+ finally{clearTimeout(timeout)}
+}
 async function sendFinalReport(){
  if(!session||!session.completed||cfg.rounds!==10||session.history.length!==10||reportSending||reportSent)return;
  const sendingSession=session;
  reportSending=true;setReportStatus('sending','Registrando resultado e enviando relatório por e-mail...');
  try{
   const payload={reportId:session.reportId,participant:session.participant,matricula:session.matricula,tempoSegundos:session.tempoSegundos,played:10,completedTarget:10,correct:session.correct,score:session.score,startedAt:session.startedAt,csv:sessionReportCSV()};
-  if(typeof google==='undefined'||!google.script||!google.script.run){
-   throw new Error('Envio indisponível neste arquivo local. Para enviar por e-mail, abra o link do jogo publicado no Google Apps Script.');
-  }
-  const result=await new Promise((resolve,reject)=>{
-   google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).sendTrainingReport(payload);
-  });
+  const result=await enviarResultadoDireto(payload);
   if(!result||result.ok!==true)throw new Error('O Google não confirmou o envio.');
   if(session!==sendingSession)return;
   reportSent=true;

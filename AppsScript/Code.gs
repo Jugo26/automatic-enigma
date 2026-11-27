@@ -1,8 +1,8 @@
-/** Conferência 360 — Google Sheets e e-mail, sem chave no navegador. */
+/** Conferência 360 — receptor Google Sheets e e-mail. O POST do executador é público quando a implantação permite acesso anônimo; o conteúdo é validado, mas não autentica o participante. */
 const ABA = 'Resultados';
 const COLUNAS = ['Data','ID da tentativa','Nome','Matrícula','Acertos','Erros','Nota (%)','Tempo (s)','Detalhes','E-mail'];
 const CONF360_LIMITE_DIARIO = 20;
-const CONF360_HTML_URL = 'https://raw.githubusercontent.com/Jugo26/automatic-enigma/main/Index.html';
+// O Apps Script é somente o receptor dos resultados.
 
 function configurar() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -38,25 +38,7 @@ function testarEmail() {
 }
 
 function doGet() {
-  let tela;
-  try {
-    const r=UrlFetchApp.fetch(CONF360_HTML_URL+'?abertura='+Date.now(),{muteHttpExceptions:true,followRedirects:true,headers:{Accept:'text/html'}});
-    const html=r.getContentText('UTF-8');
-    if(r.getResponseCode()!==200 || html.length<100000 || !/^\s*<!doctype html>/i.test(html) || !html.includes('id="game"') || !/<\/html>\s*$/i.test(html)) throw new Error('HTML indisponível.');
-    tela=HtmlService.createHtmlOutput(html);
-  } catch(e) {
-    try { tela=HtmlService.createHtmlOutputFromFile('Index'); }
-    catch(_) { tela=HtmlService.createHtmlOutput('<h2>Treinamento temporariamente indisponível</h2><p>Não foi possível carregar o GitHub. Reabra este endereço mais tarde.</p>'); }
-  }
-  return tela.setTitle('Conferência 360 | Treinamento atualizado').addMetaTag('viewport','width=device-width, initial-scale=1');
-}
-
-/** RPC do jogo hospedado pelo Apps Script. Restrinja o acesso da implantação. */
-function sendTrainingReport(r) {
-  const p=converterRelatorio_(r);
-  const result=registrar_(p,r.csv);
-  if(result.email!=='ENVIADO') throw new Error('Resultado registrado na planilha, mas e-mail não confirmado ('+result.email+'). Tente novamente ou exporte o CSV.');
-  return {ok:true,id:p.id,duplicate:result.duplicado};
+  return json_({ok:true,servico:'Conferência 360 — receptor de resultados',versao:66});
 }
 
 function converterRelatorio_(r) {
@@ -76,16 +58,24 @@ function converterRelatorio_(r) {
   return p;
 }
 
-/** Integração servidor-servidor opcional; chave permanece nas propriedades. */
+/** POST direto do executador, ou integração autenticada servidor-servidor. */
 function doPost(e) {
   try {
     const raw=e&&e.postData&&e.postData.contents;
-    if(!raw||raw.length>16000) return json_({ok:false,erro:'Requisição inválida'});
-    const p=JSON.parse(raw), chave=PropertiesService.getScriptProperties().getProperty('CHAVE_INTEGRACAO');
+    if(!raw||raw.length>90000) return json_({ok:false,erro:'Requisição inválida'});
+    const p=JSON.parse(raw);
+    if(!p||typeof p!=='object') return json_({ok:false,erro:'Dados inválidos'});
+    if(p.tipo==='conf360-relatorio-v1') {
+      const r=p.relatorio;
+      const dados=converterRelatorio_(r);
+      const result=registrar_(dados,r.csv);
+      return json_({ok:result.ok,id:dados.id,duplicado:result.duplicado,email:result.email});
+    }
+    const chave=PropertiesService.getScriptProperties().getProperty('CHAVE_INTEGRACAO');
     if(!chave||p.chave!==chave) return json_({ok:false,erro:'Não autorizado'});
     if(!validar_(p)) return json_({ok:false,erro:'Dados inválidos'});
     return json_(registrar_(p));
-  } catch(e) {return json_({ok:false,erro:'Não foi possível processar o resultado'});}
+  } catch(e) {return json_({ok:false,erro:'Não foi possível processar o resultado. Verifique a configuração e tente novamente.'});}
 }
 
 function registrar_(p,csv) {
