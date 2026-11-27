@@ -2163,6 +2163,7 @@ function exportSession(){if(session)downloadCSV('Conferencia360_relatorio.csv',s
 function setReportStatus(status,message,retry=false){const p=$('#report-email-status');p.dataset.status=status;p.textContent=message;$('#btn-retry-report-email').hidden=!retry}
 async function sendFinalReport(){
  if(!session||!session.completed||cfg.rounds!==10||session.history.length!==10||reportSending||reportSent)return;
+ const sendingSession=session;
  reportSending=true;setReportStatus('sending','Registrando resultado e enviando relatório por e-mail...');
  try{
   const payload={reportId:session.reportId,participant:session.participant,matricula:session.matricula,tempoSegundos:session.tempoSegundos,played:10,completedTarget:10,correct:session.correct,score:session.score,startedAt:session.startedAt,csv:sessionReportCSV()};
@@ -2173,10 +2174,11 @@ async function sendFinalReport(){
    google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).sendTrainingReport(payload);
   });
   if(!result||result.ok!==true)throw new Error('O Google não confirmou o envio.');
+  if(session!==sendingSession)return;
   reportSent=true;
   setReportStatus('sent','Resultado registrado na planilha e relatório encaminhado por e-mail. Código: '+String(result.id||'confirmado')+'.');
- }catch(err){setReportStatus('failed','Não foi possível enviar automaticamente. Você pode tentar novamente ou baixar o CSV. '+(err?.message||'Sem conexão.'),true)}
- finally{reportSending=false}
+ }catch(err){if(session===sendingSession)setReportStatus('failed','Não foi possível confirmar o envio. Você pode tentar novamente ou baixar o CSV. '+(err?.message||'Sem conexão.'),true)}
+ finally{if(session===sendingSession)reportSending=false}
 }
 $('#btn-retry-report-email').addEventListener('click',()=>{void sendFinalReport()});
 function exportHistory(){

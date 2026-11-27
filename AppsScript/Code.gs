@@ -30,6 +30,8 @@ function configurar() {
 }
 
 function testarEmail() {
+  // O contexto de interface da planilha não está disponível no aplicativo web.
+  if(!SpreadsheetApp.getActiveSpreadsheet()) throw new Error('Execute o teste somente no editor vinculado à planilha.');
   const email=PropertiesService.getScriptProperties().getProperty('EMAIL_DESTINO');
   if (!email) throw new Error('Execute configurar primeiro.');
   enviarEmail_(email,{nome:'Colaborador de teste',matricula:'000001',acertos:8,erros:2,tempoSegundos:510,detalhes:'Exemplo fictício de resultado.'},true);
