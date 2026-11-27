@@ -1,7 +1,7 @@
 {
-  "version": 60,
+  "version": 65,
   "source": "Index.html",
-  "updated_at": "2026-11-24",
+  "updated_at": "2026-11-27",
   "repository": "Jugo26/automatic-enigma",
-  "notes": "Fotografias reais de veículos, documentos, logística e montadoras substituem ilustrações genéricas do menu e Radar Fiscal. Créditos e licenças identificados; imagens originais das notícias têm prioridade. Sem alterações no treinamento."
+  "notes": "Resultados das 10 rodadas registrados no Google Sheets e enviados por e-mail pelo Apps Script; identificação, tempo e proteção contra duplicação."
 }

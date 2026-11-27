@@ -1112,7 +1112,9 @@ body { background:#071b2d; }
             <p>Pratique a conferência de documentos fiscais e de transporte de veículos com simulações e resultados reais.</p>
             <div class="min-name">
               <label for="player-name">Nome do participante</label>
-              <input id="player-name" maxlength="90" autocomplete="name" placeholder="Digite seu nome para o relatório">
+              <input id="player-name" maxlength="90" autocomplete="name" placeholder="Digite seu nome para o relatório" required>
+              <label for="player-registration">Matrícula (opcional)</label>
+              <input id="player-registration" maxlength="80" autocomplete="off" placeholder="Digite sua matrícula">
               <small>Nome utilizado no relatório de treinamento. Envio por e-mail disponível no ambiente publicado.</small>
             </div>
             
@@ -1320,7 +1322,7 @@ const norm=x=>String(x??'').trim().toLocaleUpperCase('pt-BR');
 const SETTINGS_KEY='conf360_cfg_v4',BEST_KEY='conf360_best_v1',HISTORY_KEY='conf360_history_v1';
 // O envio usa as funções seguras do Google Apps Script, quando o jogo
 // é acessado pelo link do aplicativo publicado; não há Node.js nem senha no HTML.
-const REPORT_RECIPIENT='bryan.vieira@tegma.com.br';
+// O destinatário fica configurado exclusivamente no servidor.
 const PLAYER_NAME_KEY='conf360_player_name_v1';
 let reportSending=false,reportSent=false;
 const FIELDS=[['remetente','Remetente'],['destinatario','Destinatário'],['expedidor','Expedidor'],['recebedor','Recebedor'],['tomador','Tomador de serviço'],['pagador','PG · Pagador'],['chassi','Chassi'],['cor','Cor'],['modelo','Modelo'],['valor','Valor unitário'],['movimentacao','Movimentação (LC/ID)']];
@@ -1920,10 +1922,12 @@ function stopTimer(){if(timerID)clearInterval(timerID);timerID=null}
 function updateStats(){if(!session)return;$('#round-value').textContent=session.index+1+' / '+(cfg.rounds||'∞');$('#score-value').textContent=String(session.score);$('#streak-value').textContent=String(session.streak);$('#time-value').textContent=cfg.time?formatClock(timeLeft):'∞'}
 function setZoom(id,value){zoom[id]=Math.max(380,Math.min(1550,value));$('#'+id+'-paper').style.width=zoom[id]+'px'}
 function startGame(){stopTimer();cfg.rounds=FIXED_ROUNDS;
- const participant=($('#player-name').value||'').trim().slice(0,90)||'Não informado';
+ const participant=($('#player-name').value||'').trim().slice(0,90);
+ if(!participant){showScreen('menu');$('#player-name').focus();alert('Informe seu nome antes de iniciar o treinamento.');return false;}
+ const matricula=($('#player-registration').value||'').trim().slice(0,80);
  safeSave(PLAYER_NAME_KEY,participant==='Não informado'?'':participant);
  reportSending=false;reportSent=false;
- session={index:0,score:0,correct:0,streak:0,bestStreak:0,history:[],completed:false,startedAt:new Date().toISOString(),participant,reportId:(Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,14))};zoom={nf:840,cte:840};setZoom('nf',840);setZoom('cte',840);focused=null;document.body.classList.remove('focus-nf','focus-cte');showScreen('game');nextRound()}
+ session={index:0,score:0,correct:0,streak:0,bestStreak:0,history:[],completed:false,startedAt:new Date().toISOString(),participant,matricula,reportId:(Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,14))};zoom={nf:840,cte:840};setZoom('nf',840);setZoom('cte',840);focused=null;document.body.classList.remove('focus-nf','focus-cte');showScreen('game');nextRound();return true}
 function scenarioText(d){if(d.kind==='dce_locadora')return 'DACE de locadora (DCE): a referência é LC. Confira PG, remetente e expedidor na mesma cidade da coleta; o início da prestação deve coincidir com a cidade da unidade de origem.';if(d.kind==='gm_danfe')return 'DANFE horizontal inspirado na General Motors: confira chassi, cor e modelo dentro da descrição do veículo, e o destinatário na seção de destinatário/remetente.';if(d.kind==='vw_danfe')return 'DANFE vertical inspirado na Volkswagen: os dados do veículo ficam em DADOS COMPLEMENTARES DO PRODUTO; o comprador e a concessionária de entrega são diferentes.';if(d.kind==='toyota_danfe')return 'NF-e Toyota, modelo horizontal: coleta na fábrica de Sorocaba/SP (PG I4500001). Compare destinatário, chassi, cor, modelo, valor e dados da operação.';if(d.kind==='honda_danfe')return 'NF-e Honda, modelo vertical: fábrica de Itirapina/SP (PG I0100001). Os dados do veículo estão na descrição do produto; confira também o destinatário e o local de entrega.';if(d.kind==='ford_danfe')return 'NF-e Ford: confira a origem e o PG. São Bernardo do Campo/SP usa PG 70001; Camaçari/BA usa PG 70004. Compare também destinatário, modelo, chassi e valor.';if(d.kind==='polaris_danfe')return 'NF-e Polaris de Indaiatuba/SP: o destinatário paga o frete e deve constar como TOMADOR DO SERVIÇO no CT-e. O PG no quadro à direita do DACTE deve corresponder ao código de 4 dígitos do destinatário.';if(d.kind==='faturamento_direto')return 'NF-e no padrão XML recebido: venda ao comprador final, com entrega física em uma concessionária. Verifique destinatário (comprador), o eventual recebedor e o local de entrega indicado na nota.';return d.kind==='direta'?'O veículo sai da montadora e segue diretamente ao cliente. Verifique as partes e os dados da mercadoria.':d.kind==='emplacado'?'Veículo emplacado: o expedidor é um pátio operacional e o recebimento físico ocorre na distribuidora.':'Existem dois destinos de referência: a distribuidora recebe fisicamente, enquanto o cliente indicado é o destino final do transporte.'}
 function nextRound(){stopTimer();if(cfg.rounds&&session.index>=cfg.rounds){endGame();return}round={...createRound(),selected:new Set(),markedCorrect:new Set(),answered:false};$('#scenario-description').textContent=scenarioText(round);$('#scenario-label').textContent=round.scenario;
    $('#source-doc-title').textContent=round.kind==='dce_locadora'?'DACE / DCE · LOCAÇÃO':round.kind==='toyota_danfe'?'NF-e / DANFE · TOYOTA':round.kind==='honda_danfe'?'NF-e / DANFE · HONDA':round.kind==='ford_danfe'?'NF-e / DANFE · FORD':round.kind==='polaris_danfe'?'NF-e / DANFE · POLARIS':'NF-e / DANFE';
@@ -2121,7 +2125,7 @@ function renderRoundReview(){
 }
 function endGame(){
  if(!session||session.completed)return;
- stopTimer();session.completed=true;
+ stopTimer();session.completed=true;session.tempoSegundos=Math.max(0,Math.floor((Date.now()-Date.parse(session.startedAt))/1000));
  const played=session.history.length,accuracy=played?Math.round(session.correct/played*100):0;
  let best=safeLoad(BEST_KEY)||0;if(session.score>best){best=session.score;safeSave(BEST_KEY,best)}
  $('#best-score').innerHTML=best+' <small>PTS</small>';
@@ -2148,7 +2152,7 @@ function csvCell(x){let s=String(x??'');if(/^[=+\-@\t\r]/.test(s))s="'"+s;return
 function downloadCSV(name,data){const csv='\uFEFF'+data.map(row=>row.map(csvCell).join(';')).join('\r\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)}
 function sessionReportRows(){
  if(!session)return [];
- const rows=[['Participante',session.participant||'Não informado'],['Início do treinamento',formatDate(session.startedAt)],['Conclusão',new Date().toLocaleString('pt-BR')],['Dificuldade',cfg.difficulty],['Modelo de documento',cfg.pattern],['Acertos',session.correct],['Pontos',session.score],[],
+ const rows=[['Participante',session.participant||'Não informado'],['Matrícula',session.matricula||''],['Início do treinamento',formatDate(session.startedAt)],['Conclusão',new Date().toLocaleString('pt-BR')],['Dificuldade',cfg.difficulty],['Modelo de documento',cfg.pattern],['Acertos',session.correct],['Pontos',session.score],[],
   ['Rodada','Cenário','Resultado','Tempo esgotado','Campos com divergência','M2: campos incorretos','M1: campos corretos','Identificados','Marcações M2 indevidas','Marcações M1 erradas','Pontos','Classificação correta','Identificação exata','PG de referência','PG no DACTE','Unidade de origem']];
  for(const r of session.history)rows.push([r.number,r.scenario,r.correct?'Acerto':'Erro',r.timedOut?'Sim':'Não',r.errors.map(e=>e.fieldName).join(' / ')||'Nenhuma',r.selected.map(id=>FIELDS.find(f=>f[0]===id)?.[1]||id).join(' / ')||'Nenhum',(r.markedCorrect||[]).map(id=>FIELDS.find(f=>f[0]===id)?.[1]||id).join(' / ')||'Nenhum',r.identified,r.wrongSelections,r.wrongCorrect||0,r.gain,r.classificationCorrect?'Sim':'Não',r.fieldsCorrect?'Sim':'Não',r.pgEsperado||'',r.pgDACTE||'',r.origemMontadora||'']);
  rows.push(['TOTAL','','','','','','','','','',session.score,'','','','','']);
@@ -2159,9 +2163,9 @@ function exportSession(){if(session)downloadCSV('Conferencia360_relatorio.csv',s
 function setReportStatus(status,message,retry=false){const p=$('#report-email-status');p.dataset.status=status;p.textContent=message;$('#btn-retry-report-email').hidden=!retry}
 async function sendFinalReport(){
  if(!session||!session.completed||cfg.rounds!==10||session.history.length!==10||reportSending||reportSent)return;
- reportSending=true;setReportStatus('sending','Enviando arquivo CSV para '+REPORT_RECIPIENT+'...');
+ reportSending=true;setReportStatus('sending','Registrando resultado e enviando relatório por e-mail...');
  try{
-  const payload={reportId:session.reportId,recipient:REPORT_RECIPIENT,participant:session.participant||'Não informado',played:10,completedTarget:10,correct:session.correct,score:session.score,startedAt:session.startedAt,csv:sessionReportCSV()};
+  const payload={reportId:session.reportId,participant:session.participant,matricula:session.matricula,tempoSegundos:session.tempoSegundos,played:10,completedTarget:10,correct:session.correct,score:session.score,startedAt:session.startedAt,csv:sessionReportCSV()};
   if(typeof google==='undefined'||!google.script||!google.script.run){
    throw new Error('Envio indisponível neste arquivo local. Para enviar por e-mail, abra o link do jogo publicado no Google Apps Script.');
   }
@@ -2170,7 +2174,7 @@ async function sendFinalReport(){
   });
   if(!result||result.ok!==true)throw new Error('O Google não confirmou o envio.');
   reportSent=true;
-  setReportStatus('sent','Relatório encaminhado com sucesso para '+REPORT_RECIPIENT+'. Código: '+String(result.id||'confirmado')+'.');
+  setReportStatus('sent','Resultado registrado na planilha e relatório encaminhado por e-mail. Código: '+String(result.id||'confirmado')+'.');
  }catch(err){setReportStatus('failed','Não foi possível enviar automaticamente. Você pode tentar novamente ou baixar o CSV. '+(err?.message||'Sem conexão.'),true)}
  finally{reportSending=false}
 }
@@ -2367,7 +2371,7 @@ function startWithMode(beginner){
   $('#hint-line').innerHTML='<b>ORIENTAÇÃO:</b> Verifique também a MOVIMENTAÇÃO: ID para NF-e, LC para DCE de locadora. Expedidor e recebedor podem não ser informados; a ausência deles, por si só, não constitui divergência. Confira a ordem logística simulada.';
   $('.compare-topbar-title small').textContent='Esquerda: NF-e/DCE · Direita: CT-e · No DACTE, M1 = correto / M2 = incorreto';
  }
- startGame();
+ if(!startGame())return;
  if(beginner&&!safeLoad(BEGINNER_INTRO_KEY))openNoviceIntro();
 }
 function paintNoviceStep(){

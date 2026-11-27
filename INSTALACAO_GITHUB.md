@@ -46,3 +46,10 @@ O repositório também inclui `.github/workflows/pages.yml`. Para ativar um site
 ### Testes de integração
 
 Testados: carregamento pelo GitHub, fallback local, preservação do envio de e-mail e dez rodadas com CSV simulado. O pacote para Windows inclui os scripts dos testes. A implantação real do Apps Script e a ativação opcional do GitHub Pages ainda dependem da configuração das contas.
+
+### Integração com a planilha Resultados (2026-11-27)
+
+- Use o projeto Apps Script vinculado à planilha previamente configurada. Substitua `Code.gs` pela versão atual do repositório, salve e execute `testarEmail` (não é necessário repetir `configurar` se as propriedades já estiverem salvas).
+- Em **Implantar > Gerenciar implantações**, edite a implantação existente, selecione Nova versão e implante. Autorize a consulta externa ao GitHub se solicitada. Use o endereço `/exec` existente para abrir o jogo. Restrinja o acesso à organização quando disponível; não abra o endpoint para qualquer pessoa sem avaliar o risco de abuso.
+- O jogo registra cada sessão completa de dez rodadas, nome obrigatório, matrícula opcional, acertos, erros, tempo, detalhes e status do e-mail na aba Resultados; o destinatário é lido das propriedades. O relatório CSV continua anexado.
+- A cota preventiva de 20 envios diários continua ativa; acima disso, o resultado permanece na planilha como PENDENTE e pode ser reenviado pela mesma sessão em outro dia. ENVIANDO/INCERTO exige conferência manual antes de novo envio. O envio não é garantido fora do Apps Script publicado. Dados e gabarito permanecem declarados pelo navegador, não são prova de identidade ou certificação.
