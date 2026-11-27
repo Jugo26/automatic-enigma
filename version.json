@@ -1,7 +1,7 @@
 {
-  "version": 69,
+  "version": 70,
   "source": "Index.html",
   "updated_at": "2026-11-27",
   "repository": "Jugo26/automatic-enigma",
-  "notes": "Reativa temporariamente o modo de teste: respostas CT-e correto/incorreto liberadas sem classificação dos campos. Envio automático e 10 rodadas preservados."
+  "notes": "Acelera o carrossel de veículos do menu: intervalo de 3 segundos e transição de 450 ms; demais funcionalidades preservadas."
 }
