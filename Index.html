@@ -1381,6 +1381,8 @@ const STREETS=['Rua das Acácias','Av. Industrial','Rua do Comércio','Av. das N
 const colors=['BRANCO','PRETO','PRATA','CINZA','AZUL','VERMELHO','GRAFITE','VERDE'];
 const vLetters='ABCDEFGHJKLMNPRSTUVWXYZ0123456789';
 const FIXED_ROUNDS = 10;
+// TEMPORÁRIO: teste de integração de e-mail. Voltar para false após validação.
+const TESTE_LIBERAR_RESPOSTA_CTE = true;
 let cfg={difficulty:'avancado',rounds:FIXED_ROUNDS,time:0,hints:true,pattern:'misto'};
 let session=null,round=null,timerID=null,timeLeft=0,focused=null,zoom={nf:840,cte:840};
 // A experiência padrão usa só o botão esquerdo e explica as ações no local.
@@ -1933,7 +1935,7 @@ function scenarioText(d){if(d.kind==='dce_locadora')return 'DACE de locadora (DC
 function nextRound(){stopTimer();if(cfg.rounds&&session.index>=cfg.rounds){endGame();return}round={...createRound(),selected:new Set(),markedCorrect:new Set(),answered:false};$('#scenario-description').textContent=scenarioText(round);$('#scenario-label').textContent=round.scenario;
    $('#source-doc-title').textContent=round.kind==='dce_locadora'?'DACE / DCE · LOCAÇÃO':round.kind==='toyota_danfe'?'NF-e / DANFE · TOYOTA':round.kind==='honda_danfe'?'NF-e / DANFE · HONDA':round.kind==='ford_danfe'?'NF-e / DANFE · FORD':round.kind==='polaris_danfe'?'NF-e / DANFE · POLARIS':'NF-e / DANFE';
    $('#source-doc-sub').textContent=round.kind==='dce_locadora'?'Modelo A4 reconstruído do Word editável':round.kind==='toyota_danfe'?'Modelo Toyota horizontal, referência do PDF enviado':round.kind==='honda_danfe'?'Modelo Honda vertical, referência do PDF enviado':round.kind==='ford_danfe'?'Ford horizontal · modelo inspirado na página 1 do PDF enviado':round.kind==='polaris_danfe'?'Polaris vertical · modelo inspirado na página 2 do PDF enviado':'Layout reconstruído a partir dos DANFEs GM/VW';
-   $('#reference-movement').innerHTML='';$('#reference-movement').hidden=true;$('#hint-line').hidden=!cfg.hints;$('#nf-paper').classList.toggle('gm-sheet',round.kind==='gm_danfe');$('#nf-paper').classList.toggle('dce-mode',round.kind==='dce_locadora');$('#nf-paper').classList.toggle('vw-sheet',round.kind==='vw_danfe');$('#nf-paper').classList.toggle('toyota-sheet',round.kind==='toyota_danfe');$('#nf-paper').classList.toggle('honda-sheet',round.kind==='honda_danfe');$('#nf-paper').classList.toggle('ford-sheet',round.kind==='ford_danfe');$('#nf-paper').classList.toggle('polaris-sheet',round.kind==='polaris_danfe');setZoom('nf',(round.kind==='gm_danfe'||round.kind==='toyota_danfe'||round.kind==='ford_danfe')?1140:840);$('#nf-content').innerHTML=nftxt(round);$('#cte-content').innerHTML=renderDACTE(round);$('#nf-pane .paper-viewport').scrollTop=0;$('#cte-pane .paper-viewport').scrollTop=0;$('#feedback').hidden=true;$('#feedback').innerHTML='';$('#decision-panel').hidden=false;$('#selection-title').textContent='O CT-e está correto?';$('#selection-help').textContent=noviceActive?'Compare as notas e classifique CADA campo: escolha «ACHEI UM ERRO» ou «ESTÁ CORRETO» e clique nele. Após classificar todos, escolha a resposta do CT-e.':'Classifique TODOS os campos do DACTE: M1 (esquerdo) = CORRETO; M2 (direito) = INCORRETO. Só depois os botões de resposta serão liberados.';$('#selection-warning').hidden=true;$('#selection-warning').textContent='Classifique todos os campos da conferência antes de responder. Para indicar divergência, pelo menos um campo deve estar marcado como incorreto (M2).';$('#btn-clear-selections').disabled=false;noviceChoice='incorrect';updateBeginnerControls();$('#btn-return-checklist').hidden=true;$('#btn-correct').disabled=true;$('#btn-incorrect').disabled=true;renderChips();timeLeft=cfg.time;updateStats();if(cfg.time){timerID=setInterval(()=>{if(!round||round.answered||tutorialOpen||noviceOpen)return;timeLeft--;updateStats();if(timeLeft<=0){stopTimer();scoreDecision(null,true)}},1000)} }
+   $('#reference-movement').innerHTML='';$('#reference-movement').hidden=true;$('#hint-line').hidden=!cfg.hints;$('#nf-paper').classList.toggle('gm-sheet',round.kind==='gm_danfe');$('#nf-paper').classList.toggle('dce-mode',round.kind==='dce_locadora');$('#nf-paper').classList.toggle('vw-sheet',round.kind==='vw_danfe');$('#nf-paper').classList.toggle('toyota-sheet',round.kind==='toyota_danfe');$('#nf-paper').classList.toggle('honda-sheet',round.kind==='honda_danfe');$('#nf-paper').classList.toggle('ford-sheet',round.kind==='ford_danfe');$('#nf-paper').classList.toggle('polaris-sheet',round.kind==='polaris_danfe');setZoom('nf',(round.kind==='gm_danfe'||round.kind==='toyota_danfe'||round.kind==='ford_danfe')?1140:840);$('#nf-content').innerHTML=nftxt(round);$('#cte-content').innerHTML=renderDACTE(round);$('#nf-pane .paper-viewport').scrollTop=0;$('#cte-pane .paper-viewport').scrollTop=0;$('#feedback').hidden=true;$('#feedback').innerHTML='';$('#decision-panel').hidden=false;$('#selection-title').textContent='O CT-e está correto?';$('#selection-help').textContent=TESTE_LIBERAR_RESPOSTA_CTE?'MODO DE TESTE TEMPORÁRIO: escolha CT-e correto ou incorreto sem precisar marcar os campos. A pontuação original permanece.':noviceActive?'Compare as notas e classifique CADA campo: escolha «ACHEI UM ERRO» ou «ESTÁ CORRETO» e clique nele. Após classificar todos, escolha a resposta do CT-e.':'Classifique TODOS os campos do DACTE: M1 (esquerdo) = CORRETO; M2 (direito) = INCORRETO. Só depois os botões de resposta serão liberados.';$('#selection-warning').hidden=true;$('#selection-warning').textContent='Classifique todos os campos da conferência antes de responder. Para indicar divergência, pelo menos um campo deve estar marcado como incorreto (M2).';$('#btn-clear-selections').disabled=false;noviceChoice='incorrect';updateBeginnerControls();$('#btn-return-checklist').hidden=true;$('#btn-correct').disabled=!TESTE_LIBERAR_RESPOSTA_CTE;$('#btn-incorrect').disabled=!TESTE_LIBERAR_RESPOSTA_CTE;renderChips();timeLeft=cfg.time;updateStats();if(cfg.time){timerID=setInterval(()=>{if(!round||round.answered||tutorialOpen||noviceOpen)return;timeLeft--;updateStats();if(timeLeft<=0){stopTimer();scoreDecision(null,true)}},1000)} }
 function syncCTeHighlights(){
  if(!round)return;
  const erroneous=new Set(round.errors.map(e=>e.id));
@@ -1987,12 +1989,12 @@ function updateReviewDashboard(){
  $('#mark-count-correct').textContent=String(confirmed);
  $('#toolbar-count-incorrect').textContent=String(suspicious);
  $('#toolbar-count-correct').textContent=String(confirmed);
- const ready=total===fieldCount&&fieldCount>0&&!round.answered;
+ const ready=!round.answered&&(TESTE_LIBERAR_RESPOSTA_CTE||(total===fieldCount&&fieldCount>0));
  $('#btn-correct').disabled=!ready;
  $('#btn-incorrect').disabled=!ready;
- $('#decision-readiness').textContent=round.answered?'Rodada respondida. Consulte o resultado abaixo.':ready?'Todos os campos classificados. Agora escolha se o CT-e está correto ou apresenta divergência.':`Faltam ${fieldCount-total} campo(s) para classificar. Use M1 (correto) ou M2 (incorreto).`;
+ $('#decision-readiness').textContent=round.answered?'Rodada respondida. Consulte o resultado abaixo.':TESTE_LIBERAR_RESPOSTA_CTE?'Modo de teste: escolha se o CT-e está correto ou incorreto, mesmo sem marcar os campos.':ready?'Todos os campos classificados. Agora escolha se o CT-e está correto ou apresenta divergência.':`Faltam ${fieldCount-total} campo(s) para classificar. Use M1 (correto) ou M2 (incorreto).`;
  $('#decision-readiness').classList.toggle('ready',ready);
- $('#review-progress-helper').textContent=round.answered?'Conferência encerrada':ready?'Todos os campos classificados':'É obrigatório classificar todos os campos';
+ $('#review-progress-helper').textContent=round.answered?'Conferência encerrada':TESTE_LIBERAR_RESPOSTA_CTE?'Marcações opcionais no teste':ready?'Todos os campos classificados':'É obrigatório classificar todos os campos';
  $('#review-progress-count').textContent=total+' / '+fieldCount;
  $('#station-field-count').textContent=total+' / '+fieldCount;
  const stationProgress=$('#station-field-progress');stationProgress.max=fieldCount||1;stationProgress.value=total;
@@ -2059,7 +2061,7 @@ function scoreDecision(answer,timedOut=false){
  if(!round||round.answered)return;
  // A escolha final só fica disponível após todas as áreas ativas serem classificadas.
  // O tempo esgotado continua registrando rodada sem resposta, mesmo com campos pendentes.
- if(!timedOut&&activeConferenceFields().some(id=>!round.selected.has(id)&&!round.markedCorrect.has(id))){
+ if(!TESTE_LIBERAR_RESPOSTA_CTE&&!timedOut&&activeConferenceFields().some(id=>!round.selected.has(id)&&!round.markedCorrect.has(id))){
   $('#selection-warning').textContent='Antes de responder, marque todos os campos como corretos (M1) ou incorretos (M2).';
   $('#selection-warning').hidden=false;
   $('#selection-warning').scrollIntoView({behavior:'auto',block:'nearest'});
@@ -2067,7 +2069,7 @@ function scoreDecision(answer,timedOut=false){
  }
  // Evita a aprovação por chute: quem informa divergência precisa apontar ao menos um campo.
  // O tempo esgotado dispensa a seleção para permitir registrar a rodada não respondida.
- if(answer===false&&!timedOut&&round.selected.size===0){
+ if(!TESTE_LIBERAR_RESPOSTA_CTE&&answer===false&&!timedOut&&round.selected.size===0){
   $('#selection-warning').textContent='Para indicar divergência, marque pelo menos um campo incorreto usando M2 (clique direito).';
   $('#selection-warning').hidden=false;
   $('#selection-warning').scrollIntoView({behavior:'auto',block:'nearest'});
@@ -2357,7 +2359,7 @@ function updateBeginnerControls(){
  const count=round?.selected.size||0;
  $('#beginner-mark-message').textContent=round?.answered?'Rodada finalizada. Veja abaixo o resultado da sua avaliação.':
   noviceChoice==='incorrect'?`Opção escolhida: ACHEI UM ERRO. Clique no campo da nota da direita que está diferente. Você já marcou ${count} possível(is) erro(s).`:
-  'Opção escolhida: ESTÁ CORRETO. Clique em cada campo que você conferiu e considera correto. Todos os campos precisam de marcação.';
+  'Opção escolhida: ESTÁ CORRETO. Clique em cada campo que você conferiu e considera correto. '+(TESTE_LIBERAR_RESPOSTA_CTE?'Neste teste, as marcações não são obrigatórias.':'Todos os campos precisam de marcação.');
  const info=$('#cte-pane .doc-heading-title small');info.textContent='Clique nos campos da nota para marcá-los';
  $('#decision-buttons #btn-correct strong').textContent='TODOS OS DADOS ESTÃO CORRETOS';
  $('#decision-buttons #btn-incorrect strong').textContent='ENCONTREI UMA DIFERENÇA';
