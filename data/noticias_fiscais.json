@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "researched_at": "2026-11-26",
+  "researched_at": "2026-11-27",
   "source_status": "pesquisa_curada_com_fontes_verificadas",
   "sources_checked": [
     "Receita Federal",
@@ -16,7 +16,8 @@
     "Ministério do Planejamento",
     "Reuters / UOL",
     "AutoData",
-    "Automotive Business"
+    "Automotive Business",
+    "Instituição Fiscal Independente / Senado"
   ],
   "articles": [
     {
@@ -32,6 +33,18 @@
       "verified": true
     },
     {
+      "id": "ifi-estudo-cbs-2026-11-26",
+      "title": "IFI entrega estudo com cenários para a alíquota da CBS",
+      "source": "Instituição Fiscal Independente / Senado",
+      "published": "2026-11-26",
+      "category": "Impostos",
+      "summary": "A IFI publicou nota técnica com exercícios sobre as premissas do cálculo da CBS pelo TCU e entregou o estudo à assessoria do relator no Senado. Os cenários são subsídios à definição do percentual, não novas alíquotas vigentes.",
+      "impact": "Acompanhar a definição legislativa antes de fechar projeções de preços e tributos para 2027.",
+      "url": "https://www12.senado.leg.br/ifi/noticias/ifi-realiza-exercicios-sobre-aliquota-da-cbs-com-base-no-calculo-do-tcu-1",
+      "image": "",
+      "verified": true
+    },
+    {
       "id": "lc239-compensacao-2026-11-24",
       "title": "LC 239/2026 autoriza limites condicionais à compensação de tributos federais",
       "source": "Câmara dos Deputados / Ministério do Planejamento",
@@ -40,6 +53,18 @@
       "summary": "A lei publicada em 24 de novembro autoriza restrições à compensação cruzada de tributos federais sob condições fiscais específicas, com percentuais a definir pelo Executivo. A compensação de créditos de PIS/Cofins com débitos de CBS está excluída dessa restrição.",
       "impact": "Áreas fiscais e financeiras devem acompanhar eventual regulamentação e avaliar cenários de caixa; a autorização legal não implica bloqueio automático de créditos.",
       "url": "https://www2.camara.leg.br/legin/fed/leicom/2026/leicomplementar-239-24-novembro-2026-800224-publicacaooriginal-182117-pl.html",
+      "image": "",
+      "verified": true
+    },
+    {
+      "id": "cgsn-196-2026-11-24",
+      "title": "Resolução CGSN 196 atualiza regras do Simples Nacional para a transição tributária",
+      "source": "Receita Federal",
+      "published": "2026-11-24",
+      "category": "Impostos",
+      "summary": "A Receita divulgou a Resolução CGSN 196, que atualiza tabelas, reconhecimento de receitas e procedimentos de transição para IBS e CBS, incluindo tratamento dos valores pendentes de recebimento no regime de caixa de 2026.",
+      "impact": "Empresas optantes pelo Simples devem revisar a conciliação entre faturamento, recebimentos e apuração com a contabilidade.",
+      "url": "https://www.gov.br/receitafederal/pt-br/assuntos/noticias/2026/novembro/comite-gestor-do-simples-nacional-publica-novas-regras-para-o-simples-nacional-e-para-a-transicao-da-reforma-tributaria",
       "image": "",
       "verified": true
     },
@@ -136,30 +161,6 @@
       "summary": "Receita atualizou o PGDAS-D: em novembro e dezembro de 2026 será necessário informar a folha dos últimos 12 meses; a partir de 2027, as apurações passam ao regime de competência.",
       "impact": "Empresas do Simples devem revisar o preenchimento do PGDAS-D. Os dados declarados também influenciarão as alíquotas efetivas de IBS e CBS informadas nos documentos fiscais.",
       "url": "https://www.gov.br/receitafederal/pt-br/assuntos/noticias/2026/novembro/pgdas-d-e-atualizado-para-atender-a-reforma-tributaria-a-partir-de-novembro-de-2026",
-      "image": "",
-      "verified": true
-    },
-    {
-      "id": "nfse-ato-7-2026",
-      "title": "Novo ato altera prazos da NFS-e para IBS e CBS",
-      "source": "Portal Nacional da NFS-e",
-      "published": "2026-11-13",
-      "category": "Emissão",
-      "summary": "O Ato Conjunto RFB/CGIBS nº 7/2026 atualizou o cronograma de emissão de NFS-e para operações específicas, escalonando prazos antes previstos para dezembro.",
-      "impact": "Prestadores e equipes de tecnologia precisam conferir o enquadramento da operação e ajustar o cronograma de implantação dos leiautes da NFS-e.",
-      "url": "https://www.gov.br/nfse/pt-br/noticias/cgnfs-e-informa-ato-conjunto-rfb-cgibs-no-7-2026-atualiza-o-cronograma-de-obrigatoriedade-de-emissao-da-nfs-e-para-ibs-e-cbs",
-      "image": "",
-      "verified": true
-    },
-    {
-      "id": "svrs-adiamento-nts-2026-11-12",
-      "title": "NF-e e CT-e: implantação de notas técnicas adiada para 14 de dezembro",
-      "source": "Portal DF-e (SVRS / Comitê Gestor do IBS e RFB)",
-      "published": "2026-11-12",
-      "category": "Transporte",
-      "summary": "Aviso de 12/11/2026 posterga de 16/11 para 14/12/2026 a implantação em produção de NTs como NF-e 2026.005, 2026.006, 2026.008 e CT-e 2026.004 v1.01. O aviso ressalva que algumas NTs corretivas da NF-e não foram adiadas.",
-      "impact": "Equipes de emissão e tecnologia devem ajustar o cronograma de implantação e testes de NF-e e CT-e, conferindo a versão exata da NT; não considerar todas as notas técnicas adiadas.",
-      "url": "https://dfe-portal.svrs.rs.gov.br/Dce/Avisos",
       "image": "",
       "verified": true
     }
