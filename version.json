@@ -1,7 +1,7 @@
 {
-  "version": 68,
+  "version": 69,
   "source": "Index.html",
   "updated_at": "2026-11-27",
   "repository": "Jugo26/automatic-enigma",
-  "notes": "Restaura a classificação obrigatória de todos os campos do CT-e após confirmação do teste de integração; envio automático e 10 rodadas preservados."
+  "notes": "Reativa temporariamente o modo de teste: respostas CT-e correto/incorreto liberadas sem classificação dos campos. Envio automático e 10 rodadas preservados."
 }
